@@ -1,0 +1,22 @@
+# 中國稅費與化工換算。稅率是按我所知的現行政策填的，請核對後在後台標記為已核對。
+
+- key: CN_VAT_RATE
+  name_zh: 增值稅率（成品油、原油）
+  group: 中國稅費
+  versions:
+    - {valid_from: 1900-01-01, value: 0.17}
+    - {valid_from: 2018-05-01, value: 0.16, note: 17% 下調至 16%}
+    - {valid_from: 2019-04-01, value: 0.13, note: 16% 下調至 13%}
+- {key: CN_CT_GASOLINE, name_zh: 汽油消費稅, value: 2109.76, unit: CNY/t, group: 中國稅費,
+   description: 1.52 元/升 × 1388 升/噸（2015-01-13 起）。更早的稅額沒有錄入}
+- {key: CN_CT_DIESEL, name_zh: 柴油消費稅, value: 1411.2, unit: CNY/t, group: 中國稅費,
+   description: 1.20 元/升 × 1176 升/噸（2015-01-13 起）。更早的稅額沒有錄入}
+- {key: CN_SURCHARGE_RATE, name_zh: 城建及教育附加稅率, value: 0.12, group: 中國稅費,
+   description: 城建 7% + 教育 3% + 地方教育 2%，計稅基礎為 增值稅 + 消費稅}
+- {key: CN_CRUDE_TARIFF, name_zh: 原油進口關稅率, value: 0, group: 中國稅費,
+   description: 按零關稅處理}
+- {key: CN_PX_TARIFF, name_zh: PX 進口關稅率, value: 0.02, group: 中國稅費}
+- {key: CN_PORT_MISC, name_zh: 原油到廠雜費, value: 40, unit: CNY/t, group: 中國稅費,
+   description: 港雜、商檢、短倒等。暫定值，請按實際情況修改}
+- {key: PTA_PX_RATIO, name_zh: PTA 的 PX 單耗, value: 0.655, group: 化工換算,
+   description: 每噸 PTA 消耗的 PX 噸數}

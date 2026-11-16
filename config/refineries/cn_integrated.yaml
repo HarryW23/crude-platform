@@ -1,0 +1,27 @@
+# 字段說明見 sg_complex.yaml，含稅算法見 cn_fuel_shandong.yaml。
+# 收率和加工費是示意性的暫定值，請換成你認可的口徑。
+code: CN_INTEGRATED
+name_zh: 中國煉化一體化
+kind: integrated
+location: EAST_CHINA
+unit: CNY/t
+notes: >-
+  每噸原油的稅後毛利，面向「少油多化」的民營大煉化。收率按質量計；
+  聚乙烯、聚丙烯、乙二醇用期貨主力價近似現貨；沒有列出的產品和自用損失不計收入。
+  原料成本預設用 SC 估算，可換成 CN_CRUDE_ARAB_MEDIUM_CNY_T（需要先錄入運費基準費率）。
+feedstock:
+  - {code: CRUDE, name_zh: 原油（按 SC 估算）, price: CN_CRUDE_SC_CNY_T, share: 1.0}
+products:
+  - {code: GASOLINE, name_zh: 汽油,     price: EC_GASOLINE_92, yield: 0.10, consumption_tax: CN_CT_GASOLINE}
+  - {code: DIESEL,   name_zh: 柴油,     price: EC_DIESEL_0,    yield: 0.10, consumption_tax: CN_CT_DIESEL}
+  - {code: JET,      name_zh: 航煤,     price: CN_JET_EXWORKS, yield: 0.12}
+  - {code: PX,       name_zh: 對二甲苯, price: PX_CN_CNY_T,    yield: 0.20}
+  - {code: BENZENE,  name_zh: 純苯,     price: BENZENE_EC,     yield: 0.05}
+  - {code: PE,       name_zh: 聚乙烯,   price: LLDPE_CN,       yield: 0.08}
+  - {code: PP,       name_zh: 聚丙烯,   price: PP_CN,          yield: 0.07}
+  - {code: MEG,      name_zh: 乙二醇,   price: MEG_CN,         yield: 0.06}
+costs:
+  - {code: OPEX, name_zh: 加工費, value: 700, description: 能耗、輔料、人工、折舊等，暫定值}
+tax:
+  vat_rate: CN_VAT_RATE
+  surcharge_rate: CN_SURCHARGE_RATE

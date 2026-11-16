@@ -1,0 +1,15 @@
+# 字段說明見 sg_complex.yaml。收率是示意性的暫定值。
+code: SG_SIMPLE
+name_zh: 新加坡簡單型（Dubai）
+kind: benchmark
+location: SINGAPORE
+unit: USD/bbl
+notes: 拔頂型（無二次加工）煉廠加工迪拜原油的毛利，不含加工費。收率按體積計。
+feedstock:
+  - {code: DUBAI, name_zh: 迪拜原油, price: DUBAI_SWAP_M1, share: 1.0}
+products:
+  - {code: NAPHTHA,  name_zh: 石腦油,     price: SG_NAPHTHA,      yield: 0.10}
+  - {code: GASOLINE, name_zh: 汽油,       price: SG_GASOLINE_92,  yield: 0.12}
+  - {code: JET,      name_zh: 航煤,       price: SG_JET_KERO,     yield: 0.13}
+  - {code: GASOIL,   name_zh: 柴油,       price: SG_GASOIL_10PPM, yield: 0.28}
+  - {code: HSFO,     name_zh: 高硫燃料油, price: SG_HSFO_380 / BBL_PER_T_FUELOIL, yield: 0.33}

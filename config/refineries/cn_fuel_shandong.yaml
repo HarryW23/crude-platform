@@ -1,0 +1,27 @@
+# 字段說明見 sg_complex.yaml。
+# 含稅模型的算法（產品價、原料成本都是含增值稅價）：
+#   增值稅 = (產品收入 − 原料成本) / (1 + 稅率) × 稅率
+#   消費稅 = Σ 收率 × 從量稅額（只對寫了 consumption_tax 的產品）
+#   附加   = (增值稅 + 消費稅) × 附加稅率
+#   毛利   = 產品收入 − 原料成本 − 消費稅 − 增值稅 − 附加 − 各成本項
+# 收率和加工費是示意性的暫定值，請換成你認可的口徑。
+code: CN_FUEL_SD
+name_zh: 山東燃料型煉廠
+kind: fuel
+location: SHANDONG
+unit: CNY/t
+notes: >-
+  每噸原油的稅後毛利。收率按質量計；沒有列出的產品（瀝青、油漿、乾氣等）和自用損失不計收入。
+  原料成本預設用 SC 估算；要改成具體油種，把 price 換成 CN_CRUDE_ESPO_CNY_T 等指標，也可以按配比寫多行。
+feedstock:
+  - {code: CRUDE, name_zh: 原油（按 SC 估算）, price: CN_CRUDE_SC_CNY_T, share: 1.0}
+products:
+  - {code: GASOLINE, name_zh: 汽油,   price: SD_GASOLINE_92, yield: 0.30, consumption_tax: CN_CT_GASOLINE}
+  - {code: DIESEL,   name_zh: 柴油,   price: SD_DIESEL_0,    yield: 0.37, consumption_tax: CN_CT_DIESEL}
+  - {code: LPG,      name_zh: 液化氣, price: SD_LPG,         yield: 0.06}
+  - {code: PETCOKE,  name_zh: 石油焦, price: SD_PETCOKE,     yield: 0.07}
+costs:
+  - {code: OPEX, name_zh: 加工費, value: 300, description: 能耗、輔料、人工、折舊等，暫定值}
+tax:
+  vat_rate: CN_VAT_RATE
+  surcharge_rate: CN_SURCHARGE_RATE

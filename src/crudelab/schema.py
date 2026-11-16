@@ -1,0 +1,211 @@
+"""配置文件的結構定義。config/ 下每一種 YAML 條目對應這裡的一個類。
+
+所有類都禁止未知字段：字段名打錯會在載入時直接報錯，而不是被悄悄忽略。
+"""
+from __future__ import annotations
+
+from datetime import date
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+Code = Field(pattern=r"^[A-Z][A-Z0-9_]*$", max_length=64)
+EPOCH = date(1900, 1, 1)          # 「自始生效」的生效日期
+
+Module = Literal["spread", "balance", "geo", "refinery", "common"]
+SeriesKind = Literal["futures", "swap", "spot", "diff", "osp", "freight", "fx", "stock", "flow", "ratio"]
+Frequency = Literal["daily", "weekly", "monthly"]
+DEFAULT_VALID_DAYS: dict[str, int] = {"daily": 0, "weekly": 7, "monthly": 35}
+
+
+class Strict(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+# ------------------------------ 主數據 ------------------------------
+
+class AtomDef(Strict):
+    code: str
+    name_zh: str
+
+
+class UnitDef(Strict):
+    code: str
+    name_zh: str
+    dimension: str                 # 給人看的分類：price / fx / volume …
+
+
+class LocationDef(Strict):
+    code: str = Code
+    name_zh: str
+    region: str
+
+
+class CommodityDef(Strict):
+    code: str = Code
+    name_zh: str
+    category: Literal["crude", "product", "chem", "freight", "fx", "fundamental"]
+
+
+class SourceDef(Strict):
+    code: str = Field(pattern=r"^[a-z][a-z0-9_]*$")
+    name: str
+    kind: Literal["manual", "excel", "api"]
+    status: Literal["active", "reserved"]
+    priority: int = 50             # 越小越優先
+    notes: str | None = None
+
+
+class SeriesDef(Strict):
+    code: str = Code
+    name_zh: str
+    commodity: str
+    location: str
+    kind: SeriesKind
+    unit: str
+    frequency: Frequency = "daily"
+    valid_days: int | None = Field(default=None, ge=0)   # 一個值最多沿用幾天；缺省按頻率定
+    contract: str | None = None                          # 連續合約月序：M1 / M2 …
+    benchmark: str | None = None
+    module: Module = "common"
+    aliases: list[str] = []
+    eia_id: str | None = None
+    notes: str | None = None
+
+    @property
+    def resolved_valid_days(self) -> int:
+        return DEFAULT_VALID_DAYS[self.frequency] if self.valid_days is None else self.valid_days
+
+
+class CurveDef(Strict):
+    """期貨曲線模板，展開成 {code}_M{n} 多條連續合約序列。aliases 裡的 {n} 換成月序。"""
+    code: str = Code
+    name_zh: str
+    commodity: str
+    location: str
+    kind: SeriesKind
+    unit: str
+    months: list[int] = Field(min_length=1)
+    module: Module = "common"
+    aliases: list[str] = []
+
+    def expand(self) -> list[SeriesDef]:
+        return [SeriesDef(code=f"{self.code}_M{n}", name_zh=f"{self.name_zh} M{n}", commodity=self.commodity,
+                          location=self.location, kind=self.kind, unit=self.unit, contract=f"M{n}",
+                          module=self.module, aliases=[a.replace("{n}", str(n)) for a in self.aliases])
+                for n in self.months]
+
+
+class SeriesFile(Strict):
+    curves: list[CurveDef] = []
+    series: list[SeriesDef] = []
+
+
+# ------------------------------ 參數 ------------------------------
+
+class VersionDef(Strict):
+    valid_from: date
+    value: float
+    note: str | None = None
+
+
+class ParameterDef(Strict):
+    """參數 = 帶生效日期的常數。
+
+    寫 value（自始生效）或 versions（多個生效日期）二選一；兩個都不寫表示「必填但尚未提供」，
+    用到它的指標會顯示「缺參數」。verified=false 表示數值是暫定的，尚待核對。
+    """
+    key: str = Code
+    name_zh: str
+    unit: str = "1"
+    group: str = "通用"
+    description: str | None = None
+    value: float | None = None
+    versions: list[VersionDef] = []
+    verified: bool = False
+    model: str | None = None       # 由哪個煉廠模型生成（手寫的參數不填）
+
+    @model_validator(mode="after")
+    def _one_way(self):
+        if self.value is not None and self.versions:
+            raise ValueError("value 和 versions 只能寫一個")
+        return self
+
+    @property
+    def seed_versions(self) -> list[VersionDef]:
+        if self.value is not None:
+            return [VersionDef(valid_from=EPOCH, value=self.value)]
+        return sorted(self.versions, key=lambda v: v.valid_from)
+
+
+# ------------------------------ 指標 ------------------------------
+
+class IndicatorDef(Strict):
+    code: str = Code
+    name_zh: str
+    module: Module
+    group: str = "其他"            # 前台分組用
+    unit: str
+    formula: str
+    ffill_limit: int = Field(default=0, ge=0)   # 輸入缺值時最多沿用幾天（跨市場假期）
+    notes: str | None = None
+    hidden: bool = False           # 中間量：不在列表裡顯示，但可以被引用和追溯
+    model: str | None = None       # 由哪個煉廠模型生成
+
+
+# ------------------------------ 煉廠模型 ------------------------------
+
+class FeedDef(Strict):
+    code: str = Code
+    name_zh: str
+    price: str                     # 公式片段，單位必須等於模型的 unit
+    share: float = Field(gt=0, le=1)
+
+
+class ProductDef(Strict):
+    code: str = Code
+    name_zh: str
+    price: str                     # 公式片段，單位必須等於模型的 unit
+    yield_: float = Field(alias="yield", gt=0, le=1)
+    consumption_tax: str | None = None   # 從量消費稅的參數 key（單位同模型 unit）
+
+
+class CostDef(Strict):
+    code: str = Code
+    name_zh: str
+    value: float | None = None
+    description: str | None = None
+
+
+class TaxDef(Strict):
+    """中國的增值稅 + 附加。產品價與原料成本都是含增值稅價。"""
+    vat_rate: str                  # 參數 key
+    surcharge_rate: str            # 參數 key：城建 + 教育附加，計稅基礎是 增值稅 + 消費稅
+
+
+class RefineryModelDef(Strict):
+    code: str = Code
+    name_zh: str
+    kind: Literal["benchmark", "fuel", "integrated"]
+    location: str
+    unit: str                      # 模型口徑：每桶原油（USD/bbl）或每噸原油（CNY/t）
+    ffill_limit: int = Field(default=5, ge=0)
+    notes: str | None = None
+    feedstock: list[FeedDef] = Field(min_length=1)
+    products: list[ProductDef] = Field(min_length=1)
+    costs: list[CostDef] = []
+    tax: TaxDef | None = None
+
+    @model_validator(mode="after")
+    def _check(self):
+        if abs(sum(f.share for f in self.feedstock) - 1) > 1e-9:
+            raise ValueError("原料配比 share 之和必須等於 1")
+        if sum(p.yield_ for p in self.products) > 1 + 1e-9:
+            raise ValueError("產品收率之和不能超過 1")
+        for label, items in (("原料", self.feedstock), ("產品", self.products), ("成本", self.costs)):
+            codes = [i.code for i in items]
+            if len(codes) != len(set(codes)):
+                raise ValueError(f"{label}代碼重複")
+        if self.tax is None and any(p.consumption_tax for p in self.products):
+            raise ValueError("產品寫了 consumption_tax 但模型沒有 tax 設定")
+        return self

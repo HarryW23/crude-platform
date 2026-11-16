@@ -1,0 +1,72 @@
+# 原油：基準期貨、現貨、升貼水、官價。
+#   code      唯一代碼（大寫字母、數字、下劃線），會直接出現在公式裡
+#   kind      futures 期貨結算 / swap 掉期 / spot 現貨絕對價 / diff 現貨升貼水 / osp 官價
+#   benchmark 升貼水或官價所對應的基準（僅說明用途）
+#   aliases   導入 Excel 時用來自動識別列名的別名（路透 RIC、中英文名等）；後台指定過的對應也會自動記住
+#   frequency 缺省 daily。monthly 的值預設沿用 35 天，weekly 沿用 7 天（可用 valid_days 覆蓋）
+#
+# curves：連續合約曲線模板，展開成 {code}_M1、{code}_M2 …。aliases 裡的 {n} 換成月序。
+# 目前存的是連續合約（M1 = 近月），不含具體到期月份；換月當天的跳動沒有做調整。
+
+curves:
+  - {code: BRENT, name_zh: 布倫特期貨, commodity: BRENT, location: NWE, kind: futures, unit: USD/bbl,
+     months: [1, 2, 3], module: common, aliases: ["LCOc{n}", "Brent M{n}", "布倫特M{n}", "ICE Brent M{n}"]}
+  - {code: WTI, name_zh: WTI 期貨, commodity: WTI, location: CUSHING, kind: futures, unit: USD/bbl,
+     months: [1, 2, 3], module: common, aliases: ["CLc{n}", "WTI M{n}", "NYMEX WTI M{n}"]}
+  - {code: DUBAI_SWAP, name_zh: 迪拜掉期, commodity: DUBAI, location: MEG, kind: swap, unit: USD/bbl,
+     months: [1, 2, 3], module: common, aliases: ["Dubai Swap M{n}", "迪拜掉期M{n}", "Dubai M{n}"]}
+  - {code: SC, name_zh: 上海原油期貨, commodity: SC, location: CHINA, kind: futures, unit: CNY/bbl,
+     months: [1, 2, 3], module: common, aliases: ["ISCc{n}", "SC M{n}", "INE SC M{n}", "上海原油M{n}"]}
+
+series:
+  # ---------- 基準：現貨與其他期貨 ----------
+  - {code: DATED_BRENT, name_zh: 即期布倫特, commodity: BRENT, location: NWE, kind: spot, unit: USD/bbl, module: spread,
+     aliases: ["Dated Brent", "即期布倫特", "BFO-"]}
+  - {code: DUBAI_CASH, name_zh: 迪拜現貨, commodity: DUBAI, location: MEG, kind: spot, unit: USD/bbl, module: spread,
+     aliases: ["Dubai Cash", "Dubai Spot", "迪拜現貨"]}
+  - {code: OMAN_M1, name_zh: 阿曼期貨 M1, commodity: OMAN, location: MEG, kind: futures, unit: USD/bbl, module: spread,
+     contract: M1, aliases: ["Oman M1", "阿曼M1", "DME Oman", "GME Oman"]}
+  - {code: MURBAN_M1, name_zh: 穆爾班期貨 M1, commodity: MURBAN, location: MEG, kind: futures, unit: USD/bbl, module: spread,
+     contract: M1, aliases: ["Murban M1", "IFAD Murban", "穆爾班M1"]}
+  - {code: BRENT_DUBAI_EFS, name_zh: Brent-Dubai EFS, commodity: DUBAI, location: MEG, kind: diff, unit: USD/bbl, module: spread,
+     benchmark: BRENT, aliases: ["EFS", "Brent Dubai EFS"]}
+
+  # ---------- 現貨升貼水 ----------
+  - {code: ESPO_DIFF, name_zh: ESPO 升貼水, commodity: ESPO, location: RFE, kind: diff, unit: USD/bbl, module: spread,
+     benchmark: DUBAI, aliases: ["ESPO Diff", "ESPO 升貼水"]}
+  - {code: URALS_DIFF, name_zh: 烏拉爾升貼水, commodity: URALS, location: BALTIC, kind: diff, unit: USD/bbl, module: spread,
+     benchmark: DATED_BRENT, aliases: ["Urals Diff", "烏拉爾升貼水"]}
+  - {code: UPPER_ZAKUM_DIFF, name_zh: 上扎庫姆升貼水, commodity: UPPER_ZAKUM, location: MEG, kind: diff, unit: USD/bbl, module: spread,
+     benchmark: DUBAI, aliases: ["Upper Zakum Diff"]}
+  - {code: FORTIES_DIFF, name_zh: 福蒂斯升貼水, commodity: FORTIES, location: NWE, kind: diff, unit: USD/bbl, module: spread,
+     benchmark: DATED_BRENT, aliases: ["Forties Diff"]}
+  - {code: EKOFISK_DIFF, name_zh: 埃科菲斯克升貼水, commodity: EKOFISK, location: NWE, kind: diff, unit: USD/bbl, module: spread,
+     benchmark: DATED_BRENT, aliases: ["Ekofisk Diff"]}
+  - {code: JOHAN_SVERDRUP_DIFF, name_zh: 約翰斯維德魯普升貼水, commodity: JOHAN_SVERDRUP, location: NWE, kind: diff, unit: USD/bbl, module: spread,
+     benchmark: DATED_BRENT, aliases: ["Johan Sverdrup Diff", "JS Diff"]}
+  - {code: CPC_DIFF, name_zh: CPC 升貼水, commodity: CPC, location: MED, kind: diff, unit: USD/bbl, module: spread,
+     benchmark: DATED_BRENT, aliases: ["CPC Blend Diff", "CPC Diff"]}
+  - {code: BONNY_LIGHT_DIFF, name_zh: 邦尼輕質升貼水, commodity: BONNY_LIGHT, location: WAF, kind: diff, unit: USD/bbl, module: spread,
+     benchmark: DATED_BRENT, aliases: ["Bonny Light Diff"]}
+  - {code: WTI_MIDLAND_DIFF, name_zh: WTI 米德蘭升貼水, commodity: WTI_MIDLAND, location: USGC, kind: diff, unit: USD/bbl, module: spread,
+     benchmark: WTI, aliases: ["WTI Midland Diff", "Midland Diff"]}
+  - {code: WTI_MEH_DIFF, name_zh: WTI 休斯頓升貼水, commodity: WTI_MEH, location: USGC, kind: diff, unit: USD/bbl, module: spread,
+     benchmark: WTI, aliases: ["MEH Diff", "WTI Houston Diff"]}
+  - {code: MARS_DIFF, name_zh: Mars 升貼水, commodity: MARS, location: USGC, kind: diff, unit: USD/bbl, module: spread,
+     benchmark: WTI, aliases: ["Mars Diff"]}
+  - {code: WCS_HARDISTY_DIFF, name_zh: WCS（哈迪斯蒂）升貼水, commodity: WCS, location: CANADA, kind: diff, unit: USD/bbl, module: spread,
+     benchmark: WTI, aliases: ["WCS Diff", "WCS Hardisty Diff"]}
+  - {code: TUPI_CHINA_DIFF, name_zh: Tupi 到中國升貼水（到岸）, commodity: TUPI, location: CHINA, kind: diff, unit: USD/bbl, module: spread,
+     benchmark: BRENT, aliases: ["Tupi Diff", "Lula Diff"]}
+
+  # ---------- 中東官價（月度，亞洲方向，對 阿曼/迪拜 均價的升貼水） ----------
+  - {code: ARAB_LIGHT_OSP_ASIA, name_zh: 沙特輕質官價（亞洲）, commodity: ARAB_LIGHT, location: MEG, kind: osp, unit: USD/bbl,
+     frequency: monthly, module: spread, benchmark: "OMAN/DUBAI 均價", aliases: ["Arab Light OSP Asia", "沙輕OSP"]}
+  - {code: ARAB_MEDIUM_OSP_ASIA, name_zh: 沙特中質官價（亞洲）, commodity: ARAB_MEDIUM, location: MEG, kind: osp, unit: USD/bbl,
+     frequency: monthly, module: spread, benchmark: "OMAN/DUBAI 均價", aliases: ["Arab Medium OSP Asia", "沙中OSP"]}
+  - {code: ARAB_HEAVY_OSP_ASIA, name_zh: 沙特重質官價（亞洲）, commodity: ARAB_HEAVY, location: MEG, kind: osp, unit: USD/bbl,
+     frequency: monthly, module: spread, benchmark: "OMAN/DUBAI 均價", aliases: ["Arab Heavy OSP Asia", "沙重OSP"]}
+  - {code: BASRAH_MEDIUM_OSP_ASIA, name_zh: 巴士拉中質官價（亞洲）, commodity: BASRAH_MEDIUM, location: MEG, kind: osp, unit: USD/bbl,
+     frequency: monthly, module: spread, benchmark: "OMAN/DUBAI 均價", aliases: ["Basrah Medium OSP Asia"]}
+  - {code: BASRAH_HEAVY_OSP_ASIA, name_zh: 巴士拉重質官價（亞洲）, commodity: BASRAH_HEAVY, location: MEG, kind: osp, unit: USD/bbl,
+     frequency: monthly, module: spread, benchmark: "OMAN/DUBAI 均價", aliases: ["Basrah Heavy OSP Asia"]}

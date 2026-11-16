@@ -1,7 +1,8 @@
 """預留的數據源。接口已定，尚未接通。
 
 接通時要做的事（每個類都一樣）：
-  1. 在 series.yaml 給相關序列加上外部代碼，並在 master.sync_to_db 寫進 external_ids[<code>]
+  1. 給相關序列登記對方的代碼：在 schema.SeriesDef 加一個字段（參照 eia_id），
+     並在 master.sync_to_db 寫進 external_ids[<code>]
   2. 實現 status()：檢查密鑰等環境變量
   3. 實現 fetch()：調用對方接口，把結果轉成 Obs(series_code, obs_date, value, source_ref)
   4. 在 sources.yaml 把 status 從 reserved 改成 active

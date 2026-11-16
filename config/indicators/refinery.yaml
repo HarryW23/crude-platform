@@ -1,0 +1,70 @@
+# 模組四：煉廠盈利。這裡是單品裂解和中國口徑的成本換算；
+# 整廠毛利模型在 config/refineries/ 下聲明，會自動編譯成 RM_ 開頭的指標。
+# 字段說明見 spread.yaml。
+
+# ---------- 美國 ----------
+- {code: CRK_US_321, name_zh: 美國 3-2-1 裂解, module: refinery, group: 美國裂解, unit: USD/bbl,
+   formula: "(2 * RBOB_M1 + HO_M1) * GAL_PER_BBL / 3 - WTI_M1"}
+- {code: CRK_US_RBOB, name_zh: RBOB 汽油裂解, module: refinery, group: 美國裂解, unit: USD/bbl,
+   formula: "RBOB_M1 * GAL_PER_BBL - WTI_M1"}
+- {code: CRK_US_HO, name_zh: 取暖油裂解, module: refinery, group: 美國裂解, unit: USD/bbl,
+   formula: "HO_M1 * GAL_PER_BBL - WTI_M1"}
+
+# ---------- 西北歐（對 Brent M1） ----------
+- {code: CRK_ICE_GASOIL, name_zh: ICE 柴油裂解, module: refinery, group: 西北歐裂解, unit: USD/bbl,
+   formula: "GASOIL_ICE_M1 / BBL_PER_T_GASOIL - BRENT_M1"}
+- {code: CRK_NWE_GASOLINE, name_zh: Eurobob 汽油裂解, module: refinery, group: 西北歐裂解, unit: USD/bbl,
+   formula: "NWE_EUROBOB / BBL_PER_T_GASOLINE - BRENT_M1"}
+- {code: CRK_NWE_DIESEL, name_zh: 10ppm 柴油裂解, module: refinery, group: 西北歐裂解, unit: USD/bbl,
+   formula: "NWE_DIESEL_10PPM / BBL_PER_T_GASOIL - BRENT_M1"}
+- {code: CRK_NWE_JET, name_zh: 航煤裂解, module: refinery, group: 西北歐裂解, unit: USD/bbl,
+   formula: "NWE_JET / BBL_PER_T_JET - BRENT_M1"}
+- {code: CRK_NWE_NAPHTHA, name_zh: 石腦油裂解, module: refinery, group: 西北歐裂解, unit: USD/bbl,
+   formula: "NWE_NAPHTHA / BBL_PER_T_NAPHTHA - BRENT_M1"}
+- {code: CRK_NWE_HSFO, name_zh: 3.5% 燃料油裂解, module: refinery, group: 西北歐裂解, unit: USD/bbl,
+   formula: "RDAM_HSFO_35 / BBL_PER_T_FUELOIL - BRENT_M1"}
+
+# ---------- 新加坡（對 Dubai 掉期 M1） ----------
+- {code: CRK_SG_GASOLINE, name_zh: 92# 汽油裂解, module: refinery, group: 新加坡裂解, unit: USD/bbl,
+   formula: "SG_GASOLINE_92 - DUBAI_SWAP_M1"}
+- {code: CRK_SG_GASOIL, name_zh: 10ppm 柴油裂解, module: refinery, group: 新加坡裂解, unit: USD/bbl,
+   formula: "SG_GASOIL_10PPM - DUBAI_SWAP_M1"}
+- {code: CRK_SG_JET, name_zh: 航煤裂解, module: refinery, group: 新加坡裂解, unit: USD/bbl,
+   formula: "SG_JET_KERO - DUBAI_SWAP_M1"}
+- {code: CRK_SG_NAPHTHA, name_zh: 石腦油裂解, module: refinery, group: 新加坡裂解, unit: USD/bbl,
+   formula: "SG_NAPHTHA - DUBAI_SWAP_M1"}
+- {code: CRK_SG_HSFO, name_zh: 380cst 高硫燃料油裂解, module: refinery, group: 新加坡裂解, unit: USD/bbl,
+   formula: "SG_HSFO_380 / BBL_PER_T_FUELOIL - DUBAI_SWAP_M1"}
+- {code: CRK_SG_VLSFO, name_zh: 0.5% 低硫燃料油裂解, module: refinery, group: 新加坡裂解, unit: USD/bbl,
+   formula: "SG_VLSFO / BBL_PER_T_FUELOIL - DUBAI_SWAP_M1"}
+- {code: SPR_SG_REGRADE, name_zh: 航煤 − 柴油（regrade）, module: refinery, group: 新加坡裂解, unit: USD/bbl,
+   formula: "SG_JET_KERO - SG_GASOIL_10PPM"}
+- {code: SPR_SG_HILO, name_zh: 低硫 − 高硫燃料油, module: refinery, group: 新加坡裂解, unit: USD/t,
+   formula: "SG_VLSFO - SG_HSFO_380"}
+
+# ---------- 中國：原油到廠成本（人民幣/噸，含增值稅） ----------
+- {code: CN_CRUDE_SC_CNY_T, name_zh: 原油到廠成本（按 SC 估算）, module: refinery, group: 中國原油成本, unit: CNY/t,
+   formula: "SC_M1 * BBL_PER_T_CRUDE * (1 + CN_CRUDE_TARIFF) * (1 + CN_VAT_RATE) + CN_PORT_MISC",
+   notes: SC 是保稅交割價，加關稅、增值稅和雜費後近似中質含硫原油的到廠成本}
+- {code: CN_CRUDE_ESPO_CNY_T, name_zh: 原油到廠成本（ESPO）, module: refinery, group: 中國原油成本, unit: CNY/t, ffill_limit: 3,
+   formula: "CIF_CN_ESPO * BBL_PER_T_CRUDE * USDCNY * (1 + CN_CRUDE_TARIFF) * (1 + CN_VAT_RATE) + CN_PORT_MISC"}
+- {code: CN_CRUDE_ARAB_MEDIUM_CNY_T, name_zh: 原油到廠成本（沙特中質）, module: refinery, group: 中國原油成本, unit: CNY/t, ffill_limit: 3,
+   formula: "CIF_CN_ARAB_MEDIUM * BBL_PER_T_CRUDE * USDCNY * (1 + CN_CRUDE_TARIFF) * (1 + CN_VAT_RATE) + CN_PORT_MISC"}
+
+# ---------- 中國：成品油價差（含稅價相減，人民幣/噸） ----------
+- {code: CRK_SD_GASOLINE, name_zh: 山東汽油 − 原油成本, module: refinery, group: 中國成品油價差, unit: CNY/t, ffill_limit: 3,
+   formula: "SD_GASOLINE_92 - CN_CRUDE_SC_CNY_T", notes: 含稅價差，未扣消費稅}
+- {code: CRK_SD_DIESEL, name_zh: 山東柴油 − 原油成本, module: refinery, group: 中國成品油價差, unit: CNY/t, ffill_limit: 3,
+   formula: "SD_DIESEL_0 - CN_CRUDE_SC_CNY_T", notes: 含稅價差，未扣消費稅}
+- {code: SPR_SD_GASOLINE_DIESEL, name_zh: 山東汽油 − 柴油, module: refinery, group: 中國成品油價差, unit: CNY/t,
+   formula: "SD_GASOLINE_92 - SD_DIESEL_0"}
+
+# ---------- 化工價差 ----------
+- {code: SPR_PXN, name_zh: PX − 石腦油（PXN）, module: refinery, group: 化工價差, unit: USD/t,
+   formula: "PX_CFR_CHINA - JAPAN_NAPHTHA"}
+- {code: SPR_ETHYLENE_NAPHTHA, name_zh: 乙烯 − 石腦油, module: refinery, group: 化工價差, unit: USD/t,
+   formula: "ETHYLENE_CFR_NEA - JAPAN_NAPHTHA"}
+- {code: PX_CN_CNY_T, name_zh: PX 折人民幣含稅價, module: refinery, group: 化工價差, unit: CNY/t, ffill_limit: 3,
+   formula: "PX_CFR_CHINA * USDCNY * (1 + CN_PX_TARIFF) * (1 + CN_VAT_RATE)"}
+- {code: PTA_PROCESSING_FEE, name_zh: PTA 加工費, module: refinery, group: 化工價差, unit: CNY/t, ffill_limit: 3,
+   formula: "PTA_CN - PTA_PX_RATIO * PX_CN_CNY_T"}

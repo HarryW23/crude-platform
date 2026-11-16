@@ -1,0 +1,22 @@
+# 煉廠模型：聲明原料、產品收率、成本和稅，系統自動編譯成一組指標（代碼以 RM_{code}_ 開頭）。
+#   unit       模型口徑。USD/bbl = 每桶原油；CNY/t = 每噸原油。所有 price 的單位都必須等於它（載入時檢查）
+#   feedstock  原料及配比（share 之和 = 1）。price 是公式片段
+#   products   產品及收率（之和 ≤ 1，差額是自用和損失）。price 是公式片段
+#   costs      成本項（單位同 unit）。不寫 value = 必填但尚未提供
+#   tax        中國的增值稅與附加（見 cn_fuel_shandong.yaml）
+# 收率、配比、成本都會變成帶生效日期的參數，之後在後台修改。
+# 這裡的收率是示意性的暫定值，請換成你認可的口徑。
+code: SG_COMPLEX
+name_zh: 新加坡複雜型（Dubai）
+kind: benchmark
+location: SINGAPORE
+unit: USD/bbl
+notes: 裂化型煉廠加工迪拜原油的毛利，不含加工費。收率按體積計。
+feedstock:
+  - {code: DUBAI, name_zh: 迪拜原油, price: DUBAI_SWAP_M1, share: 1.0}
+products:
+  - {code: NAPHTHA,  name_zh: 石腦油,     price: SG_NAPHTHA,      yield: 0.07}
+  - {code: GASOLINE, name_zh: 汽油,       price: SG_GASOLINE_92,  yield: 0.22}
+  - {code: JET,      name_zh: 航煤,       price: SG_JET_KERO,     yield: 0.14}
+  - {code: GASOIL,   name_zh: 柴油,       price: SG_GASOIL_10PPM, yield: 0.36}
+  - {code: HSFO,     name_zh: 高硫燃料油, price: SG_HSFO_380 / BBL_PER_T_FUELOIL, yield: 0.14}

@@ -1,0 +1,21 @@
+# 參數 = 帶生效日期的常數。這裡給的是初始值；之後在後台修改（可指定生效日期），以後台為準。
+#   value     自始生效的單一數值
+#   versions  多個生效日期：[{valid_from: 2019-04-01, value: 0.13, note: …}]
+#   兩個都不寫 = 必填但尚未提供，用到它的指標會顯示「缺參數」
+#   verified  false（缺省）表示數值是暫定的，尚待你核對；後台核對後會記為已核對
+#   unit      會參與公式的量綱檢查；無量綱不用寫
+
+- {key: GAL_PER_BBL, name_zh: 每桶加侖數, value: 42, unit: gal/bbl, group: 單位換算, verified: true,
+   description: 美制定義值}
+- {key: BBL_PER_T_GASOIL, name_zh: 柴油 桶/噸, value: 7.45, unit: bbl/t, group: 單位換算,
+   description: ICE 柴油、西北歐柴油折桶常用係數}
+- {key: BBL_PER_T_GASOLINE, name_zh: 汽油 桶/噸, value: 8.33, unit: bbl/t, group: 單位換算,
+   description: Eurobob 折桶常用係數}
+- {key: BBL_PER_T_JET, name_zh: 航煤 桶/噸, value: 7.88, unit: bbl/t, group: 單位換算,
+   description: 西北歐航煤折桶常用係數}
+- {key: BBL_PER_T_NAPHTHA, name_zh: 石腦油 桶/噸, value: 9.0, unit: bbl/t, group: 單位換算,
+   description: 亞洲石腦油常用 9.0，西北歐常用 8.9}
+- {key: BBL_PER_T_FUELOIL, name_zh: 燃料油 桶/噸, value: 6.35, unit: bbl/t, group: 單位換算,
+   description: 高硫燃料油折桶常用係數}
+- {key: BBL_PER_T_CRUDE, name_zh: 原油 桶/噸（通用）, value: 7.33, unit: bbl/t, group: 單位換算,
+   description: 中質原油的通用係數；各油種實際值隨 API 度不同，需要精確時請為該油種單獨建參數}

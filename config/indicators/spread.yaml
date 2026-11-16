@@ -1,0 +1,111 @@
+# 模組一：地域價差。
+# 指標全部由「公式 + 參數」構成，載入時會做量綱檢查（聲明的 unit 必須等於公式推導出的單位）。
+#   formula      可用 + - * / ** 與括號；名字可以是 序列代碼 / 參數 key / 其他指標代碼
+#                函數：lag(x, n) 滯後 n 期、ma(x, n) n 期均值、diff(x, n) n 期變化、abs(x)
+#   group        前台分組
+#   ffill_limit  輸入缺值時最多沿用幾天（處理各市場假期不一致），缺省 0 = 不沿用
+#   hidden       中間量，不在列表顯示
+# 簡化之處：升貼水和官價的計價期一律用 M1 或當日現貨近似，沒有按實際計價月份對齊。
+
+# ---------- 基準價差 ----------
+- {code: SPR_BRENT_WTI, name_zh: Brent − WTI, module: spread, group: 基準價差, unit: USD/bbl,
+   formula: "BRENT_M1 - WTI_M1"}
+- {code: SPR_BRENT_DUBAI, name_zh: Brent − Dubai（期貨減掉期）, module: spread, group: 基準價差, unit: USD/bbl,
+   formula: "BRENT_M1 - DUBAI_SWAP_M1"}
+- {code: SPR_DATED_FRONTLINE, name_zh: 即期 Brent − Brent M1, module: spread, group: 基準價差, unit: USD/bbl,
+   formula: "DATED_BRENT - BRENT_M1"}
+- {code: SPR_OMAN_DUBAI, name_zh: Oman − Dubai, module: spread, group: 基準價差, unit: USD/bbl,
+   formula: "OMAN_M1 - DUBAI_SWAP_M1"}
+- {code: SPR_MURBAN_BRENT, name_zh: Murban − Brent, module: spread, group: 基準價差, unit: USD/bbl,
+   formula: "MURBAN_M1 - BRENT_M1"}
+- {code: SC_M1_USD, name_zh: SC 折美元, module: spread, group: 基準價差, unit: USD/bbl, ffill_limit: 3,
+   formula: "SC_M1 / USDCNY"}
+- {code: SPR_SC_BRENT, name_zh: SC − Brent（美元）, module: spread, group: 基準價差, unit: USD/bbl, ffill_limit: 3,
+   formula: "SC_M1_USD - BRENT_M1"}
+- {code: SPR_SC_DUBAI, name_zh: SC − Dubai（美元）, module: spread, group: 基準價差, unit: USD/bbl, ffill_limit: 3,
+   formula: "SC_M1_USD - DUBAI_SWAP_M1"}
+
+# ---------- 月差結構 ----------
+- {code: TS_BRENT_M1_M2, name_zh: Brent M1 − M2, module: spread, group: 月差結構, unit: USD/bbl,
+   formula: "BRENT_M1 - BRENT_M2"}
+- {code: TS_BRENT_M1_M3, name_zh: Brent M1 − M3, module: spread, group: 月差結構, unit: USD/bbl,
+   formula: "BRENT_M1 - BRENT_M3"}
+- {code: TS_WTI_M1_M2, name_zh: WTI M1 − M2, module: spread, group: 月差結構, unit: USD/bbl,
+   formula: "WTI_M1 - WTI_M2"}
+- {code: TS_WTI_M1_M3, name_zh: WTI M1 − M3, module: spread, group: 月差結構, unit: USD/bbl,
+   formula: "WTI_M1 - WTI_M3"}
+- {code: TS_DUBAI_M1_M3, name_zh: Dubai M1 − M3, module: spread, group: 月差結構, unit: USD/bbl,
+   formula: "DUBAI_SWAP_M1 - DUBAI_SWAP_M3"}
+- {code: TS_SC_M1_M3, name_zh: SC M1 − M3, module: spread, group: 月差結構, unit: CNY/bbl,
+   formula: "SC_M1 - SC_M3"}
+
+# ---------- 現貨絕對價（基準 + 升貼水，裝港價） ----------
+- {code: OMAN_DUBAI_AVG, name_zh: 阿曼/迪拜均價, module: spread, group: 現貨絕對價, unit: USD/bbl, hidden: true,
+   formula: "(OMAN_M1 + DUBAI_CASH) / 2"}
+- {code: OUT_ARAB_LIGHT, name_zh: 沙特輕質, module: spread, group: 現貨絕對價, unit: USD/bbl,
+   formula: "OMAN_DUBAI_AVG + ARAB_LIGHT_OSP_ASIA"}
+- {code: OUT_ARAB_MEDIUM, name_zh: 沙特中質, module: spread, group: 現貨絕對價, unit: USD/bbl,
+   formula: "OMAN_DUBAI_AVG + ARAB_MEDIUM_OSP_ASIA"}
+- {code: OUT_BASRAH_MEDIUM, name_zh: 巴士拉中質, module: spread, group: 現貨絕對價, unit: USD/bbl,
+   formula: "OMAN_DUBAI_AVG + BASRAH_MEDIUM_OSP_ASIA"}
+- {code: OUT_UPPER_ZAKUM, name_zh: 上扎庫姆, module: spread, group: 現貨絕對價, unit: USD/bbl,
+   formula: "DUBAI_SWAP_M1 + UPPER_ZAKUM_DIFF"}
+- {code: OUT_ESPO, name_zh: ESPO, module: spread, group: 現貨絕對價, unit: USD/bbl,
+   formula: "DUBAI_SWAP_M1 + ESPO_DIFF"}
+- {code: OUT_URALS, name_zh: 烏拉爾, module: spread, group: 現貨絕對價, unit: USD/bbl,
+   formula: "DATED_BRENT + URALS_DIFF"}
+- {code: OUT_FORTIES, name_zh: 福蒂斯, module: spread, group: 現貨絕對價, unit: USD/bbl,
+   formula: "DATED_BRENT + FORTIES_DIFF"}
+- {code: OUT_CPC, name_zh: CPC 混合, module: spread, group: 現貨絕對價, unit: USD/bbl,
+   formula: "DATED_BRENT + CPC_DIFF"}
+- {code: OUT_BONNY_LIGHT, name_zh: 邦尼輕質, module: spread, group: 現貨絕對價, unit: USD/bbl,
+   formula: "DATED_BRENT + BONNY_LIGHT_DIFF"}
+- {code: OUT_WTI_MEH, name_zh: WTI 休斯頓, module: spread, group: 現貨絕對價, unit: USD/bbl,
+   formula: "WTI_M1 + WTI_MEH_DIFF"}
+- {code: OUT_MARS, name_zh: Mars, module: spread, group: 現貨絕對價, unit: USD/bbl,
+   formula: "WTI_M1 + MARS_DIFF"}
+- {code: OUT_WCS, name_zh: WCS（哈迪斯蒂）, module: spread, group: 現貨絕對價, unit: USD/bbl,
+   formula: "WTI_M1 + WCS_HARDISTY_DIFF"}
+
+# ---------- 品質價差 ----------
+- {code: QS_MARS_MEH, name_zh: Mars − WTI 休斯頓（酸甜價差）, module: spread, group: 品質價差, unit: USD/bbl,
+   formula: "MARS_DIFF - WTI_MEH_DIFF"}
+- {code: QS_ARAB_HEAVY_LIGHT, name_zh: 沙特重質 − 輕質（官價）, module: spread, group: 品質價差, unit: USD/bbl,
+   formula: "ARAB_HEAVY_OSP_ASIA - ARAB_LIGHT_OSP_ASIA"}
+- {code: QS_URALS_ESPO, name_zh: 烏拉爾 − ESPO, module: spread, group: 品質價差, unit: USD/bbl,
+   formula: "OUT_URALS - OUT_ESPO"}
+
+# ---------- 運費（折 美元/桶；需要先錄入當年的基準費率） ----------
+- {code: FRT_TD3C_BBL, name_zh: 中東→中國 VLCC, module: spread, group: 運費, unit: USD/bbl,
+   formula: "TD3C_WS / WS_BASE * FLAT_TD3C / BBL_PER_T_CRUDE"}
+- {code: FRT_TD15_BBL, name_zh: 西非→中國 VLCC, module: spread, group: 運費, unit: USD/bbl,
+   formula: "TD15_WS / WS_BASE * FLAT_TD15 / BBL_PER_T_CRUDE"}
+- {code: FRT_TD20_BBL, name_zh: 西非→歐洲 蘇伊士型, module: spread, group: 運費, unit: USD/bbl,
+   formula: "TD20_WS / WS_BASE * FLAT_TD20 / BBL_PER_T_CRUDE"}
+- {code: FRT_TD25_BBL, name_zh: 美灣→歐洲 阿芙拉型, module: spread, group: 運費, unit: USD/bbl,
+   formula: "TD25_WS / WS_BASE * FLAT_TD25 / BBL_PER_T_CRUDE"}
+
+# ---------- 到岸成本：中國（美元/桶，不含稅） ----------
+- {code: CIF_CN_ARAB_LIGHT, name_zh: 沙特輕質到中國, module: spread, group: 中國到岸成本, unit: USD/bbl, ffill_limit: 3,
+   formula: "OUT_ARAB_LIGHT + FRT_TD3C_BBL"}
+- {code: CIF_CN_ARAB_MEDIUM, name_zh: 沙特中質到中國, module: spread, group: 中國到岸成本, unit: USD/bbl, ffill_limit: 3,
+   formula: "OUT_ARAB_MEDIUM + FRT_TD3C_BBL"}
+- {code: CIF_CN_BASRAH_MEDIUM, name_zh: 巴士拉中質到中國, module: spread, group: 中國到岸成本, unit: USD/bbl, ffill_limit: 3,
+   formula: "OUT_BASRAH_MEDIUM + FRT_TD3C_BBL"}
+- {code: CIF_CN_ESPO, name_zh: ESPO 到中國, module: spread, group: 中國到岸成本, unit: USD/bbl, ffill_limit: 3,
+   formula: "OUT_ESPO + ESPO_FREIGHT_CN"}
+- {code: CIF_CN_BONNY_LIGHT, name_zh: 邦尼輕質到中國, module: spread, group: 中國到岸成本, unit: USD/bbl, ffill_limit: 3,
+   formula: "OUT_BONNY_LIGHT + FRT_TD15_BBL"}
+- {code: CIF_CN_TUPI, name_zh: Tupi 到中國, module: spread, group: 中國到岸成本, unit: USD/bbl, ffill_limit: 3,
+   formula: "BRENT_M1 + TUPI_CHINA_DIFF", notes: Tupi 的升貼水本身就是到岸價，不另加運費}
+
+# ---------- 套利窗口（大於 0 = 窗口打開） ----------
+- {code: ARB_USGC_NWE, name_zh: 美灣 WTI → 西北歐, module: spread, group: 套利窗口, unit: USD/bbl, ffill_limit: 3,
+   formula: "OUT_FORTIES - OUT_WTI_MEH - FRT_TD25_BBL",
+   notes: 以福蒂斯作為西北歐輕質低硫的可比油種}
+- {code: ARB_WAF_EAST_VS_WEST, name_zh: 西非東運相對西運的運費差, module: spread, group: 套利窗口, unit: USD/bbl, ffill_limit: 3,
+   formula: "FRT_TD15_BBL - FRT_TD20_BBL",
+   notes: 西非原油去亞洲比去歐洲多付的運費；Brent-Dubai 價差高於此值時西非油傾向西運}
+- {code: ARB_SC_VS_ARAB_MEDIUM, name_zh: SC − 沙特中質到岸成本, module: spread, group: 套利窗口, unit: USD/bbl, ffill_limit: 3,
+   formula: "SC_M1_USD - CIF_CN_ARAB_MEDIUM",
+   notes: 大於 0 表示交割到 SC 比現貨進口有溢價（未計倉儲和資金成本）}

@@ -32,6 +32,8 @@
 - {code: HSFO,          name_zh: 高硫燃料油,       category: product}
 - {code: VLSFO,         name_zh: 低硫燃料油,       category: product}
 - {code: BITUMEN,       name_zh: 瀝青,             category: product}
+- {code: LPG,           name_zh: 液化氣,           category: product}
+- {code: PETCOKE,       name_zh: 石油焦,           category: product}
 # 化工品（一體化煉廠用）
 - {code: PX,            name_zh: 對二甲苯,         category: chem}
 - {code: BENZENE,       name_zh: 純苯,             category: chem}

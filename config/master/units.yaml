@@ -1,11 +1,24 @@
-# 單位字典。序列按「報價原生單位」存儲，換算只在指標公式裡用參數完成。
-- {code: USD/bbl, name_zh: 美元/桶, dimension: price}
-- {code: USD/t,   name_zh: 美元/噸, dimension: price}
-- {code: USD/gal, name_zh: 美元/加侖, dimension: price}
-- {code: CNY/bbl, name_zh: 人民幣/桶, dimension: price}
-- {code: CNY/t,   name_zh: 人民幣/噸, dimension: price}
-- {code: WS,      name_zh: WS 點, dimension: freight}
-- {code: USD/CNY, name_zh: 人民幣兌美元匯率, dimension: fx}
-- {code: kb,      name_zh: 千桶, dimension: volume}
-- {code: kb/d,    name_zh: 千桶/日, dimension: flow}
-- {code: pct,     name_zh: 百分比, dimension: ratio}
+# 單位。atoms 是原子單位；units 是序列可以使用的單位（由原子用 * / 連成）。
+# 公式會按這裡的定義做量綱檢查。無量綱（比率、收率、稅率）寫作 "1"，不需要登記。
+atoms:
+  - {code: USD, name_zh: 美元}
+  - {code: CNY, name_zh: 人民幣}
+  - {code: bbl, name_zh: 桶}
+  - {code: t,   name_zh: 噸}
+  - {code: gal, name_zh: 加侖}
+  - {code: kb,  name_zh: 千桶}
+  - {code: d,   name_zh: 日}
+  - {code: WS,  name_zh: WS 點}
+  - {code: pct, name_zh: 百分點}
+
+units:
+  - {code: USD/bbl, name_zh: 美元/桶,   dimension: price}
+  - {code: USD/t,   name_zh: 美元/噸,   dimension: price}
+  - {code: USD/gal, name_zh: 美元/加侖, dimension: price}
+  - {code: CNY/bbl, name_zh: 人民幣/桶, dimension: price}
+  - {code: CNY/t,   name_zh: 人民幣/噸, dimension: price}
+  - {code: CNY/USD, name_zh: 人民幣/美元, dimension: fx}
+  - {code: WS,      name_zh: WS 點,     dimension: freight}
+  - {code: kb,      name_zh: 千桶,      dimension: volume}
+  - {code: kb/d,    name_zh: 千桶/日,   dimension: flow}
+  - {code: pct,     name_zh: 百分點,    dimension: ratio}

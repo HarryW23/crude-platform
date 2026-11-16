@@ -1,0 +1,80 @@
+# 成品油與化工品。字段說明見 crude.yaml。
+
+curves:
+  - {code: GASOIL_ICE, name_zh: ICE 柴油期貨, commodity: GASOIL, location: NWE, kind: futures, unit: USD/t,
+     months: [1, 2, 3], module: refinery, aliases: ["LGOc{n}", "ICE Gasoil M{n}"]}
+  - {code: RBOB, name_zh: RBOB 汽油期貨, commodity: GASOLINE, location: NYH, kind: futures, unit: USD/gal,
+     months: [1, 2], module: refinery, aliases: ["RBc{n}", "RBOB M{n}"]}
+  - {code: HO, name_zh: 取暖油（ULSD）期貨, commodity: GASOIL, location: NYH, kind: futures, unit: USD/gal,
+     months: [1, 2], module: refinery, aliases: ["HOc{n}", "Heating Oil M{n}", "ULSD M{n}"]}
+
+series:
+  # ---------- 新加坡 / 亞洲 ----------
+  - {code: SG_GASOLINE_92, name_zh: 新加坡 92# 汽油, commodity: GASOLINE, location: SINGAPORE, kind: spot, unit: USD/bbl, module: refinery,
+     aliases: ["Singapore Mogas 92", "Sing 92", "新加坡汽油92"]}
+  - {code: SG_GASOIL_10PPM, name_zh: 新加坡 10ppm 柴油, commodity: GASOIL, location: SINGAPORE, kind: spot, unit: USD/bbl, module: refinery,
+     aliases: ["Singapore Gasoil 10ppm", "Sing Gasoil", "新加坡柴油"]}
+  - {code: SG_JET_KERO, name_zh: 新加坡航煤, commodity: JET, location: SINGAPORE, kind: spot, unit: USD/bbl, module: refinery,
+     aliases: ["Singapore Jet Kero", "Sing Jet", "新加坡航煤"]}
+  - {code: SG_NAPHTHA, name_zh: 新加坡石腦油, commodity: NAPHTHA, location: SINGAPORE, kind: spot, unit: USD/bbl, module: refinery,
+     aliases: ["Singapore Naphtha", "Naphtha FOB Singapore", "新加坡石腦油"]}
+  - {code: SG_HSFO_380, name_zh: 新加坡 380cst 高硫燃料油, commodity: HSFO, location: SINGAPORE, kind: spot, unit: USD/t, module: refinery,
+     aliases: ["Singapore 380cst", "Sing HSFO 380", "新加坡高硫380"]}
+  - {code: SG_VLSFO, name_zh: 新加坡 0.5% 低硫燃料油, commodity: VLSFO, location: SINGAPORE, kind: spot, unit: USD/t, module: refinery,
+     aliases: ["Singapore VLSFO", "Sing Marine 0.5%", "新加坡低硫"]}
+  - {code: JAPAN_NAPHTHA, name_zh: 日本到岸石腦油, commodity: NAPHTHA, location: JAPAN, kind: spot, unit: USD/t, module: refinery,
+     aliases: ["Naphtha C+F Japan", "Japan Naphtha", "MOPJ", "日本石腦油"]}
+
+  # ---------- 西北歐 ----------
+  - {code: NWE_EUROBOB, name_zh: 西北歐 Eurobob 汽油, commodity: GASOLINE, location: NWE, kind: spot, unit: USD/t, module: refinery,
+     aliases: ["Eurobob", "NWE Gasoline"]}
+  - {code: NWE_DIESEL_10PPM, name_zh: 西北歐 10ppm 柴油, commodity: GASOIL, location: NWE, kind: spot, unit: USD/t, module: refinery,
+     aliases: ["NWE Diesel 10ppm", "ULSD NWE"]}
+  - {code: NWE_JET, name_zh: 西北歐航煤, commodity: JET, location: NWE, kind: spot, unit: USD/t, module: refinery,
+     aliases: ["NWE Jet", "Jet CIF NWE"]}
+  - {code: NWE_NAPHTHA, name_zh: 西北歐石腦油, commodity: NAPHTHA, location: NWE, kind: spot, unit: USD/t, module: refinery,
+     aliases: ["NWE Naphtha", "Naphtha CIF NWE"]}
+  - {code: RDAM_HSFO_35, name_zh: 鹿特丹 3.5% 燃料油, commodity: HSFO, location: NWE, kind: spot, unit: USD/t, module: refinery,
+     aliases: ["Rotterdam 3.5% Barges", "Rdam HSFO"]}
+
+  # ---------- 中國：成品油（均為含稅價） ----------
+  - {code: SD_GASOLINE_92, name_zh: 山東地煉 92# 汽油, commodity: GASOLINE, location: SHANDONG, kind: spot, unit: CNY/t, module: refinery,
+     aliases: ["山東汽油92", "山東地煉汽油", "山東92#"]}
+  - {code: SD_DIESEL_0, name_zh: 山東地煉 0# 柴油, commodity: GASOIL, location: SHANDONG, kind: spot, unit: CNY/t, module: refinery,
+     aliases: ["山東柴油0", "山東地煉柴油", "山東0#"]}
+  - {code: SD_LPG, name_zh: 山東民用液化氣, commodity: LPG, location: SHANDONG, kind: spot, unit: CNY/t, module: refinery,
+     aliases: ["山東液化氣", "山東民用氣", "山東LPG"]}
+  - {code: SD_PETCOKE, name_zh: 山東地煉石油焦, commodity: PETCOKE, location: SHANDONG, kind: spot, unit: CNY/t, module: refinery,
+     aliases: ["山東石油焦", "山東地煉石油焦"]}
+  - {code: EC_GASOLINE_92, name_zh: 華東 92# 汽油, commodity: GASOLINE, location: EAST_CHINA, kind: spot, unit: CNY/t, module: refinery,
+     aliases: ["華東汽油92", "華東92#"]}
+  - {code: EC_DIESEL_0, name_zh: 華東 0# 柴油, commodity: GASOIL, location: EAST_CHINA, kind: spot, unit: CNY/t, module: refinery,
+     aliases: ["華東柴油0", "華東0#"]}
+  - {code: CN_JET_EXWORKS, name_zh: 中國航煤出廠價, commodity: JET, location: CHINA, kind: spot, unit: CNY/t, module: refinery,
+     frequency: monthly, aliases: ["航煤出廠價", "中國航煤出廠價"]}
+  - {code: FU_M1, name_zh: 上期所燃料油主力, commodity: HSFO, location: CHINA, kind: futures, unit: CNY/t, module: refinery,
+     aliases: ["FU主力", "SHFE FU"]}
+  - {code: LU_M1, name_zh: INE 低硫燃料油主力, commodity: VLSFO, location: CHINA, kind: futures, unit: CNY/t, module: refinery,
+     aliases: ["LU主力", "INE LU"]}
+  - {code: BU_M1, name_zh: 上期所瀝青主力, commodity: BITUMEN, location: CHINA, kind: futures, unit: CNY/t, module: refinery,
+     aliases: ["BU主力", "瀝青主力"]}
+
+  # ---------- 化工品（一體化煉廠用） ----------
+  - {code: PX_CFR_CHINA, name_zh: PX CFR 中國, commodity: PX, location: CHINA, kind: spot, unit: USD/t, module: refinery,
+     aliases: ["PX CFR China", "PX CFR中國"]}
+  - {code: BENZENE_FOB_KOREA, name_zh: 純苯 FOB 韓國, commodity: BENZENE, location: KOREA, kind: spot, unit: USD/t, module: refinery,
+     aliases: ["Benzene FOB Korea", "純苯FOB韓國"]}
+  - {code: BENZENE_EC, name_zh: 華東純苯, commodity: BENZENE, location: EAST_CHINA, kind: spot, unit: CNY/t, module: refinery,
+     aliases: ["華東純苯", "純苯華東"]}
+  - {code: ETHYLENE_CFR_NEA, name_zh: 乙烯 CFR 東北亞, commodity: ETHYLENE, location: NEA, kind: spot, unit: USD/t, module: refinery,
+     aliases: ["Ethylene CFR NE Asia", "乙烯CFR東北亞"]}
+  - {code: PROPYLENE_CFR_CHINA, name_zh: 丙烯 CFR 中國, commodity: PROPYLENE, location: CHINA, kind: spot, unit: USD/t, module: refinery,
+     aliases: ["Propylene CFR China", "丙烯CFR中國"]}
+  - {code: PP_CN, name_zh: 聚丙烯期貨主力, commodity: PP, location: CHINA, kind: futures, unit: CNY/t, module: refinery,
+     aliases: ["PP主力", "DCE PP"]}
+  - {code: LLDPE_CN, name_zh: LLDPE 期貨主力, commodity: LLDPE, location: CHINA, kind: futures, unit: CNY/t, module: refinery,
+     aliases: ["L主力", "塑料主力", "DCE LLDPE"]}
+  - {code: PTA_CN, name_zh: PTA 期貨主力, commodity: PTA, location: CHINA, kind: futures, unit: CNY/t, module: refinery,
+     aliases: ["TA主力", "PTA主力"]}
+  - {code: MEG_CN, name_zh: 乙二醇期貨主力, commodity: MEG_CHEM, location: CHINA, kind: futures, unit: CNY/t, module: refinery,
+     aliases: ["EG主力", "乙二醇主力"]}

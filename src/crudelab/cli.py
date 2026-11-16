@@ -1,6 +1,7 @@
 """命令行入口。
 
-  crudelab init                       建表並同步 config/ 下的配置
+  crudelab init                       升級表結構並同步 config/ 下的配置
+  crudelab check                      只校驗 config/，不碰數據庫
   crudelab serve [--port 8000]        啟動後台
   crudelab import 文件 [--source …]   導入 Excel / CSV（只入庫能自動識別的列）
   crudelab pull eia                   從拉取型數據源取數
@@ -20,12 +21,10 @@ from .settings import get_settings
 
 
 def _init() -> dict:
-    from .master import load_config, sync_to_db
+    from .api.app import load_and_sync
     settings = get_settings()
     db.init_engine(settings)
-    cfg = load_config(settings.config_dir)
-    with db.session_scope() as session:
-        return sync_to_db(session, cfg)
+    return load_and_sync(settings)[1]
 
 
 def cmd_init(_args) -> int:
@@ -35,8 +34,21 @@ def cmd_init(_args) -> int:
     return 0
 
 
+def cmd_check(_args) -> int:
+    from .config import ConfigError, load_config
+    try:
+        cfg = load_config(get_settings().config_dir)
+    except ConfigError as exc:
+        print(exc, file=sys.stderr)
+        return 1
+    print(f"配置無誤：{len(cfg.series)} 條序列，{len(cfg.parameters)} 個參數，"
+          f"{len(cfg.indicators)} 個指標，{len(cfg.refineries)} 個煉廠模型")
+    return 0
+
+
 def cmd_serve(args) -> int:
     import uvicorn
+
     from .api.app import create_app
     uvicorn.run(create_app(), host=args.host, port=args.port)
     return 0
@@ -90,7 +102,7 @@ def cmd_make_sample(args) -> int:
 
 
 def cmd_purge(args) -> int:
-    from .models import AuditLog, Observation
+    from .models import AuditLog, Observation, ObservationRevision
     _init()
     with db.session_scope() as session:
         n = session.scalar(select(func.count()).select_from(Observation).where(
@@ -99,7 +111,9 @@ def cmd_purge(args) -> int:
             print(f"數據源 {args.source} 共有 {n} 個數據點。確認刪除請加 --yes")
             return 1
         session.execute(delete(Observation).where(Observation.source_code == args.source))
-        session.add(AuditLog(action="purge", entity="data_source", entity_id=args.source, detail={"deleted": n}))
+        session.execute(delete(ObservationRevision).where(ObservationRevision.source_code == args.source))
+        session.add(AuditLog(actor="local", action="purge", entity="data_source", entity_id=args.source,
+                             detail={"deleted": n}))
     print(f"已刪除 {n} 個數據點")
     return 0
 
@@ -107,7 +121,8 @@ def cmd_purge(args) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="crudelab", description="原油研究平台")
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("init", help="建表並同步配置").set_defaults(func=cmd_init)
+    sub.add_parser("init", help="升級表結構並同步配置").set_defaults(func=cmd_init)
+    sub.add_parser("check", help="只校驗配置").set_defaults(func=cmd_check)
     p = sub.add_parser("serve", help="啟動後台")
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=8000)

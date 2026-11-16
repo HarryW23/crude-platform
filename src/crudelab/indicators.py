@@ -1,240 +1,240 @@
-"""指標引擎：公式 + 參數 → 時間序列，並且能把任何一個結果逐層拆回原始數據點。
+"""指標引擎：按配置裡的公式計算指標，並能把任何一個結果逐層拆回原始數據點和參數版本。
 
-公式裡的名字只有三種來源：序列代碼、參數 key、其他指標代碼。
-公式用 Python 的語法樹解析，只放行四則運算和白名單函數，不會執行任意代碼。
+計算規則：
+  1. 取公式引用的每個名字的值：序列 → 數據點；參數 → 按生效日期的階梯函數；指標 → 遞歸計算
+  2. 把所有輸入對齊到同一個日期索引（各「隨時間變化」的輸入的日期並集）
+       序列缺值時最多沿用 max(指標的 ffill_limit, 序列的 valid_days) 天
+       參數按生效日期取值，不限天數
+  3. 逐日代入公式；任何一個輸入在當天沒有值，當天就沒有結果（不估算、不插值）
+只引用參數的指標是「純參數指標」，它本身也是階梯函數，被引用時和參數一樣處理。
+
+情境試算：建引擎時傳入 Scenario，可以臨時替換參數值、平移序列，不寫庫。這也是之後推演層的基礎。
+
+一個引擎實例對應一次請求、一個 as_of 時點、一個情境，內部會緩存。
 """
 from __future__ import annotations
 
-import ast
-from datetime import date
+from dataclasses import dataclass, field
+from datetime import date, datetime
 
 import numpy as np
 import pandas as pd
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .ingest import load_points
-from .models import ImportBatch, Parameter, Series
+from . import formula as fx
+from .config import Config
+from .ingest import load_points, to_series
+from .models import ImportBatch, Parameter, ParameterVersion
+from .schema import EPOCH
 
-FUNCTIONS = {
-    "lag": lambda x, n: x.shift(int(n)),
-    "ma": lambda x, n: x.rolling(int(n)).mean(),
-    "diff": lambda x, n=1: x.diff(int(n)),
-    "abs": lambda x: abs(x),
-}
-_BINOPS = {ast.Add: lambda a, b: a + b, ast.Sub: lambda a, b: a - b, ast.Mult: lambda a, b: a * b,
-           ast.Div: lambda a, b: a / b, ast.Pow: lambda a, b: a ** b}
+MIN_OBS_FOR_PERCENTILE = 20
 
 
-class FormulaError(ValueError):
-    pass
+@dataclass(frozen=True)
+class Scenario:
+    """假設情境。parameters：參數 key → 替換後的值（全時段）；shifts：序列或指標代碼 → 在其值上加的數。"""
+    parameters: dict[str, float] = field(default_factory=dict)
+    shifts: dict[str, float] = field(default_factory=dict)
 
-
-def parse_formula(formula: str) -> ast.Expression:
-    try:
-        tree = ast.parse(str(formula), mode="eval")
-    except SyntaxError as exc:
-        raise FormulaError(f"公式語法錯誤：{formula}") from exc
-    for node in ast.walk(tree):
-        if isinstance(node, (ast.Expression, ast.Name, ast.Load, ast.operator, ast.unaryop)):
-            ok = not isinstance(node, (ast.operator, ast.unaryop)) or isinstance(node, (*_BINOPS, ast.USub, ast.UAdd))
-        elif isinstance(node, (ast.BinOp, ast.UnaryOp)):
-            ok = True
-        elif isinstance(node, ast.Constant):
-            ok = isinstance(node.value, (int, float)) and not isinstance(node.value, bool)
-        elif isinstance(node, ast.Call):
-            ok = isinstance(node.func, ast.Name) and node.func.id in FUNCTIONS and not node.keywords
-        else:
-            ok = False
-        if not ok:
-            raise FormulaError(f"公式裡有不允許的寫法：{formula}")
-    return tree
-
-
-def formula_names(formula: str) -> list[str]:
-    """公式引用的名字（去重、保持出現順序、不含函數名）。"""
-    tree = parse_formula(formula)
-    funcs = {id(n.func) for n in ast.walk(tree) if isinstance(n, ast.Call)}
-    names = [n for n in ast.walk(tree) if isinstance(n, ast.Name) and id(n) not in funcs]
-    names.sort(key=lambda n: (n.lineno, n.col_offset))
-    return list(dict.fromkeys(n.id for n in names))
-
-
-def validate_definitions(indicators: list[dict], series_codes: set[str], param_keys: set[str]) -> list[str]:
-    """配置載入時調用：檢查公式語法、引用是否存在、有沒有循環引用。回傳錯誤列表。"""
-    errors: list[str] = []
-    defs = {d["code"]: d for d in indicators if d.get("code")}
-    deps: dict[str, list[str]] = {}
-    for code, d in defs.items():
-        try:
-            deps[code] = formula_names(d.get("formula", ""))
-        except FormulaError as exc:
-            errors.append(f"指標 {code}：{exc}")
-            continue
-        unknown = [n for n in deps[code] if n not in defs and n not in series_codes and n not in param_keys]
+    def validate(self, cfg: Config) -> None:
+        unknown = [k for k in self.parameters if k not in cfg.parameters]
+        unknown += [k for k in self.shifts if k not in cfg.series and k not in cfg.indicators]
         if unknown:
-            errors.append(f"指標 {code}：公式引用了不存在的名字 {', '.join(unknown)}")
-        if not any(n in defs or n in series_codes for n in deps[code]):
-            errors.append(f"指標 {code}：公式至少要引用一條序列或一個指標")
-
-    state: dict[str, int] = {}
-
-    def visit(code: str, path: list[str]):
-        if state.get(code) == 2:
-            return
-        if state.get(code) == 1:
-            errors.append("指標循環引用：" + " → ".join([*path[path.index(code):], code]))
-            return
-        state[code] = 1
-        for n in deps.get(code, []):
-            if n in defs:
-                visit(n, [*path, code])
-        state[code] = 2
-
-    for code in defs:
-        visit(code, [])
-    return errors
-
-
-def _evaluate(node: ast.AST, env: dict):
-    if isinstance(node, ast.Expression):
-        return _evaluate(node.body, env)
-    if isinstance(node, ast.Constant):
-        return float(node.value)
-    if isinstance(node, ast.Name):
-        return env[node.id]
-    if isinstance(node, ast.UnaryOp):
-        value = _evaluate(node.operand, env)
-        return -value if isinstance(node.op, ast.USub) else value
-    if isinstance(node, ast.BinOp):
-        return _BINOPS[type(node.op)](_evaluate(node.left, env), _evaluate(node.right, env))
-    if isinstance(node, ast.Call):
-        args = [_evaluate(a, env) for a in node.args]
-        if node.func.id != "abs" and not isinstance(args[0], pd.Series):
-            raise FormulaError(f"{node.func.id}() 的第一個參數必須是序列或指標")
-        return FUNCTIONS[node.func.id](*args)
-    raise FormulaError("無法計算的公式節點")
+            raise KeyError(f"情境裡有不存在的名字：{', '.join(unknown)}")
 
 
 class IndicatorEngine:
-    """一次請求建一個。內部會緩存已讀的序列和已算的指標。"""
-
-    def __init__(self, session: Session, indicators: list[dict]):
-        self.session = session
-        self.defs = {d["code"]: d for d in indicators}
-        self.params = {p.key: p for p in session.scalars(select(Parameter))}
-        self.series = {s.code: s for s in session.scalars(select(Series))}
+    def __init__(self, session: Session, cfg: Config, as_of: datetime | None = None,
+                 scenario: Scenario | None = None):
+        self.session, self.cfg, self.as_of = session, cfg, as_of
+        self.scenario = scenario or Scenario()
+        self.scenario.validate(cfg)
         self._points: pd.DataFrame | None = None
         self._computed: dict[str, pd.Series] = {}
+        self._step: set[str] = set(cfg.parameters)         # 階梯函數型的名字：參數 + 純參數指標
+        self._deps: dict[str, tuple[list[str], list[str]]] = {}
+        self._verified = {p.key: p.verified for p in session.scalars(select(Parameter))}
+        self._versions = self._load_versions()
 
-    # ---- 讀數 ----
+    # ------------------------------ 輸入 ------------------------------
+    def _load_versions(self) -> dict[str, pd.DataFrame]:
+        stmt = select(ParameterVersion).order_by(ParameterVersion.id)
+        if self.as_of is not None:
+            stmt = stmt.where(ParameterVersion.created_at <= self.as_of)
+        effective: dict[str, dict[date, ParameterVersion]] = {}
+        for v in self.session.scalars(stmt):
+            effective.setdefault(v.key, {})[v.valid_from] = v       # 同一生效日期，id 大的覆蓋
+        return {key: pd.DataFrame(
+            [{"valid_from": pd.Timestamp(d), "value": v.value, "note": v.note} for d, v in sorted(rows.items())]
+        ).set_index("valid_from") for key, rows in effective.items()}
+
+    def parameter_values(self, key: str) -> pd.Series:
+        if key in self.scenario.parameters:
+            return pd.Series([float(self.scenario.parameters[key])], index=pd.DatetimeIndex([pd.Timestamp(EPOCH)]))
+        frame = self._versions.get(key)
+        return frame["value"].astype(float) if frame is not None else pd.Series(dtype=float)
+
     def _all_points(self) -> pd.DataFrame:
         if self._points is None:
-            leaves = sorted({leaf for code in self.defs for leaf in self.leaf_series(code)})
-            self._points = load_points(self.session, leaves)
+            leaves = sorted({s for code in self.cfg.indicators for s in self.dependencies(code)[0]})
+            self._points = load_points(self.session, leaves, as_of=self.as_of)
         return self._points
 
-    def _series_values(self, code: str) -> pd.Series:
-        df = self._all_points()
-        part = df[df["series_code"] == code]
-        return pd.Series(part["value"].to_numpy(dtype=float),
-                         index=pd.DatetimeIndex(pd.to_datetime(part["obs_date"])), name=code).sort_index()
+    def dependencies(self, code: str) -> tuple[list[str], list[str]]:
+        """一個指標最終依賴的全部（原始序列, 參數）。"""
+        if code not in self._deps:
+            series: list[str] = []
+            params: list[str] = []
+            for name in fx.names(self.cfg.indicators[code].formula):
+                if name in self.cfg.indicators:
+                    sub_series, sub_params = self.dependencies(name)
+                    series += sub_series
+                    params += sub_params
+                elif name in self.cfg.series:
+                    series.append(name)
+                else:
+                    params.append(name)
+            self._deps[code] = (list(dict.fromkeys(series)), list(dict.fromkeys(params)))
+        return self._deps[code]
 
-    def leaf_series(self, code: str) -> list[str]:
-        """一個指標最終依賴的全部原始序列。"""
-        out: list[str] = []
-        for name in formula_names(self.defs[code]["formula"]):
-            if name in self.defs:
-                out.extend(self.leaf_series(name))
-            elif name in self.series:
-                out.append(name)
-        return list(dict.fromkeys(out))
-
-    def missing_inputs(self, code: str) -> list[str]:
-        """完全沒有數據的輸入序列。非空 = 這個指標算不出來，前台應顯示「缺數據」。"""
+    def missing_series(self, code: str) -> list[str]:
         have = set(self._all_points()["series_code"].unique())
-        return [s for s in self.leaf_series(code) if s not in have]
+        return [s for s in self.dependencies(code)[0] if s not in have]
 
-    # ---- 計算 ----
+    def missing_parameters(self, code: str) -> list[str]:
+        return [p for p in self.dependencies(code)[1]
+                if p not in self._versions and p not in self.scenario.parameters]
+
+    def unverified_parameters(self, code: str) -> list[str]:
+        return [p for p in self.dependencies(code)[1] if not self._verified.get(p, False)]
+
+    # ------------------------------ 計算 ------------------------------
     def compute(self, code: str) -> pd.Series:
         if code in self._computed:
             return self._computed[code]
-        if code not in self.defs:
+        if code not in self.cfg.indicators:
             raise KeyError(f"沒有名為 {code} 的指標")
-        definition = self.defs[code]
-        tolerance = pd.Timedelta(days=int(definition.get("ffill_limit", 0) or 0))
-        env: dict = {}
-        index = pd.DatetimeIndex([])
-        for name in formula_names(definition["formula"]):
-            if name in self.defs:
+        ind = self.cfg.indicators[code]
+        env: dict[str, pd.Series] = {}
+        tolerance: dict[str, int] = {}
+        for name in fx.names(ind.formula):
+            if name in self.cfg.indicators:
                 env[name] = self.compute(name)
-            elif name in self.series:
-                env[name] = self._series_values(name)
+                tolerance[name] = ind.ffill_limit
+            elif name in self.cfg.series:
+                env[name] = to_series(self._all_points(), name) + self.scenario.shifts.get(name, 0.0)
+                tolerance[name] = max(ind.ffill_limit, self.cfg.series[name].resolved_valid_days)
             else:
-                env[name] = float(self.params[name].value)
-                continue
-            index = index.union(env[name].index)
-        empty = pd.Series(dtype=float, name=code)
-        if any(isinstance(v, pd.Series) and v.empty for v in env.values()):
-            result = empty
+                env[name] = self.parameter_values(name)
+
+        dynamic = [name for name in env if name not in self._step]
+        if not dynamic:
+            self._step.add(code)
+        if any(values.empty for values in env.values()):
+            result = pd.Series(dtype=float)
         else:
-            for name, value in env.items():
-                if isinstance(value, pd.Series):
-                    env[name] = (value.reindex(index, method="ffill", tolerance=tolerance)
-                                 if tolerance.days else value.reindex(index))
-            raw = _evaluate(parse_formula(definition["formula"]), env)
-            result = (raw.replace([np.inf, -np.inf], np.nan).dropna().rename(code)
-                      if isinstance(raw, pd.Series) else empty)
-        self._computed[code] = result
-        return result
+            index = pd.DatetimeIndex([])
+            for name in dynamic or env:
+                index = index.union(env[name].index)
+            aligned = {}
+            for name, values in env.items():
+                if name in self._step:
+                    aligned[name] = values.reindex(index, method="ffill")
+                elif tolerance[name]:
+                    aligned[name] = values.reindex(index, method="ffill",
+                                                   tolerance=pd.Timedelta(days=tolerance[name]))
+                else:
+                    aligned[name] = values.reindex(index)
+            raw = fx.evaluate(ind.formula, aligned)
+            result = raw.replace([np.inf, -np.inf], np.nan).dropna() + self.scenario.shifts.get(code, 0.0)
+        self._computed[code] = result.rename(code)
+        return self._computed[code]
+
+    def value_at(self, name: str, on: date) -> float | None:
+        """某個指標或參數在某一天的值。階梯函數取當天生效的值。"""
+        values = self.compute(name) if name in self.cfg.indicators else self.parameter_values(name)
+        ts = pd.Timestamp(on)
+        if name in self._step:
+            past = values[values.index <= ts]
+            return float(past.iloc[-1]) if len(past) else None
+        return float(values[ts]) if ts in values.index else None
 
     def summary(self, code: str) -> dict:
-        d = self.defs[code]
-        missing = self.missing_inputs(code)
+        ind = self.cfg.indicators[code]
         values = self.compute(code)
-        out = {"code": code, "name_zh": d.get("name_zh", code), "module": d.get("module", "common"),
-               "unit": d.get("unit"), "formula": d["formula"], "notes": d.get("notes"),
-               "ffill_limit": int(d.get("ffill_limit", 0) or 0), "inputs": self.leaf_series(code),
-               "missing_inputs": missing, "n": int(len(values)),
-               "status": "ok" if len(values) else ("missing_data" if missing else "no_overlap"),
-               "last_date": None, "last_value": None, "change": None}
+        missing_series, missing_params = self.missing_series(code), self.missing_parameters(code)
         if len(values):
-            out["last_date"] = values.index[-1].date().isoformat()
-            out["last_value"] = float(values.iloc[-1])
-            if len(values) > 1:
-                out["change"] = float(values.iloc[-1] - values.iloc[-2])
+            status = "ok"
+        elif missing_params:
+            status = "missing_parameter"
+        elif missing_series:
+            status = "missing_data"
+        else:
+            status = "no_overlap"
+        out = {"code": code, "name_zh": ind.name_zh, "module": ind.module, "group": ind.group, "unit": ind.unit,
+               "formula": ind.formula, "notes": ind.notes, "model": ind.model, "hidden": ind.hidden,
+               "status": status, "missing_series": missing_series, "missing_parameters": missing_params,
+               "unverified_parameters": self.unverified_parameters(code), "n": int(len(values)),
+               "last_date": None, "last_value": None, "chg_1d": None, "chg_5d": None, "chg_20d": None,
+               "percentile_1y": None}
+        if len(values):
+            last = float(values.iloc[-1])
+            out["last_date"], out["last_value"] = values.index[-1].date().isoformat(), last
+            for key, back in (("chg_1d", 1), ("chg_5d", 5), ("chg_20d", 20)):
+                if len(values) > back:
+                    out[key] = last - float(values.iloc[-1 - back])
+            window = values[values.index >= values.index[-1] - pd.Timedelta(days=365)]
+            if len(window) >= MIN_OBS_FOR_PERCENTILE:
+                out["percentile_1y"] = float((window <= last).mean() * 100)
         return out
 
-    # ---- 追溯 ----
-    def trace(self, code: str, on: date, _tolerance_days: int = 0) -> dict:
-        """把某一天的指標值拆成一棵樹：指標 → 子指標 / 參數 / 原始數據點（含來源和所在格子）。"""
-        ts = pd.Timestamp(on)
-        if code in self.params:
-            p = self.params[code]
-            return {"kind": "parameter", "code": code, "name_zh": p.name_zh, "value": float(p.value), "unit": p.unit}
-        if code in self.series and code not in self.defs:
-            s = self.series[code]
-            node = {"kind": "series", "code": code, "name_zh": s.name_zh, "unit": s.unit_code, "value": None}
-            df = self._all_points()
-            part = df[(df["series_code"] == code) & (pd.to_datetime(df["obs_date"]) <= ts)
-                      & (pd.to_datetime(df["obs_date"]) >= ts - pd.Timedelta(days=_tolerance_days))]
-            if part.empty:
-                node["note"] = "這一天沒有數據"
-                return node
-            row = part.sort_values("obs_date").iloc[-1]
-            batch = self.session.get(ImportBatch, int(row["batch_id"])) if pd.notna(row["batch_id"]) else None
-            node.update(value=float(row["value"]), obs_date=row["obs_date"].isoformat(),
-                        source_code=row["source_code"], source_ref=row["source_ref"],
-                        batch_id=int(row["batch_id"]) if batch else None, filename=batch.filename if batch else None)
-            if row["obs_date"] != on:
-                node["note"] = f"當天無值，沿用 {row['obs_date'].isoformat()} 的值"
-            return node
-        d = self.defs[code]
-        values = self.compute(code)
-        tolerance = int(d.get("ffill_limit", 0) or 0)
-        node = {"kind": "indicator", "code": code, "name_zh": d.get("name_zh", code), "unit": d.get("unit"),
-                "formula": d["formula"], "value": float(values[ts]) if ts in values.index else None,
-                "children": [self.trace(n, on, tolerance) for n in formula_names(d["formula"])]}
-        if any(isinstance(n, ast.Call) for n in ast.walk(parse_formula(d["formula"]))):
+    # ------------------------------ 追溯 ------------------------------
+    def trace(self, name: str, on: date, _tolerance: int = 0) -> dict:
+        """把某一天的值拆成一棵樹：指標 → 子指標 / 參數版本 / 原始數據點（含來源和所在格子）。"""
+        if name in self.cfg.parameters:
+            return self._trace_parameter(name, on)
+        if name in self.cfg.series:
+            return self._trace_series(name, on, _tolerance)
+        ind = self.cfg.indicators[name]
+        node = {"kind": "indicator", "code": name, "name_zh": ind.name_zh, "unit": ind.unit,
+                "formula": ind.formula, "value": self.value_at(name, on),
+                "children": [self.trace(child, on, max(ind.ffill_limit, self.cfg.series[child].resolved_valid_days)
+                                        if child in self.cfg.series else ind.ffill_limit)
+                             for child in fx.names(ind.formula)]}
+        if fx.uses_window(ind.formula):
             node["note"] = "公式含 lag / ma / diff，結果還用到了更早日期的值，下面只列出當天的輸入"
+        return node
+
+    def _trace_parameter(self, key: str, on: date) -> dict:
+        p = self.cfg.parameters[key]
+        node = {"kind": "parameter", "code": key, "name_zh": p.name_zh, "unit": p.unit, "value": None,
+                "verified": self._verified.get(key, False)}
+        frame = self._versions.get(key)
+        past = frame[frame.index <= pd.Timestamp(on)] if frame is not None else None
+        if past is None or past.empty:
+            node["note"] = "尚未提供數值" if frame is None else "這一天還沒有生效的版本"
+            return node
+        node.update(value=float(past["value"].iloc[-1]), valid_from=past.index[-1].date().isoformat(),
+                    version_note=past["note"].iloc[-1])
+        return node
+
+    def _trace_series(self, code: str, on: date, tolerance: int) -> dict:
+        s = self.cfg.series[code]
+        node = {"kind": "series", "code": code, "name_zh": s.name_zh, "unit": s.unit, "value": None}
+        points = self._all_points()
+        part = points[points["series_code"] == code]
+        dates = pd.to_datetime(part["obs_date"])
+        ts = pd.Timestamp(on)
+        part = part[(dates <= ts) & (dates >= ts - pd.Timedelta(days=tolerance))]
+        if part.empty:
+            node["note"] = "這一天沒有數據"
+            return node
+        row = part.sort_values("obs_date").iloc[-1]
+        batch = self.session.get(ImportBatch, int(row["batch_id"])) if pd.notna(row["batch_id"]) else None
+        node.update(value=float(row["value"]), obs_date=row["obs_date"].isoformat(), source_code=row["source_code"],
+                    source_ref=row["source_ref"], batch_id=batch.id if batch else None,
+                    filename=batch.filename if batch else None)
+        if row["obs_date"] != on:
+            node["note"] = f"當天無值，沿用 {row['obs_date'].isoformat()} 的值"
         return node

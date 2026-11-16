@@ -1,0 +1,15 @@
+# 字段說明見 sg_complex.yaml。收率是示意性的暫定值。
+code: NWE_COMPLEX
+name_zh: 西北歐複雜型（Brent）
+kind: benchmark
+location: NWE
+unit: USD/bbl
+notes: 催化裂化型煉廠加工 Brent 的毛利，不含加工費。收率按體積計，產品報價按常用係數由 美元/噸 折桶。
+feedstock:
+  - {code: BRENT, name_zh: 即期布倫特, price: DATED_BRENT, share: 1.0}
+products:
+  - {code: NAPHTHA,  name_zh: 石腦油,   price: NWE_NAPHTHA / BBL_PER_T_NAPHTHA,     yield: 0.05}
+  - {code: GASOLINE, name_zh: 汽油,     price: NWE_EUROBOB / BBL_PER_T_GASOLINE,    yield: 0.28}
+  - {code: JET,      name_zh: 航煤,     price: NWE_JET / BBL_PER_T_JET,             yield: 0.08}
+  - {code: DIESEL,   name_zh: 柴油,     price: NWE_DIESEL_10PPM / BBL_PER_T_GASOIL, yield: 0.37}
+  - {code: HSFO,     name_zh: 燃料油,   price: RDAM_HSFO_35 / BBL_PER_T_FUELOIL,    yield: 0.14}

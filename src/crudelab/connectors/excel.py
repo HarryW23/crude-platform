@@ -12,10 +12,10 @@ from __future__ import annotations
 
 import csv
 import re
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime
 from pathlib import Path
-from typing import Callable
 
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter

@@ -8,9 +8,9 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .config import normalize_alias
 from .connectors.excel import SheetPreview, parse_workbook
 from .ingest import write_observations
-from .master import normalize_alias
 from .models import AuditLog, DataSource, ImportBatch, Series, SeriesAlias
 from .settings import Settings
 
@@ -38,7 +38,7 @@ def _duplicates(previews: list[SheetPreview], mapping: dict[str, str | None] | N
 def preview_file(session: Session, settings: Settings, content: bytes, filename: str,
                  source_code: str, actor: str = "local") -> dict:
     source = session.get(DataSource, source_code)
-    if source is None or source.kind not in ("excel", "manual"):
+    if source is None or source.kind != "excel":
         raise ImportFlowError(f"數據源 {source_code} 不能用於文件導入")
     digest = hashlib.sha256(content).hexdigest()
     safe_name = re.sub(r"[^\w.\-]+", "_", Path(filename).name)[-120:] or "upload"
@@ -71,7 +71,7 @@ def commit_batch(session: Session, batch_id: int, mapping: dict[str, str | None]
     if batch.status == "committed":
         raise ImportFlowError(f"批次 {batch_id} 已經入庫過")
     mapping = dict(mapping or {})
-    known = set(session.scalars(select(Series.code)))
+    known = set(session.scalars(select(Series.code).where(Series.active)))
     bad = sorted({c for c in mapping.values() if c and c not in known})
     if bad:
         raise ImportFlowError(f"未知的序列代碼：{', '.join(bad)}")

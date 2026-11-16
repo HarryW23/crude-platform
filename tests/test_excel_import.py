@@ -5,16 +5,13 @@ from sqlalchemy import func, select
 
 from crudelab.connectors.excel import parse_date, parse_number
 from crudelab.imports import ImportFlowError, commit_batch, preview_file
-from crudelab.ingest import load_points, load_series
+from crudelab.ingest import load_points, to_series
 from crudelab.models import Observation
-from crudelab.sample import write_sample_workbook
 
 
 @pytest.fixture()
-def sample_bytes(tmp_path):
-    path = tmp_path / "sample.xlsx"
-    write_sample_workbook(path)
-    return path.read_bytes()
+def sample_bytes(sample_path):
+    return sample_path.read_bytes()
 
 
 def _cols(preview, sheet):
@@ -24,7 +21,10 @@ def _cols(preview, sheet):
 def test_messy_workbook_layouts_are_detected(session, settings, sample_bytes):
     preview = preview_file(session, settings, sample_bytes, "sample.xlsx", "demo")
     layouts = {s["name"]: s["layout"] for s in preview["sheets"]}
-    assert layouts == {"期貨": "wide", "新加坡成品油": "wide_transposed", "升貼水": "long", "說明": "unrecognized"}
+    assert layouts == {"期貨": "wide", "新加坡成品油": "wide_transposed", "升貼水": "long", "中國": "wide",
+                       "說明": "unrecognized"}
+    assert _cols(preview, "中國")["美元人民幣"]["series_code"] == "USDCNY"
+    assert _cols(preview, "中國")["SC M1"]["n_values"] == 55            # 國慶假期 5 個交易日沒有數據
 
     futures = _cols(preview, "期貨")
     assert futures["Brent M1 | LCOc1"]["series_code"] == "BRENT_M1"
@@ -60,20 +60,20 @@ def test_manual_mapping_is_learned_for_next_time(session, settings, sample_bytes
     preview = preview_file(session, settings, sample_bytes, "sample.xlsx", "demo")
     key = _cols(preview, "期貨")["我自己的備註列"]["key"]
     skip = _cols(preview, "期貨")["Brent M2 | LCOc2"]["key"]
-    result = commit_batch(session, preview["batch_id"], {key: "USDCNY", skip: None})
+    result = commit_batch(session, preview["batch_id"], {key: "TD3C_WS", skip: None})
     session.commit()
     assert result["learned_aliases"] == 1
-    data = load_series(session, ["USDCNY", "BRENT_M2"])
-    assert len(data["USDCNY"]) == 60 and data["BRENT_M2"].empty      # 明確設為 None 的列不入庫
+    points = load_points(session, ["TD3C_WS", "BRENT_M2"])
+    assert len(to_series(points, "TD3C_WS")) == 60 and to_series(points, "BRENT_M2").empty   # 設為 None 的列不入庫
     again = preview_file(session, settings, sample_bytes, "sample.xlsx", "demo")
-    assert _cols(again, "期貨")["我自己的備註列"]["series_code"] == "USDCNY"
+    assert _cols(again, "期貨")["我自己的備註列"]["series_code"] == "TD3C_WS"
 
     with pytest.raises(ImportFlowError, match="未知的序列代碼"):
         commit_batch(session, again["batch_id"], {key: "NOPE"})
 
 
 def test_csv_and_bad_files(session, settings):
-    csv = "Date,LCOc1,CLc1\n2026-09-01,70.1,66.5\n2026-09-02,\"1,070.5\",n/a\n".encode()
+    csv = b"Date,LCOc1,CLc1\n2026-09-01,70.1,66.5\n2026-09-02,\"1,070.5\",n/a\n"
     preview = preview_file(session, settings, csv, "x.csv", "reuters_xls")
     cols = _cols(preview, "CSV")
     assert cols["LCOc1"]["series_code"] == "BRENT_M1" and cols["LCOc1"]["last_value"] == 1070.5

@@ -56,14 +56,25 @@ def write_sample_workbook(path: Path, days: int = 60, seed: int = 7) -> None:
 
     ws2 = wb.create_sheet("新加坡成品油")   # 橫排：日期在一行
     ws2.append(["品種", *[day.strftime("%Y/%m/%d") for day in dates]])
-    for name, premium in (("新加坡汽油92", 9), ("新加坡柴油", 17), ("新加坡航煤", 16)):
+    for name, premium in (("新加坡汽油92", 9), ("新加坡柴油", 17), ("新加坡航煤", 16), ("新加坡石腦油", -4)):
         ws2.append([name, *[round(v - 1.8 + premium + rng.gauss(0, 0.6), 2) for v in brent]])
+    ws2.append(["新加坡高硫380", *[round((v - 1.8 - 6 + rng.gauss(0, 0.6)) * 6.35, 2) for v in brent]])
 
     ws3 = wb.create_sheet("升貼水")         # 長表
     ws3.append(["Date", "Name", "Value"])
-    for i, day in enumerate(dates):
+    for day in dates:
         ws3.append([day.isoformat(), "ESPO Diff", round(4 + rng.gauss(0, 0.3), 2)])
         ws3.append([day.isoformat(), "Urals Diff", round(-12 + rng.gauss(0, 0.5), 2)])
+
+    ws5 = wb.create_sheet("中國")           # 中國市場：國慶假期沒有數據
+    ws5.append(["日期", "SC M1", "SC M3", "美元人民幣", "山東汽油92", "山東柴油0", "山東液化氣", "山東石油焦"])
+    for i, day in enumerate(dates):
+        if date(2026, 10, 1) <= day <= date(2026, 10, 7):
+            continue
+        sc = round((brent[i] - 1.0) * 7.1 + rng.gauss(0, 3), 1)
+        ws5.append([day, sc, round(sc - 6 + rng.gauss(0, 1), 1), round(7.1 + rng.gauss(0, 0.01), 4),
+                    round(brent[i] * 105 + 900 + rng.gauss(0, 40)), round(brent[i] * 95 + 500 + rng.gauss(0, 40)),
+                    round(4800 + rng.gauss(0, 60)), round(2400 + rng.gauss(0, 50))])
 
     ws4 = wb.create_sheet("說明")
     ws4.append(["這一頁只有文字，系統會標記為無法識別並跳過。"])

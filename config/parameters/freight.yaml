@@ -1,0 +1,16 @@
+# 油輪運費換算。WS 點 → 美元/噸 = WS / 100 × 當年基準費率（flat rate）。
+# 基準費率由 Worldscale 每年 1 月 1 日更新，屬於需要訂閱的數據，這裡不提供初始值。
+# 請在後台按年錄入（每年一個生效日期），歷史運費會按當年的費率計算。
+
+- {key: WS_BASE, name_zh: WS 基數, value: 100, unit: WS, group: 運費, verified: true,
+   description: WS100 = 基準費率的 100%}
+- {key: FLAT_TD3C, name_zh: TD3C 基準費率（拉斯坦努拉→寧波）, unit: USD/t, group: 運費,
+   description: Worldscale 年度 flat rate}
+- {key: FLAT_TD15, name_zh: TD15 基準費率（西非→寧波）, unit: USD/t, group: 運費,
+   description: Worldscale 年度 flat rate}
+- {key: FLAT_TD20, name_zh: TD20 基準費率（西非→鹿特丹）, unit: USD/t, group: 運費,
+   description: Worldscale 年度 flat rate}
+- {key: FLAT_TD25, name_zh: TD25 基準費率（美灣→歐洲）, unit: USD/t, group: 運費,
+   description: Worldscale 年度 flat rate}
+- {key: ESPO_FREIGHT_CN, name_zh: ESPO 科茲米諾→山東 運費, unit: USD/bbl, group: 運費,
+   description: 短程阿芙拉型運費，波動大，請按實際成交水平錄入並隨時更新}
