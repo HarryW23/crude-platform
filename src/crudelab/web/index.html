@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>crudelab 後台</title>
+<style>
+:root{--bg:#f6f5f1;--panel:#fff;--ink:#1c1b19;--muted:#6f6c66;--line:#e2dfd7;--accent:#0f5e59;--accent-ink:#fff;
+  --ok:#1f7a4d;--warn:#a15c00;--bad:#b3261e;--soft:#eeece6;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+@media (prefers-color-scheme:dark){:root{--bg:#161614;--panel:#1f1f1c;--ink:#ecebe6;--muted:#9c998f;--line:#33322d;
+  --accent:#58b8ae;--accent-ink:#0c1f1d;--ok:#62c08f;--warn:#e0a44a;--bad:#f0867d;--soft:#2a2925}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.55 system-ui,-apple-system,"PingFang TC","Microsoft JhengHei",sans-serif}
+header{display:flex;align-items:center;gap:20px;padding:0 20px;border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:5;overflow-x:auto}
+header b{font-size:15px;letter-spacing:.02em;white-space:nowrap}
+nav{display:flex;gap:2px}
+nav button{border:0;background:none;color:var(--muted);padding:13px 12px;font:inherit;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap}
+nav button.on{color:var(--ink);border-color:var(--accent);font-weight:600}
+main{max-width:1180px;margin:0 auto;padding:20px}
+h2{font-size:16px;margin:0 0 4px}
+.sub{color:var(--muted);margin:0 0 14px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px;margin-bottom:16px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:16px}
+.tile{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 14px}
+.tile .k{color:var(--muted);font-size:12px}
+.tile .v{font-size:22px;font-weight:600;font-variant-numeric:tabular-nums}
+.scroll{overflow-x:auto}
+table{border-collapse:collapse;width:100%}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--muted);font-weight:500;font-size:12px;white-space:nowrap}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+tr.click{cursor:pointer}
+tr.click:hover{background:var(--soft)}
+code,.mono{font-family:var(--mono);font-size:12.5px}
+.tag{display:inline-block;padding:1px 8px;border-radius:99px;font-size:12px;background:var(--soft);color:var(--muted);white-space:nowrap}
+.tag.ok{color:var(--ok)}.tag.warn{color:var(--warn)}.tag.bad{color:var(--bad)}
+button.btn,label.btn{border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:6px 12px;border-radius:6px;font:inherit;cursor:pointer}
+button.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
+button.btn:disabled{opacity:.5;cursor:default}
+input,select{font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px 8px;max-width:100%}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.msg{padding:9px 12px;border-radius:6px;background:var(--soft);margin:10px 0}
+.msg.bad{color:var(--bad)}.msg.ok{color:var(--ok)}.msg.warn{color:var(--warn)}
+.muted{color:var(--muted)}
+.tree{margin:0;padding-left:18px;list-style:none;border-left:1px solid var(--line)}
+.tree>li{padding:5px 0}
+.tree.root{border:0;padding-left:0}
+svg text{fill:var(--muted);font-size:11px}
+.up{color:var(--ok)}.down{color:var(--bad)}
+</style>
+</head>
+<body>
+<header><b>crudelab 後台</b><nav id="nav"></nav></header>
+<main id="main"></main>
+<script>
+const TABS = [["overview","總覽"],["import","數據導入"],["series","序列"],["indicators","指標"],
+              ["params","參數"],["sources","數據源"],["audit","日誌"]];
+const MODULES = {spread:"地域價差", balance:"供需", refinery:"煉廠", common:"公用"};
+const $ = (h) => { const t = document.createElement("template"); t.innerHTML = h.trim(); return t.content.firstChild; };
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const num = (v, d = 2) => v == null ? "—" : Number(v).toLocaleString("en-US", {minimumFractionDigits: d, maximumFractionDigits: d});
+const main = document.getElementById("main");
+let seriesCache = null;
+
+async function api(path, opts = {}) {
+  if (opts.json !== undefined) { opts.body = JSON.stringify(opts.json); opts.headers = {"Content-Type": "application/json"}; opts.method ||= "POST"; }
+  const r = await fetch(path, opts);
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail ?? body));
+  return body;
+}
+function show(tab) {
+  location.hash = tab;
+  document.querySelectorAll("nav button").forEach(b => b.classList.toggle("on", b.dataset.tab === tab));
+  main.innerHTML = '<p class="muted">載入中…</p>';
+  VIEWS[tab]().catch(e => { main.innerHTML = `<div class="msg bad">${esc(e.message)}</div>`; });
+}
+function chart(points, unit) {
+  if (points.length < 2) return '<p class="muted">數據點不足，無法畫圖。</p>';
+  const W = 1100, H = 240, L = 54, R = 12, T = 10, B = 24;
+  const ys = points.map(p => p.value), lo = Math.min(...ys), hi = Math.max(...ys), span = (hi - lo) || 1;
+  const x = i => L + (W - L - R) * i / (points.length - 1), y = v => T + (H - T - B) * (1 - (v - lo) / span);
+  const path = points.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p.value).toFixed(1)}`).join("");
+  const grid = [0, .5, 1].map(f => { const v = lo + span * f;
+    return `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${num(v)}</text>`; }).join("");
+  const zero = lo < 0 && hi > 0 ? `<line x1="${L}" x2="${W - R}" y1="${y(0)}" y2="${y(0)}" stroke="var(--muted)" stroke-dasharray="3 3"/>` : "";
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="走勢圖">${grid}${zero}
+    <path d="${path}" fill="none" stroke="var(--accent)" stroke-width="1.8"/>
+    <text x="${L}" y="${H - 6}">${points[0].date}</text><text x="${W - R}" y="${H - 6}" text-anchor="end">${points.at(-1).date}</text>
+    <text x="${W - R}" y="${T + 10}" text-anchor="end">${esc(unit || "")}</text></svg>`;
+}
+
+const VIEWS = {
+  async overview() {
+    const [o, inds] = await Promise.all([api("/api/overview"), api("/api/indicators")]);
+    main.innerHTML = `
+      <div class="tiles">
+        <div class="tile"><div class="k">有數據的序列</div><div class="v">${o.series_with_data} / ${o.series_total}</div></div>
+        <div class="tile"><div class="k">可計算的指標</div><div class="v">${o.indicators_ok} / ${o.indicators_total}</div></div>
+        <div class="tile"><div class="k">數據點</div><div class="v">${num(o.observations, 0)}</div></div>
+        <div class="tile"><div class="k">最新數據日期</div><div class="v">${o.last_obs_date ?? "—"}</div></div>
+      </div>
+      ${o.observations ? "" : '<div class="msg">還沒有任何數據。到「數據導入」上傳 Excel，或在「序列」裡手動錄入。</div>'}
+      <div class="panel"><h2>指標現況</h2><p class="sub">缺數據的指標不會顯示數字，也不會用估算值代替。</p>
+      <div class="scroll">${indicatorTable(inds)}</div></div>`;
+    bindIndicatorRows();
+  },
+
+  async import() {
+    const sources = (await api("/api/sources")).filter(s => s.kind === "excel");
+    main.innerHTML = `
+      <div class="panel"><h2>上傳 Excel / CSV</h2>
+      <p class="sub">不要求固定模板。系統會自己找日期和表頭，認得出的列自動對應，認不出的由你指定一次，之後同樣的表頭會自動識別。</p>
+      <div class="row"><input type="file" id="file" accept=".xlsx,.xlsm,.csv,.txt">
+        <label>數據源 <select id="src">${sources.map(s => `<option value="${s.code}">${esc(s.name)}</option>`).join("")}</select></label>
+        <button class="btn primary" id="go">預覽</button></div>
+      <div id="out"></div></div>
+      <div class="panel"><h2>導入記錄</h2><div class="scroll" id="hist"></div></div>`;
+    const out = document.getElementById("out");
+    const history = async () => {
+      const rows = await api("/api/imports");
+      document.getElementById("hist").innerHTML = rows.length ? `<table><tr><th>批次</th><th>文件</th><th>數據源</th><th>時間</th><th class="n">新增</th><th class="n">更新</th><th class="n">未對應的列</th></tr>
+        ${rows.map(b => `<tr><td>${b.id}</td><td>${esc(b.filename)}</td><td>${esc(b.source_code)}</td><td>${esc(b.created_at.slice(0, 16).replace("T", " "))}</td>
+        <td class="n">${b.stats.inserted}</td><td class="n">${b.stats.updated}</td><td class="n">${b.stats.unmapped_columns}</td></tr>`).join("")}</table>` : '<p class="muted">還沒有導入過文件。</p>';
+    };
+    history();
+    document.getElementById("go").onclick = async () => {
+      const f = document.getElementById("file").files[0];
+      if (!f) { out.innerHTML = '<div class="msg warn">請先選擇文件。</div>'; return; }
+      const fd = new FormData(); fd.append("file", f); fd.append("source_code", document.getElementById("src").value);
+      out.innerHTML = '<p class="muted">解析中…</p>';
+      try {
+        const p = await api("/api/imports/preview", {method: "POST", body: fd});
+        seriesCache ||= await api("/api/series");
+        const options = '<option value="">（不導入）</option>' + seriesCache.map(s => `<option value="${s.code}">${s.code}　${esc(s.name_zh)}</option>`).join("");
+        const LAYOUT = {wide: "直排（一列日期）", wide_transposed: "橫排（日期在一行）", long: "長表", unrecognized: "無法識別，已跳過"};
+        out.innerHTML = p.warnings.map(w => `<div class="msg warn">${esc(w)}</div>`).join("") + p.sheets.map(s => `
+          <h2 style="margin-top:16px">${esc(s.name)} <span class="tag ${s.layout === "unrecognized" ? "warn" : ""}">${LAYOUT[s.layout]}</span></h2>
+          ${s.note ? `<p class="sub">${esc(s.note)}</p>` : ""}
+          ${s.columns.length ? `<div class="scroll"><table><tr><th>位置</th><th>表頭</th><th>對應序列</th><th class="n">有效值</th><th class="n">跳過</th><th>日期範圍</th><th class="n">最新值</th></tr>
+          ${s.columns.map(c => `<tr><td>${esc(c.ref)}</td><td>${esc(c.label)}${c.note ? `<div class="muted">${esc(c.note)}</div>` : ""}</td>
+            <td><select data-key="${esc(c.key)}" data-auto="${c.series_code ?? ""}">${options}</select>${c.series_code ? "" : ' <span class="tag warn">未識別</span>'}</td>
+            <td class="n">${c.n_values}</td><td class="n">${c.n_skipped || ""}</td><td>${c.first_date ?? ""} → ${c.last_date ?? ""}</td><td class="n">${num(c.last_value, 4)}</td></tr>`).join("")}</table></div>` : ""}`).join("") +
+          '<div class="row" style="margin-top:14px"><button class="btn primary" id="commit">確認入庫</button><label><input type="checkbox" id="learn" checked> 記住我指定的對應</label></div>';
+        out.querySelectorAll("select[data-key]").forEach(s => { s.value = s.dataset.auto; });
+        document.getElementById("commit").onclick = async (ev) => {
+          ev.target.disabled = true;
+          const mapping = {};
+          out.querySelectorAll("select[data-key]").forEach(s => { if (s.value !== s.dataset.auto) mapping[s.dataset.key] = s.value || null; });
+          try {
+            const r = await api(`/api/imports/${p.batch_id}/commit`, {json: {mapping, learn: document.getElementById("learn").checked}});
+            out.innerHTML = `<div class="msg ok">入庫完成：新增 ${r.inserted}，更新 ${r.updated}，未變 ${r.unchanged}。${r.learned_aliases ? `記住了 ${r.learned_aliases} 個新對應。` : ""}</div>` +
+              (r.unmapped.length ? `<div class="msg">沒有導入的列：${r.unmapped.map(esc).join("；")}</div>` : "");
+            seriesCache = null; history();
+          } catch (e) { ev.target.disabled = false; out.prepend($(`<div class="msg bad">${esc(e.message)}</div>`)); }
+        };
+      } catch (e) { out.innerHTML = `<div class="msg bad">${esc(e.message)}</div>`; }
+    };
+  },
+
+  async series() {
+    const rows = seriesCache = await api("/api/series");
+    main.innerHTML = `<div class="panel"><h2>序列字典</h2><p class="sub">定義在 config/master/series.yaml。點一行可以看數據和手動錄入。</p>
+      <div class="row" style="margin-bottom:10px"><input id="q" placeholder="搜尋代碼或名稱" size="24">
+        <select id="mod"><option value="">全部模組</option>${Object.entries(MODULES).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}</select>
+        <label><input type="checkbox" id="only"> 只看有數據的</label></div>
+      <div id="detail"></div><div class="scroll"><table id="tbl"></table></div></div>`;
+    const draw = () => {
+      const q = document.getElementById("q").value.toLowerCase(), mod = document.getElementById("mod").value, only = document.getElementById("only").checked;
+      const list = rows.filter(s => (!q || (s.code + s.name_zh).toLowerCase().includes(q)) && (!mod || s.module === mod) && (!only || s.n));
+      document.getElementById("tbl").innerHTML = `<tr><th>代碼</th><th>名稱</th><th>模組</th><th>類型</th><th>單位</th><th class="n">數據點</th><th>最新日期</th><th class="n">最新值</th><th>來源</th></tr>` +
+        list.map(s => `<tr class="click" data-code="${s.code}"><td class="mono">${s.code}</td><td>${esc(s.name_zh)}</td><td>${MODULES[s.module] ?? s.module}</td><td>${s.kind}</td><td>${esc(s.unit)}</td>
+          <td class="n">${s.n || '<span class="tag warn">缺數據</span>'}</td><td>${s.last_date ?? ""}</td><td class="n">${s.n ? num(s.last_value, 4) : ""}</td><td>${esc(s.last_source ?? "")}</td></tr>`).join("");
+      document.querySelectorAll("#tbl tr.click").forEach(tr => tr.onclick = () => detail(tr.dataset.code));
+    };
+    const detail = async (code) => {
+      const s = rows.find(r => r.code === code), data = await api(`/api/series/${code}/data`);
+      const box = document.getElementById("detail");
+      box.innerHTML = `<div class="panel" style="background:var(--bg)"><h2>${esc(s.name_zh)} <span class="mono muted">${code}</span></h2>
+        <p class="sub">${esc(s.unit)} · ${s.frequency}${s.benchmark ? " · 基準 " + esc(s.benchmark) : ""}</p>
+        ${data.length ? chart(data, s.unit) : '<p class="muted">這條序列還沒有數據。</p>'}
+        <div class="row" style="margin-top:10px"><b>手動錄入</b><input type="date" id="md"><input id="mv" placeholder="數值" size="10" inputmode="decimal">
+          <button class="btn" id="msave">保存</button><span id="mmsg" class="muted">手動錄入的值優先於其他來源。</span></div></div>`;
+      box.scrollIntoView({behavior: "smooth", block: "nearest"});
+      document.getElementById("msave").onclick = async () => {
+        const d = document.getElementById("md").value, v = parseFloat(document.getElementById("mv").value), m = document.getElementById("mmsg");
+        if (!d || !Number.isFinite(v)) { m.textContent = "請填日期和數值。"; return; }
+        try { await api("/api/observations", {json: {points: [{series_code: code, obs_date: d, value: v}]}}); await VIEWS.series(); }
+        catch (e) { m.textContent = e.message; }
+      };
+    };
+    ["q", "mod", "only"].forEach(id => document.getElementById(id).oninput = draw);
+    draw();
+  },
+
+  async indicators() {
+    const inds = await api("/api/indicators");
+    main.innerHTML = `<div class="panel"><h2>指標</h2><p class="sub">定義在 config/indicators.yaml。點一行看走勢，以及最新一個值是由哪些數據算出來的。</p>
+      <div id="detail"></div><div class="scroll">${indicatorTable(inds, true)}</div></div>`;
+    bindIndicatorRows();
+  },
+
+  async params() {
+    const rows = await api("/api/parameters");
+    main.innerHTML = `<div class="panel"><h2>參數</h2><p class="sub">公式裡用到的常數。修改立即生效，並保留歷史。</p><div id="pmsg"></div>
+      <div class="scroll"><table><tr><th>分組</th><th>參數</th><th>說明</th><th class="n">當前值</th><th>單位</th><th>用到它的指標</th><th>修改</th></tr>
+      ${rows.map(p => `<tr><td>${esc(p.group)}</td><td>${esc(p.name_zh)}<div class="mono muted">${p.key}</div></td><td>${esc(p.description ?? "")}</td>
+        <td class="n">${p.value}</td><td>${esc(p.unit ?? "")}</td><td class="mono">${p.used_by.join("<br>") || '<span class="muted">—</span>'}</td>
+        <td><div class="row" style="flex-wrap:nowrap"><input size="7" data-k="${p.key}" value="${p.value}" inputmode="decimal"><input size="12" data-note="${p.key}" placeholder="修改原因">
+        <button class="btn" data-save="${p.key}">保存</button><button class="btn" data-hist="${p.key}">歷史</button></div></td></tr>`).join("")}</table></div></div>`;
+    const msg = document.getElementById("pmsg");
+    main.querySelectorAll("[data-save]").forEach(b => b.onclick = async () => {
+      const k = b.dataset.save, v = parseFloat(main.querySelector(`[data-k="${k}"]`).value);
+      if (!Number.isFinite(v)) { msg.innerHTML = '<div class="msg bad">請輸入數字。</div>'; return; }
+      try { await api(`/api/parameters/${k}`, {method: "PUT", json: {value: v, note: main.querySelector(`[data-note="${k}"]`).value || null}}); await VIEWS.params(); }
+      catch (e) { msg.innerHTML = `<div class="msg bad">${esc(e.message)}</div>`; }
+    });
+    main.querySelectorAll("[data-hist]").forEach(b => b.onclick = async () => {
+      const h = await api(`/api/parameters/${b.dataset.hist}/history`);
+      msg.innerHTML = `<div class="msg"><b>${b.dataset.hist} 修改歷史</b><br>` + (h.length ? h.map(x =>
+        `${x.changed_at.slice(0, 16).replace("T", " ")}　${x.old_value} → ${x.new_value}　${esc(x.note ?? "")}　(${esc(x.changed_by)})`).join("<br>") : "還沒有修改過。") + "</div>";
+    });
+  },
+
+  async sources() {
+    const rows = await api("/api/sources");
+    const KIND = {manual: "手動", excel: "文件導入", api: "接口拉取"};
+    main.innerHTML = `<div class="panel"><h2>數據源</h2><p class="sub">同一序列同一天有多個來源時，取優先級數字最小的那個；其餘來源的值仍然保留。</p><div id="smsg"></div>
+      <div class="scroll"><table><tr><th>數據源</th><th>方式</th><th class="n">優先級</th><th>狀態</th><th class="n">數據點</th><th>說明</th><th></th></tr>
+      ${rows.map(s => `<tr><td>${esc(s.name)}<div class="mono muted">${s.code}</div></td><td>${KIND[s.kind]}</td><td class="n">${s.priority}</td>
+        <td>${s.status === "reserved" ? '<span class="tag">預留</span>' : s.pullable ? (s.ready ? '<span class="tag ok">可用</span>' : '<span class="tag warn">未配置</span>') : '<span class="tag ok">可用</span>'}</td>
+        <td class="n">${num(s.observations, 0)}</td><td>${esc(s.message ?? s.notes ?? "")}${s.series_supported ? `<div class="muted">已登記 ${s.series_supported} 條序列</div>` : ""}</td>
+        <td>${s.pullable && s.ready ? `<button class="btn" data-pull="${s.code}">立即取數</button>` : ""}</td></tr>`).join("")}</table></div></div>`;
+    main.querySelectorAll("[data-pull]").forEach(b => b.onclick = async () => {
+      const msg = document.getElementById("smsg"); b.disabled = true; msg.innerHTML = '<div class="msg">取數中…</div>';
+      try { const r = await api(`/api/sources/${b.dataset.pull}/pull`, {json: {}}); msg.innerHTML = `<div class="msg ok">新增 ${r.inserted}，更新 ${r.updated}，未變 ${r.unchanged}。</div>`; }
+      catch (e) { msg.innerHTML = `<div class="msg bad">${esc(e.message)}</div>`; }
+      b.disabled = false;
+    });
+  },
+
+  async audit() {
+    const rows = await api("/api/audit");
+    const ACTION = {import: "導入文件", revise: "數據修訂", manual_entry: "手動錄入", pull: "接口取數", purge: "清除數據"};
+    main.innerHTML = `<div class="panel"><h2>操作日誌</h2><p class="sub">數據的每一次寫入和修訂都記在這裡。參數修改記在各參數的「歷史」裡。</p>
+      ${rows.length ? `<div class="scroll"><table><tr><th>時間</th><th>操作</th><th>對象</th><th>詳情</th><th>操作者</th></tr>
+      ${rows.map(a => `<tr><td style="white-space:nowrap">${a.ts.slice(0, 19).replace("T", " ")}</td><td>${ACTION[a.action] ?? a.action}</td><td class="mono">${esc(a.entity_id)}</td>
+        <td class="mono">${esc(JSON.stringify(a.detail))}</td><td>${esc(a.actor)}</td></tr>`).join("")}</table></div>` : '<p class="muted">還沒有記錄。</p>'}</div>`;
+  },
+};
+
+function indicatorTable(inds, formula) {
+  return `<table><tr><th>指標</th><th>模組</th>${formula ? "<th>公式</th>" : ""}<th>最新日期</th><th class="n">最新值</th><th class="n">日變化</th><th>單位</th><th>狀態</th></tr>
+    ${inds.map(i => `<tr class="click" data-ind="${i.code}"><td>${esc(i.name_zh)}<div class="mono muted">${i.code}</div></td><td style="white-space:nowrap">${MODULES[i.module] ?? i.module}</td>
+      ${formula ? `<td class="mono">${esc(i.formula)}</td>` : ""}<td style="white-space:nowrap">${i.last_date ?? ""}</td><td class="n">${i.status === "ok" ? num(i.last_value) : "—"}</td>
+      <td class="n ${i.change > 0 ? "up" : i.change < 0 ? "down" : ""}">${i.change == null ? "" : (i.change > 0 ? "+" : "") + num(i.change)}</td><td>${esc(i.unit ?? "")}</td>
+      <td>${i.status === "ok" ? '<span class="tag ok">正常</span>' : i.status === "missing_data" ? `<span class="tag warn">缺數據</span><div class="mono muted">${i.missing_inputs.join(", ")}</div>` : '<span class="tag warn">輸入日期對不上</span>'}</td></tr>`).join("")}</table>`;
+}
+function bindIndicatorRows() {
+  main.querySelectorAll("tr[data-ind]").forEach(tr => tr.onclick = async () => {
+    if (!document.getElementById("detail")) { await VIEWS.indicators(); document.querySelectorAll("nav button").forEach(b => b.classList.toggle("on", b.dataset.tab === "indicators")); }
+    indicatorDetail(tr.dataset.ind);
+  });
+}
+function treeNode(n) {
+  const val = n.value == null ? '<span class="tag warn">無值</span>' : `<b>${num(n.value, 4)}</b> ${esc(n.unit ?? "")}`;
+  let line;
+  if (n.kind === "indicator") line = `<span class="tag">指標</span> ${esc(n.name_zh)} = ${val}<div class="mono muted">${n.code} = ${esc(n.formula)}</div>`;
+  else if (n.kind === "parameter") line = `<span class="tag">參數</span> ${esc(n.name_zh)} <span class="mono muted">${n.code}</span> = ${val}`;
+  else line = `<span class="tag">數據</span> ${esc(n.name_zh)} <span class="mono muted">${n.code}</span> = ${val}` +
+    (n.source_code ? `<div class="muted">來源 ${esc(n.source_code)}${n.filename ? "，文件 " + esc(n.filename) : ""}${n.source_ref ? "，位置 " + esc(n.source_ref) : ""}</div>` : "");
+  return `<li>${line}${n.note ? `<div class="muted">※ ${esc(n.note)}</div>` : ""}${n.children ? `<ul class="tree">${n.children.map(treeNode).join("")}</ul>` : ""}</li>`;
+}
+async function indicatorDetail(code) {
+  const box = document.getElementById("detail");
+  const data = await api(`/api/indicators/${code}/data`);
+  let html = `<div class="panel" style="background:var(--bg)"><h2 class="mono">${code}</h2>`;
+  if (!data.length) html += '<p class="muted">這個指標目前算不出結果：輸入序列缺數據，或各輸入的日期沒有重疊。</p>';
+  else {
+    const t = await api(`/api/indicators/${code}/trace`);
+    html += chart(data) + `<h2 style="margin-top:12px">計算追溯 <span class="muted" style="font-weight:400">${t.date}</span></h2><ul class="tree root">${treeNode(t.tree)}</ul>`;
+  }
+  box.innerHTML = html + "</div>";
+  box.scrollIntoView({behavior: "smooth", block: "nearest"});
+}
+
+document.getElementById("nav").append(...TABS.map(([id, name]) => { const b = $(`<button data-tab="${id}">${name}</button>`); b.onclick = () => show(id); return b; }));
+show(TABS.some(t => t[0] === location.hash.slice(1)) ? location.hash.slice(1) : "overview");
+</script>
+</body>
+</html>

@@ -1,0 +1,47 @@
+# 品種字典。category: crude 原油 / product 成品油 / chem 化工品 / freight 運費 / fx 匯率 / fundamental 基本面
+# 原油
+- {code: BRENT,         name_zh: 布倫特,           category: crude}
+- {code: WTI,           name_zh: WTI,              category: crude}
+- {code: DUBAI,         name_zh: 迪拜,             category: crude}
+- {code: OMAN,          name_zh: 阿曼,             category: crude}
+- {code: MURBAN,        name_zh: 穆爾班,           category: crude}
+- {code: SC,            name_zh: 上海原油（INE）,  category: crude}
+- {code: ESPO,          name_zh: ESPO 混合,        category: crude}
+- {code: URALS,         name_zh: 烏拉爾,           category: crude}
+- {code: ARAB_LIGHT,    name_zh: 沙特輕質,         category: crude}
+- {code: ARAB_MEDIUM,   name_zh: 沙特中質,         category: crude}
+- {code: ARAB_HEAVY,    name_zh: 沙特重質,         category: crude}
+- {code: BASRAH_MEDIUM, name_zh: 巴士拉中質,       category: crude}
+- {code: BASRAH_HEAVY,  name_zh: 巴士拉重質,       category: crude}
+- {code: UPPER_ZAKUM,   name_zh: 上扎庫姆,         category: crude}
+- {code: FORTIES,       name_zh: 福蒂斯,           category: crude}
+- {code: EKOFISK,       name_zh: 埃科菲斯克,       category: crude}
+- {code: JOHAN_SVERDRUP, name_zh: 約翰斯維德魯普,  category: crude}
+- {code: CPC,           name_zh: CPC 混合,         category: crude}
+- {code: BONNY_LIGHT,   name_zh: 邦尼輕質,         category: crude}
+- {code: WTI_MIDLAND,   name_zh: WTI 米德蘭,       category: crude}
+- {code: WTI_MEH,       name_zh: WTI 休斯頓（MEH）, category: crude}
+- {code: MARS,          name_zh: Mars,             category: crude}
+- {code: WCS,           name_zh: 加拿大西部精選,   category: crude}
+- {code: TUPI,          name_zh: 巴西 Tupi,        category: crude}
+# 成品油
+- {code: GASOLINE,      name_zh: 汽油,             category: product}
+- {code: GASOIL,        name_zh: 柴油 / 瓦斯油,    category: product}
+- {code: JET,           name_zh: 航煤,             category: product}
+- {code: NAPHTHA,       name_zh: 石腦油,           category: product}
+- {code: HSFO,          name_zh: 高硫燃料油,       category: product}
+- {code: VLSFO,         name_zh: 低硫燃料油,       category: product}
+- {code: BITUMEN,       name_zh: 瀝青,             category: product}
+# 化工品（一體化煉廠用）
+- {code: PX,            name_zh: 對二甲苯,         category: chem}
+- {code: BENZENE,       name_zh: 純苯,             category: chem}
+- {code: ETHYLENE,      name_zh: 乙烯,             category: chem}
+- {code: PROPYLENE,     name_zh: 丙烯,             category: chem}
+- {code: PP,            name_zh: 聚丙烯,           category: chem}
+- {code: LLDPE,         name_zh: 線性低密度聚乙烯, category: chem}
+- {code: PTA,           name_zh: PTA,              category: chem}
+- {code: MEG_CHEM,      name_zh: 乙二醇,           category: chem}
+# 其他
+- {code: FREIGHT_DIRTY, name_zh: 原油油輪運費,     category: freight}
+- {code: FX,            name_zh: 匯率,             category: fx}
+- {code: US_FUNDAMENTAL, name_zh: 美國周度基本面,  category: fundamental}

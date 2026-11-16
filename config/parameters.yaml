@@ -1,0 +1,14 @@
+# 參數字典：公式裡用到的所有常數。這裡是初始值；之後在後台修改，修改會留歷史記錄。
+# 重新同步配置不會覆蓋後台已改過的值。
+- {key: GAL_PER_BBL, name_zh: 每桶加侖數, value: 42, unit: gal/bbl, group: 單位換算,
+   description: 美制，固定值}
+- {key: BBL_PER_T_GASOIL, name_zh: 柴油 桶/噸, value: 7.45, unit: bbl/t, group: 單位換算,
+   description: ICE 柴油、西北歐柴油折桶常用係數}
+- {key: BBL_PER_T_GASOLINE, name_zh: 汽油 桶/噸, value: 8.33, unit: bbl/t, group: 單位換算,
+   description: Eurobob 折桶常用係數}
+- {key: BBL_PER_T_JET, name_zh: 航煤 桶/噸, value: 7.88, unit: bbl/t, group: 單位換算,
+   description: 西北歐航煤折桶常用係數}
+- {key: BBL_PER_T_NAPHTHA, name_zh: 石腦油 桶/噸, value: 9.0, unit: bbl/t, group: 單位換算,
+   description: 亞洲石腦油常用 9.0，西北歐常用 8.9}
+- {key: BBL_PER_T_FUELOIL, name_zh: 燃料油 桶/噸, value: 6.35, unit: bbl/t, group: 單位換算,
+   description: 高硫燃料油折桶常用係數}

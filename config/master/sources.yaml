@@ -1,0 +1,12 @@
+# 數據源。priority 數字越小越優先：同一序列同一天有多個來源時取優先級最高的。
+# status: active = 已可用；reserved = 僅預留接口，尚未接通。
+- {code: manual,       name: 後台手動錄入,       kind: manual, status: active,   priority: 10}
+- {code: reuters_xls,  name: 路透（Excel 整理）, kind: excel,  status: active,   priority: 20}
+- {code: excel_other,  name: 其他 Excel 導入,    kind: excel,  status: active,   priority: 50}
+- {code: eia,          name: EIA 公開數據,       kind: api,    status: active,   priority: 30,
+   notes: 需要免費的 EIA_API_KEY 環境變量}
+- {code: reuters_api,  name: 路透 / LSEG API,    kind: api,    status: reserved, priority: 15}
+- {code: kpler,        name: Kpler API,          kind: api,    status: reserved, priority: 25}
+- {code: cn_vendor,    name: 國內資訊商（隆眾 / 卓創 / 金聯創 / Wind）, kind: api, status: reserved, priority: 25}
+- {code: demo,         name: 演示用假數據,       kind: excel,  status: active,   priority: 99,
+   notes: 只用來試用系統。用 crudelab purge-source demo 可一鍵清除}

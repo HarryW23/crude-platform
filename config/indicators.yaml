@@ -1,0 +1,48 @@
+# 指標定義：全部由「公式 + 參數」構成，計算結果可以逐層追溯到原始數據。
+#   formula      可用 + - * / ** 與括號；名字可以是 序列代碼 / 參數 key / 其他指標代碼
+#                函數：lag(x, n) 滯後 n 期、ma(x, n) n 期均值、diff(x, n) n 期變化、abs(x)
+#   ffill_limit  輸入序列缺值時最多向前填充幾天（處理各市場假期不一致），預設 0 = 不填充
+# 第一期放的是地域價差與裂解的基礎指標，用來驗證引擎；第二期會擴充完整的煉廠模型。
+
+# ---------- 基準間價差 ----------
+- {code: SPR_BRENT_WTI, name_zh: Brent-WTI 價差, module: spread, unit: USD/bbl,
+   formula: "BRENT_M1 - WTI_M1"}
+- {code: SPR_BRENT_DUBAI, name_zh: Brent-Dubai 價差（期貨減掉期）, module: spread, unit: USD/bbl,
+   formula: "BRENT_M1 - DUBAI_SWAP_M1"}
+- {code: SC_M1_USD, name_zh: SC 折美元, module: spread, unit: USD/bbl, ffill_limit: 3,
+   formula: "SC_M1 / USDCNY"}
+- {code: SPR_SC_BRENT, name_zh: SC-Brent 價差（美元）, module: spread, unit: USD/bbl, ffill_limit: 3,
+   formula: "SC_M1_USD - BRENT_M1"}
+- {code: SPR_SC_DUBAI, name_zh: SC-Dubai 價差（美元）, module: spread, unit: USD/bbl, ffill_limit: 3,
+   formula: "SC_M1_USD - DUBAI_SWAP_M1"}
+
+# ---------- 月差結構 ----------
+- {code: TS_BRENT_M1_M3, name_zh: Brent M1-M3 月差, module: spread, unit: USD/bbl,
+   formula: "BRENT_M1 - BRENT_M3"}
+- {code: TS_WTI_M1_M3, name_zh: WTI M1-M3 月差, module: spread, unit: USD/bbl,
+   formula: "WTI_M1 - WTI_M3"}
+- {code: TS_DUBAI_M1_M3, name_zh: Dubai M1-M3 月差, module: spread, unit: USD/bbl,
+   formula: "DUBAI_SWAP_M1 - DUBAI_SWAP_M3"}
+- {code: TS_SC_M1_M3, name_zh: SC M1-M3 月差, module: spread, unit: CNY/bbl,
+   formula: "SC_M1 - SC_M3"}
+
+# ---------- 現貨絕對價（基準 + 升貼水，近似） ----------
+- {code: ESPO_OUTRIGHT, name_zh: ESPO 絕對價（近似）, module: spread, unit: USD/bbl,
+   formula: "DUBAI_SWAP_M1 + ESPO_DIFF",
+   notes: 以迪拜掉期 M1 近似計價期基準，精確計價期第二期再處理}
+
+# ---------- 裂解價差 ----------
+- {code: CRK_US_321, name_zh: 美國 3-2-1 裂解, module: refinery, unit: USD/bbl,
+   formula: "(2 * RBOB_M1 + HO_M1) * GAL_PER_BBL / 3 - WTI_M1"}
+- {code: CRK_ICE_GASOIL, name_zh: ICE 柴油裂解（對 Brent）, module: refinery, unit: USD/bbl,
+   formula: "GASOIL_ICE_M1 / BBL_PER_T_GASOIL - BRENT_M1"}
+- {code: CRK_SG_GASOLINE, name_zh: 新加坡汽油裂解（對 Dubai）, module: refinery, unit: USD/bbl,
+   formula: "SG_GASOLINE_92 - DUBAI_SWAP_M1"}
+- {code: CRK_SG_GASOIL, name_zh: 新加坡柴油裂解（對 Dubai）, module: refinery, unit: USD/bbl,
+   formula: "SG_GASOIL_10PPM - DUBAI_SWAP_M1"}
+- {code: CRK_SG_JET, name_zh: 新加坡航煤裂解（對 Dubai）, module: refinery, unit: USD/bbl,
+   formula: "SG_JET_KERO - DUBAI_SWAP_M1"}
+- {code: CRK_SG_HSFO, name_zh: 新加坡高硫燃料油裂解（對 Dubai）, module: refinery, unit: USD/bbl,
+   formula: "SG_HSFO_380 / BBL_PER_T_FUELOIL - DUBAI_SWAP_M1"}
+- {code: CRK_JAPAN_NAPHTHA, name_zh: 日本石腦油裂解（對 Brent）, module: refinery, unit: USD/bbl,
+   formula: "JAPAN_NAPHTHA / BBL_PER_T_NAPHTHA - BRENT_M1"}

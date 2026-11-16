@@ -1,0 +1,21 @@
+# 地區 / 交割地字典。region 用於地域價差分組。
+- {code: NWE,       name_zh: 西北歐, region: 歐洲}
+- {code: MED,       name_zh: 地中海, region: 歐洲}
+- {code: BALTIC,    name_zh: 波羅的海, region: 歐洲}
+- {code: WAF,       name_zh: 西非, region: 非洲}
+- {code: MEG,       name_zh: 中東海灣, region: 中東}
+- {code: USGC,      name_zh: 美灣, region: 美洲}
+- {code: CUSHING,   name_zh: 庫欣, region: 美洲}
+- {code: NYH,       name_zh: 紐約港, region: 美洲}
+- {code: CANADA,    name_zh: 加拿大, region: 美洲}
+- {code: LATAM,     name_zh: 拉丁美洲, region: 美洲}
+- {code: US,        name_zh: 美國全國, region: 美洲}
+- {code: SINGAPORE, name_zh: 新加坡, region: 亞洲}
+- {code: JAPAN,     name_zh: 日本, region: 亞洲}
+- {code: KOREA,     name_zh: 韓國, region: 亞洲}
+- {code: NEA,       name_zh: 東北亞, region: 亞洲}
+- {code: RFE,       name_zh: 俄羅斯遠東, region: 亞洲}
+- {code: CHINA,     name_zh: 中國, region: 中國}
+- {code: SHANDONG,  name_zh: 山東, region: 中國}
+- {code: EAST_CHINA, name_zh: 華東, region: 中國}
+- {code: GLOBAL,    name_zh: 全球 / 不適用, region: 全球}
