@@ -14,11 +14,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import Depends, FastAPI
-from fastapi.responses import FileResponse
+from fastapi import Depends, FastAPI, HTTPException
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from .. import auth, db
+from .. import auth, credentials, db
 from ..settings import Settings, get_settings
 from .deps import AppState, Site
 from .routes import (
@@ -60,7 +60,14 @@ class NoAdminAccount(RuntimeError):
 def create_app(settings: Settings | None = None, site: Site = "front") -> FastAPI:
     settings = settings or get_settings()
     db.init_engine(settings)
-    app = FastAPI(title=_TITLES[site], version="0.5.0")
+    credentials.install_log_redaction()
+    app = FastAPI(title=_TITLES[site], version="0.6.0")
+
+    @app.exception_handler(HTTPException)
+    async def _redacted_http_error(_request, exc: HTTPException):
+        """所有錯誤回應出門前再過一遍脫敏。各處本來就不該把密鑰放進錯誤訊息，這是最後一道保險。"""
+        detail = credentials.redact(exc.detail) if isinstance(exc.detail, str) else exc.detail
+        return JSONResponse({"detail": detail}, status_code=exc.status_code, headers=exc.headers)
     app.state.crudelab = AppState(settings, site)
     if settings.auth_enabled:
         with db.session_scope() as session:

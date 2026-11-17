@@ -104,8 +104,40 @@ Windows 把 `.venv/bin/` 換成 `.venv\Scripts\`。
 | `crudelab init` | 升級表結構並同步配置（`serve` 會自動做） |
 | `crudelab import 文件.xlsx --dry-run` | 只預覽識別結果，不入庫 |
 | `crudelab import 文件.xlsx --source reuters_xls` | 導入（只入庫能自動識別的列） |
-| `crudelab pull eia` | 取 EIA 周度數據，需要環境變量 `EIA_API_KEY` |
+| `crudelab pull eia` | 取 EIA 數據，需要先 `crudelab secret set EIA_API_KEY` |
+| `crudelab secret list / set / unset` | 密鑰管理 |
+| `crudelab data-needs` | 生成數據與接口需求清單 |
 | `pytest` / `ruff check src tests` | 測試 / 代碼檢查 |
+
+## 數據與接口
+
+系統需要哪些數據、從哪裡取得、需要什麼憑證、哪些要你確認授權，全部列在 [docs/data-requirements.md](docs/data-requirements.md)。
+這份清單由 `crudelab data-needs` 從配置生成。
+
+## 密鑰
+
+數據源和大模型的 API key、數據庫連接串，統一這樣保管：
+
+```bash
+.venv/bin/crudelab secret set EIA_API_KEY
+```
+
+會提示你輸入，輸入時不顯示。密鑰存在 `~/.crudelab/secrets.env`：在項目文件夾之外，只有你本人能讀。
+
+```bash
+.venv/bin/crudelab secret list
+```
+
+列出每個密鑰設了沒有、來自哪裡，任何時候都不顯示內容。移除用 `crudelab secret unset 名稱`。改完不用重啟。
+
+請遵守：
+- **不要**把密鑰寫進 `config/`、代碼、README、聊天或郵件，也不要用 `export 名稱=密鑰` 這種會留在終端歷史裡的方式。
+- **不要**把 `~/.crudelab/` 複製進項目文件夾或隨代碼一起打包。
+- 懷疑洩漏時，先到供應商後台**作廢並重發**，再換上新的。只從文件裡刪掉沒有用。
+- 申請密鑰時能設額度上限、IP 限制的都設上。
+
+服務器上可以改用環境變量注入（由平台的密鑰管理提供），環境變量優先於密鑰文件。
+系統這一側的防護（錯誤訊息和日誌自動遮蔽、CI 掃描等）見 [docs/architecture.md](docs/architecture.md) 的「密鑰」一節。
 
 ## 登錄（預設關閉）
 
@@ -161,17 +193,20 @@ Windows 把 `.venv/bin/` 換成 `.venv\Scripts\`。
 |---|---|
 | `CRUDELAB_LLM_PROVIDER` | `none`（預設）/ `deepseek` / `openai` / `anthropic` / `compatible` |
 | `CRUDELAB_LLM_MODEL` | 模型名。`deepseek` 預設 `deepseek-chat`，`anthropic` 預設 `claude-opus-5-5`；`openai` 和 `compatible` 必填 |
-| `DEEPSEEK_API_KEY` / `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | 對應供應商的密鑰 |
-| `CRUDELAB_LLM_BASE_URL`、`CRUDELAB_LLM_API_KEY` | 僅 `compatible`：任何兼容 chat completions 格式的服務 |
+| `CRUDELAB_LLM_BASE_URL` | 僅 `compatible`：任何兼容 chat completions 格式的服務的地址 |
 
-例如用 DeepSeek：
+密鑰（`DEEPSEEK_API_KEY` / `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `CRUDELAB_LLM_API_KEY`）**不要寫在命令行或任何文件裡**，用 `crudelab secret set` 保存，見下面「密鑰」一節。
+
+例如用 DeepSeek。先保存密鑰（輸入不會顯示，也不會留在終端的歷史記錄裡）：
+
+```bash
+.venv/bin/crudelab secret set DEEPSEEK_API_KEY
+```
+
+再選擇供應商後啟動：
 
 ```bash
 export CRUDELAB_LLM_PROVIDER=deepseek
-```
-
-```bash
-export DEEPSEEK_API_KEY=你的密鑰
 ```
 
 用 Claude 需要另外安裝 `pip install -e ".[anthropic]"`。想省錢時把 `CRUDELAB_LLM_MODEL` 換成同一家更便宜的型號即可，不用改代碼。
@@ -182,7 +217,7 @@ export DEEPSEEK_API_KEY=你的密鑰
 
 1. **核對參數。** 所有收率、加工費、稅率、換算係數都標為「待核對」。其中收率和加工費是示意性的暫定值，不能直接當結論用。在「參數」頁逐項核對或修改。
 2. **錄入運費基準費率。** TD3C / TD15 / TD20 / TD25 的 Worldscale 年度基準費率和 ESPO 運費沒有預設值，需要按年錄入；否則運費、到岸成本、套利窗口共 14 個指標算不出來。
-3. **核對 EIA 序列號。** 供需的 24 條序列登記了 EIA 序列號，是按記憶填的，沒有實際調用過。配好 `EIA_API_KEY` 後先取一次數，看每條是否取到、數量級是否合理。
+3. **核對 EIA 序列號。** 供需的 24 條序列登記了 EIA 序列號，是按記憶填的，沒有實際調用過。用 `crudelab secret set EIA_API_KEY` 存好密鑰後先取一次數，看每條是否取到、數量級是否合理。
 4. **給出推演的敏感度。** 參數 `PROJ_PRICE_PER_BALANCE`（全球平衡每多過剩 1 百萬桶/日，Brent 跌多少）是推演的核心假設，沒有預設值；不設的話，帶供需調整的分支算不出價格。
 5. **核對信號的方向。** `config/signals/signals.yaml` 裡每個信號的 `direction`（數值高是利多還是利空）是我按常規理解填的，請按你的看法核對。
 6. **導入數據。** 各指標需要哪些序列，在指標的狀態欄和「序列」頁可以看到。
@@ -206,6 +241,7 @@ src/crudelab/
   refinery.py balance.py 煉廠模型、平衡表的編譯器
   periods.py            期間型數據的日期約定
   models.py migrations/ 表結構與遷移
+  credentials.py        密鑰的唯一出入口與脫敏
   ingest.py             數據點的寫入與讀取
   parameters.py         參數服務
   scenarios.py          情境與調整
@@ -225,17 +261,15 @@ docs/architecture.md
 
 ## 數據庫
 
-預設 SQLite，文件在 `data/crudelab.db`（不進 git，請自行備份 `data/`）。換 PostgreSQL：
+預設 SQLite，文件在 `data/crudelab.db`（不進 git，請自行備份 `data/`）。
+
+換 PostgreSQL：安裝 `pip install -e ".[postgres]"`，然後把連接串存進密鑰文件（輸入不回顯）：
 
 ```bash
-docker compose up -d db
+.venv/bin/crudelab secret set DATABASE_URL
 ```
 
-```bash
-export DATABASE_URL=postgresql+psycopg://crudelab:crudelab@localhost:5432/crudelab
-```
-
-並安裝 `pip install -e ".[postgres]"`。PostgreSQL 路徑尚未實測。
+連接串的格式是 `postgresql+psycopg://用戶名:密碼@主機:5432/庫名`。本機試驗可以用倉庫裡的 `docker-compose.yml` 起一個 PostgreSQL，密碼的設法寫在那個文件的開頭。PostgreSQL 路徑尚未實測。
 
 ## 已知限制
 

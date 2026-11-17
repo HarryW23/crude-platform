@@ -12,6 +12,10 @@ class ConnectorNotReady(RuntimeError):
     """connector 尚未接通（缺密鑰或只是預留）。"""
 
 
+class ConnectorError(RuntimeError):
+    """向數據源取數失敗。訊息必須是我們自己寫的說明：不含請求網址、不含對方返回的原文、不含密鑰。"""
+
+
 @dataclass(frozen=True)
 class ConnectorStatus:
     ready: bool

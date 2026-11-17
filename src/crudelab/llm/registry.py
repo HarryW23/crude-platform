@@ -4,6 +4,7 @@
     CRUDELAB_LLM_MODEL      模型名。deepseek 預設 deepseek-chat，anthropic 預設 claude-opus-5-5；其餘必填
     CRUDELAB_LLM_BASE_URL   僅 compatible 需要：任何兼容 chat completions 格式的服務地址
     密鑰                    DEEPSEEK_API_KEY / OPENAI_API_KEY / ANTHROPIC_API_KEY / CRUDELAB_LLM_API_KEY（compatible）
+                            一律通過 credentials.get() 取得，用 crudelab secret set 設定，不寫在任何配置文件裡
 
 想省錢時不用改代碼：換 CRUDELAB_LLM_PROVIDER，或把 CRUDELAB_LLM_MODEL 換成同一家更便宜的型號。
 """
@@ -11,6 +12,7 @@ from __future__ import annotations
 
 import os
 
+from .. import credentials
 from .base import LLMNotConfigured, LLMProvider
 
 _OPENAI_STYLE = {   # 代號 → (接口地址, 密鑰的環境變量, 預設模型)
@@ -31,18 +33,19 @@ def get_provider() -> LLMProvider:
     if name == "none":
         raise LLMNotConfigured("還沒有配置大模型（環境變量 CRUDELAB_LLM_PROVIDER）")
     if name == "anthropic":
-        return AnthropicProvider(model or "claude-opus-5-5")
+        return AnthropicProvider(model or "claude-opus-5-5", credentials.get("ANTHROPIC_API_KEY"))
     if name not in _OPENAI_STYLE:
         raise LLMNotConfigured(f"不認識的大模型供應商：{name}")
     base_url, key_env, default_model = _OPENAI_STYLE[name]
     base_url = base_url or os.environ.get("CRUDELAB_LLM_BASE_URL", "").strip()
     if not base_url:
         raise LLMNotConfigured("compatible 需要設定 CRUDELAB_LLM_BASE_URL")
-    if not os.environ.get(key_env):
-        raise LLMNotConfigured(f"缺少環境變量 {key_env}")
+    key = credentials.get(key_env)
+    if not key:
+        raise LLMNotConfigured(f"還沒有設定 {key_env}（用 crudelab secret set {key_env} 設定）")
     if not (model or default_model):
         raise LLMNotConfigured(f"{name} 需要用 CRUDELAB_LLM_MODEL 指定模型名")
-    return OpenAICompatibleProvider(name, base_url, os.environ[key_env], model or default_model)
+    return OpenAICompatibleProvider(name, base_url, key, model or default_model)
 
 
 def status() -> dict:
@@ -51,6 +54,6 @@ def status() -> dict:
         provider = get_provider()
     except LLMNotConfigured as exc:
         return {"configured": False, "provider": _choice(), "model": None, "message": str(exc)}
-    except Exception as exc:    # 例如沒裝對應的 SDK
-        return {"configured": False, "provider": _choice(), "model": None, "message": str(exc)}
+    except Exception as exc:    # 例如沒裝對應的 SDK、密鑰文件權限不對
+        return {"configured": False, "provider": _choice(), "model": None, "message": credentials.redact(exc)}
     return {"configured": True, "provider": provider.name, "model": provider.model, "message": "已配置（尚未驗證連通）"}

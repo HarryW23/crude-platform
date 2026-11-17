@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+
+from . import credentials
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -12,12 +14,17 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 class Settings:
     config_dir: Path
     data_dir: Path
-    database_url: str
+    database_url: str = field(repr=False)        # 可能含密碼：不進 repr，打印時用 safe_database_url
     front_url: str = "http://127.0.0.1:8000"      # 兩個站點互相連結時用的對外地址
     admin_url: str = "http://127.0.0.1:8001"
     auth_enabled: bool = False        # 登錄功能的總開關。關閉時所有人都以 local 身份操作，只適合本機
     session_hours: int = 12           # 登錄後多久要重新登錄
     cookie_secure: bool = False       # 用 https 對外提供服務時必須設為 True
+
+    @property
+    def safe_database_url(self) -> str:
+        """可以打印的連接串：密碼已遮。"""
+        return credentials.redact(self.database_url)
 
     @property
     def raw_dir(self) -> Path:
@@ -32,7 +39,7 @@ def _flag(name: str) -> bool:
 def get_settings() -> Settings:
     config_dir = Path(os.environ.get("CRUDELAB_CONFIG_DIR", PROJECT_ROOT / "config"))
     data_dir = Path(os.environ.get("CRUDELAB_DATA_DIR", PROJECT_ROOT / "data"))
-    database_url = os.environ.get("DATABASE_URL", f"sqlite:///{data_dir / 'crudelab.db'}")
+    database_url = credentials.get("DATABASE_URL") or f"sqlite:///{data_dir / 'crudelab.db'}"
     return Settings(config_dir=config_dir, data_dir=data_dir, database_url=database_url,
                     front_url=os.environ.get("CRUDELAB_FRONT_URL", "http://127.0.0.1:8000").rstrip("/"),
                     admin_url=os.environ.get("CRUDELAB_ADMIN_URL", "http://127.0.0.1:8001").rstrip("/"),

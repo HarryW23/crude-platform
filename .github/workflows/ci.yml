@@ -12,6 +12,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -e ".[dev]"
-      - run: ruff check src tests
+      - run: python scripts/check_secrets.py
+      - run: ruff check src tests scripts
       - run: crudelab check
       - run: pytest -q

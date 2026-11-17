@@ -7,7 +7,8 @@
 無論哪種，輸出都是 ingest.Obs 列表，再交給 ingest.write_observations 入庫。
 新增一個數據源 = 在 config/master/sources.yaml 加一行 + 寫一個 PullConnector 子類並註冊。
 """
-from .base import ConnectorNotReady, ConnectorStatus, PullConnector
+from .base import ConnectorError, ConnectorNotReady, ConnectorStatus, PullConnector
 from .registry import get_connector, list_connectors
 
-__all__ = ["ConnectorNotReady", "ConnectorStatus", "PullConnector", "get_connector", "list_connectors"]
+__all__ = ["ConnectorError", "ConnectorNotReady", "ConnectorStatus", "PullConnector", "get_connector",
+           "list_connectors"]

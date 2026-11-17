@@ -12,6 +12,16 @@ from crudelab.settings import PROJECT_ROOT, Settings
 CONFIG_DIR = PROJECT_ROOT / "config"
 
 
+@pytest.fixture(autouse=True)
+def isolated_credentials(tmp_path, monkeypatch):
+    """測試不讀、不寫使用者真正的密鑰文件，也不受外面環境變量裡的密鑰影響。"""
+    from crudelab import credentials
+    monkeypatch.setenv("CRUDELAB_SECRETS_FILE", str(tmp_path / "home" / "secrets.env"))
+    for name in credentials.KNOWN:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(credentials, "_cache", None)
+
+
 @pytest.fixture()
 def settings(tmp_path: Path) -> Settings:
     return Settings(config_dir=CONFIG_DIR, data_dir=tmp_path / "data",

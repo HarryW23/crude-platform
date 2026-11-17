@@ -1,6 +1,19 @@
 .venv/
 __pycache__/
 *.egg-info/
-data/
 .pytest_cache/
+
+# 數據：數據庫和導入的原始文件。不進 git，請自行備份
+data/
+
+# 密鑰：任何形式都不進 git。密鑰的正確位置是 ~/.crudelab/secrets.env（用 crudelab secret set 寫入）
 .env
+.env.*
+*.env
+secrets*
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+credentials*.json

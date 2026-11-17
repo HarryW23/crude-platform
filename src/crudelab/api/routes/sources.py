@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ...connectors import ConnectorNotReady, get_connector, list_connectors
+from ...connectors import ConnectorError, ConnectorNotReady, get_connector, list_connectors
 from ...ingest import write_observations
 from ...models import AuditLog, DataSource, Observation, Series
 from ..deps import get_actor, get_db
@@ -49,8 +49,10 @@ def pull(code: str, body: PullRequest, session: Session = Depends(get_db), actor
                                        body.start, body.end)
     except ConnectorNotReady as exc:
         raise HTTPException(409, str(exc)) from exc
-    except Exception as exc:   # 對方接口的錯誤原樣報給使用者
-        raise HTTPException(502, f"從 {code} 取數失敗：{exc}") from exc
+    except ConnectorError as exc:      # connector 自己寫的說明，保證不含網址和密鑰
+        raise HTTPException(502, str(exc)) from exc
+    except Exception as exc:           # 意料之外的錯誤：不把原文給使用者（可能含請求網址），只給類型
+        raise HTTPException(502, f"從 {code} 取數時發生未預期的錯誤（{type(exc).__name__}），詳情見服務器日誌") from exc
     stats = write_observations(session, observations, code, actor=actor)
     session.add(AuditLog(actor=actor, action="pull", entity="data_source", entity_id=code, detail=stats))
     return stats

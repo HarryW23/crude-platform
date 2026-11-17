@@ -6,6 +6,8 @@
   crudelab import 文件 [--source …]   導入 Excel / CSV（只入庫能自動識別的列）
   crudelab pull eia                   從拉取型數據源取數
   crudelab make-sample 輸出.xlsx      生成一個演示用的假數據 Excel
+  crudelab data-needs [--output 文件] 生成數據與接口需求清單
+  crudelab secret set 名稱            保存一個 API key（輸入不回顯；另有 list / unset）
   crudelab user add 名字 --role admin  建立帳號（另有 list / passwd / role / disable / enable）
   crudelab purge-source demo          刪除某個數據源的全部數據點
 """
@@ -34,7 +36,7 @@ def _init() -> dict:
 
 def cmd_init(_args) -> int:
     stats = _init()
-    print(f"數據庫：{get_settings().database_url}")
+    print(f"數據庫：{get_settings().safe_database_url}")
     print("已同步：" + "，".join(f"{k}={v}" for k, v in stats.items()))
     return 0
 
@@ -144,6 +146,11 @@ def cmd_pull(args) -> int:
         except ConnectorNotReady as exc:
             print(f"無法取數：{exc}", file=sys.stderr)
             return 1
+        except Exception as exc:        # 不打印異常原文：可能含請求網址（EIA 的 key 在網址裡）
+            from .connectors import ConnectorError
+            detail = str(exc) if isinstance(exc, ConnectorError) else f"未預期的錯誤（{type(exc).__name__}）"
+            print(f"取數失敗：{detail}", file=sys.stderr)
+            return 1
         stats = write_observations(session, observations, args.source)
     print(f"{args.source}：新增 {stats['inserted']}，更新 {stats['updated']}，未變 {stats['unchanged']}")
     return 0
@@ -198,6 +205,54 @@ def cmd_user(args) -> int:
     return 0
 
 
+def cmd_data_needs(args) -> int:
+    from .config import ConfigError, load_config
+    from .data_needs import render
+    try:
+        text = render(load_config(get_settings().config_dir))
+    except ConfigError as exc:
+        print(exc, file=sys.stderr)
+        return 1
+    if args.output:
+        Path(args.output).write_text(text, encoding="utf-8")
+        print(f"已寫入 {args.output}")
+    else:
+        print(text)
+    return 0
+
+
+def cmd_secret(args) -> int:
+    """密鑰管理。任何時候都不顯示密鑰的內容，只顯示設了沒有、來自哪裡。"""
+    import getpass
+
+    from . import credentials
+    try:
+        if args.action == "list":
+            path = credentials.secrets_path()
+            print(f"密鑰文件：{path}（{'存在' if path.exists() else '尚未建立'}）")
+            for name, description in credentials.KNOWN.items():
+                where = credentials.source(name)
+                print(f"  {'✓' if where else '·'} {name:<22} {where or '未設定':<6}  {description}")
+            return 0
+        if args.name not in credentials.KNOWN:
+            print(f"不認識的密鑰名 {args.name}。運行 crudelab secret list 查看可用的名字", file=sys.stderr)
+            return 1
+        if args.action == "set":
+            value = (sys.stdin.readline().rstrip("\n") if args.stdin
+                     else getpass.getpass(f"{args.name}（輸入不會顯示）："))
+            credentials.set_secret(args.name, value)
+            print(f"已保存 {args.name} 到 {credentials.secrets_path()}。下次取數或調用時生效，不用重啟。")
+            if os.environ.get(args.name):
+                print("注意：環境變量裡也設了同名的值，它優先於密鑰文件。")
+        else:
+            removed = credentials.unset_secret(args.name)
+            print(f"已從密鑰文件移除 {args.name}" if removed else f"密鑰文件裡沒有 {args.name}")
+    except credentials.CredentialError as exc:
+        print(exc, file=sys.stderr)
+        return 1
+    return 0
+
+
 def cmd_make_sample(args) -> int:
     from .sample import write_sample_workbook
     write_sample_workbook(Path(args.output), days=780)       # 三年日度行情，夠關係模型擬合
@@ -245,6 +300,14 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("make-sample", help="生成演示用假數據 Excel")
     p.add_argument("output")
     p.set_defaults(func=cmd_make_sample)
+    p = sub.add_parser("data-needs", help="生成數據與接口需求清單")
+    p.add_argument("--output", help="寫入這個文件；不給就打印")
+    p.set_defaults(func=cmd_data_needs)
+    p = sub.add_parser("secret", help="密鑰管理（API key 等）")
+    p.add_argument("action", choices=["list", "set", "unset"])
+    p.add_argument("name", nargs="?")
+    p.add_argument("--stdin", action="store_true", help="從標準輸入讀（給腳本用）；預設是不回顯的互動輸入")
+    p.set_defaults(func=cmd_secret)
     p = sub.add_parser("user", help="帳號管理")
     p.add_argument("action", choices=["list", "add", "passwd", "role", "disable", "enable"])
     p.add_argument("username", nargs="?")
@@ -259,6 +322,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "user" and args.action != "list" and not args.username:
         parser.error("這個操作需要給用戶名")
+    if args.command == "secret" and args.action != "list" and not args.name:
+        parser.error("這個操作需要給密鑰名")
+    from . import credentials
+    credentials.install_log_redaction()
     return args.func(args)
 
 
