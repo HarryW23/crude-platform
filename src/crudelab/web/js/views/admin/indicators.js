@@ -1,6 +1,6 @@
-import { api } from "../api.js";
-import { mountBoard } from "../indicator-board.js";
-import { MODULES } from "../ui.js";
+import { api } from "../../api.js";
+import { mountBoard } from "../../indicator-board.js";
+import { MODULES } from "../../ui.js";
 
 export async function render(main) {
   main.innerHTML = `<h2>指標</h2>

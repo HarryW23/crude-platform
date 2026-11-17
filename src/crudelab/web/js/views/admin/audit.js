@@ -1,5 +1,5 @@
-import { api } from "../api.js";
-import { esc, time } from "../ui.js";
+import { api } from "../../api.js";
+import { esc, time } from "../../ui.js";
 
 const ACTION = { import: "導入文件", manual_entry: "手動錄入", pull: "接口取數", purge: "清除數據" };
 

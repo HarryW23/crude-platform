@@ -13,7 +13,8 @@ from ... import parameters as service
 from ...models import Parameter, ParameterVersion
 from ..deps import AppState, get_actor, get_db, get_state
 
-router = APIRouter(tags=["parameters"])
+router = APIRouter(tags=["parameters"])            # 兩個站點都有：只讀
+admin_router = APIRouter(tags=["parameters-admin"])  # 只在後台：改參數
 
 
 class NewVersion(BaseModel):
@@ -57,7 +58,7 @@ def list_versions(key: str, session: Session = Depends(get_db)):
              "created_at": v.created_at, "effective": v.id in effective} for v in rows]
 
 
-@router.post("/parameters/{key}/versions")
+@admin_router.post("/parameters/{key}/versions")
 def add_version(key: str, body: NewVersion, session: Session = Depends(get_db), actor: str = Depends(get_actor)):
     try:
         version = service.set_value(session, key, body.value, body.valid_from, body.note, actor)
@@ -66,7 +67,7 @@ def add_version(key: str, body: NewVersion, session: Session = Depends(get_db), 
     return {"key": key, "value": version.value, "valid_from": version.valid_from}
 
 
-@router.post("/parameters/{key}/verify")
+@admin_router.post("/parameters/{key}/verify")
 def verify(key: str, body: VerifyRequest, session: Session = Depends(get_db)):
     try:
         service.set_verified(session, key, body.verified)

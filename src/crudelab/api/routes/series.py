@@ -12,7 +12,8 @@ from ...ingest import IngestError, Obs, load_points, write_observations
 from ...models import AuditLog, Observation, ObservationRevision
 from ..deps import AppState, get_actor, get_db, get_state
 
-router = APIRouter(tags=["series"])
+router = APIRouter(tags=["series"])                # 兩個站點都有：只讀
+admin_router = APIRouter(tags=["series-admin"])    # 只在後台：錄入數據
 
 
 class ManualPoint(BaseModel):
@@ -64,7 +65,7 @@ def series_revisions(code: str, session: Session = Depends(get_db), state: AppSt
              "recorded_at": r.recorded_at, "replaced_at": r.replaced_at, "replaced_by": r.replaced_by} for r in rows]
 
 
-@router.post("/observations")
+@admin_router.post("/observations")
 def manual_entry(body: ManualEntry, session: Session = Depends(get_db), actor: str = Depends(get_actor)):
     try:
         stats = write_observations(

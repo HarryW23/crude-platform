@@ -1,5 +1,5 @@
-import { api } from "../api.js";
-import { mountBoard } from "../indicator-board.js";
+import { api } from "../../api.js";
+import { mountBoard } from "../../indicator-board.js";
 
 export async function render(main) {
   const list = await api("/indicators?module=spread");

@@ -1,5 +1,5 @@
-import { api } from "../api.js";
-import { errorBox, esc, num } from "../ui.js";
+import { api } from "../../api.js";
+import { errorBox, esc, num } from "../../ui.js";
 
 const KIND = { manual: "手動", excel: "文件導入", api: "接口拉取" };
 

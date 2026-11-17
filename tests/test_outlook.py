@@ -4,10 +4,8 @@ from datetime import date, timedelta
 
 import numpy as np
 import pytest
-from fastapi.testclient import TestClient
 
 from crudelab import events, projection, reports, scenarios, signals
-from crudelab.api.app import create_app
 from crudelab.indicators import IndicatorEngine
 from crudelab.ingest import Obs, write_observations
 from crudelab.llm import LLMNotConfigured, get_provider, status
@@ -288,12 +286,11 @@ def test_report_is_a_snapshot_with_every_section(loaded, cfg):
         reports.generate(loaded, cfg, "yearly")
 
 
-def test_phase4_api(settings, sample_path, monkeypatch):
+def test_phase4_api(client, admin, sample_path, monkeypatch):
     monkeypatch.delenv("CRUDELAB_LLM_PROVIDER", raising=False)
-    client = TestClient(create_app(settings))
     with sample_path.open("rb") as fh:
-        batch = client.post("/api/imports/preview", files={"file": ("s.xlsx", fh)}, data={"source_code": "demo"}).json()
-    client.post(f"/api/imports/{batch['batch_id']}/commit", json={})
+        batch = admin.post("/api/imports/preview", files={"file": ("s.xlsx", fh)}, data={"source_code": "demo"}).json()
+    admin.post(f"/api/imports/{batch['batch_id']}/commit", json={})
 
     sig = client.get("/api/signals").json()
     assert [m["module"] for m in sig["modules"]] == ["spread", "balance", "refinery", "geo"]
@@ -447,9 +444,8 @@ def test_every_chat_tool_runs_on_real_data(loaded, cfg):
         chat.tool_what_if(ctx)
 
 
-def test_chat_api(settings, monkeypatch):
+def test_chat_api(client, monkeypatch):
     monkeypatch.delenv("CRUDELAB_LLM_PROVIDER", raising=False)
-    client = TestClient(create_app(settings))
     assert len(client.get("/api/chat/tools").json()) == 11
     assert client.post("/api/chat", json={"question": "Brent 多少？"}).status_code == 409      # 沒配大模型
     assert client.post("/api/chat", json={"question": ""}).status_code == 422

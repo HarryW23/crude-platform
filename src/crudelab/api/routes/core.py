@@ -11,7 +11,8 @@ from ...ingest import latest_market_date
 from ...models import AuditLog, ImportBatch, Observation, Parameter
 from ..deps import AppState, get_db, get_engine, get_state
 
-router = APIRouter(tags=["core"])
+router = APIRouter(tags=["core"])                  # 兩個站點都有
+admin_router = APIRouter(tags=["admin"])           # 只在後台
 
 
 @router.get("/overview")
@@ -47,19 +48,27 @@ def meta(state: AppState = Depends(get_state)):
             "units": {u.code: u.name_zh for u in cfg.units.values()}}
 
 
-@router.get("/audit")
+@admin_router.get("/audit")
 def audit(limit: int = 200, session: Session = Depends(get_db)):
     rows = session.scalars(select(AuditLog).order_by(AuditLog.id.desc()).limit(min(limit, 1000)))
     return [{"ts": a.ts, "actor": a.actor, "action": a.action, "entity": a.entity,
              "entity_id": a.entity_id, "detail": a.detail} for a in rows]
 
 
-@router.post("/admin/reload-config")
+@router.get("/site")
+def site(state: AppState = Depends(get_state)):
+    """這是哪個站點、另一個站點在哪、配置是否有錯。頁面用它畫導覽和互相連結。"""
+    return {"site": state.site, "front_url": state.settings.front_url, "admin_url": state.settings.admin_url,
+            "config_error": state.config_error}
+
+
+@admin_router.post("/admin/reload-config")
 def reload_config(state: AppState = Depends(get_state)):
-    """改完 config/ 下的 YAML 後調用，不用重啟服務。配置有錯時保持原配置不變。"""
-    from ..app import load_and_sync
+    """立即重新載入 config/ 並回報結果。平時不需要調用：兩個站點都會自動發現配置文件的改動。
+
+    配置有錯時回傳錯誤清單，並保持原配置不變。
+    """
     try:
-        state.cfg, stats = load_and_sync(state.settings)
+        return state.reload()
     except ConfigError as exc:
         raise HTTPException(400, str(exc)) from exc
-    return stats

@@ -47,3 +47,22 @@ def loaded(session, settings, sample_path):
     commit_batch(session, preview["batch_id"])
     session.commit()
     return session
+
+
+@pytest.fixture()
+def sites(settings):
+    """前台和後台兩個站點的測試客戶端，共用同一個數據庫。"""
+    from fastapi.testclient import TestClient
+
+    from crudelab.api.app import create_app
+    return {"front": TestClient(create_app(settings, "front")), "admin": TestClient(create_app(settings, "admin"))}
+
+
+@pytest.fixture()
+def client(sites):
+    return sites["front"]
+
+
+@pytest.fixture()
+def admin(sites):
+    return sites["admin"]

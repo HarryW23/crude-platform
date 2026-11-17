@@ -1,6 +1,7 @@
-import { api } from "../api.js";
-import { show } from "../app.js";
-import { deltaCell, esc, num, statusTag } from "../ui.js";
+import { api } from "../../api.js";
+import { show } from "../../app.js";
+import { adminLink } from "../../site.js";
+import { deltaCell, esc, num, statusTag } from "../../ui.js";
 
 export async function render(main) {
   const [o, models, indicators, balances, sig] = await Promise.all(
@@ -9,9 +10,9 @@ export async function render(main) {
                     "CRK_US_321", "CRK_ICE_GASOIL", "CRK_SG_GASOIL", "STK_US_CRUDE_VS_5Y", "DEM_US_TOTAL_YOY"]
     .map((code) => indicators.find((i) => i.code === code)).filter(Boolean);
   const todo = [];
-  if (!o.observations) todo.push("還沒有任何數據。到「數據導入」上傳 Excel，或在「序列」裡手動錄入。");
-  if (o.parameters_missing) todo.push(`有 ${o.parameters_missing} 個必填參數還沒有數值（例如運費基準費率），用到它們的 ${o.indicators_missing_parameter} 個指標暫時算不出來。`);
-  if (o.parameters_unverified) todo.push(`有 ${o.parameters_unverified} 個參數是暫定值，尚待核對（收率、加工費、稅率、換算係數）。在「參數」頁核對。`);
+  if (!o.observations) todo.push(`還沒有任何數據。到${adminLink("import", "數據導入")}上傳 Excel，或在${adminLink("series", "序列")}手動錄入。`);
+  if (o.parameters_missing) todo.push(`有 ${o.parameters_missing} 個必填參數還沒有數值（例如運費基準費率），用到它們的 ${o.indicators_missing_parameter} 個指標暫時算不出來。到${adminLink("params", "參數")}錄入。`);
+  if (o.parameters_unverified) todo.push(`有 ${o.parameters_unverified} 個參數是暫定值，尚待核對（收率、加工費、稅率、換算係數）。在${adminLink("params", "參數")}核對。`);
 
   main.innerHTML = `
     <div class="tiles">
@@ -23,7 +24,7 @@ export async function render(main) {
         <div class="d">缺數據 ${o.indicators_missing_data}，缺參數 ${o.indicators_missing_parameter}</div></div>
       <div class="tile"><div class="k">待核對的參數</div><div class="v">${o.parameters_unverified} / ${o.parameters_total}</div></div>
     </div>
-    ${todo.map((t) => `<div class="msg">${esc(t)}</div>`).join("")}
+    ${todo.map((t) => `<div class="msg">${t}</div>`).join("")}
     <div class="cols"><div class="panel"><h2>煉廠毛利</h2><p class="sub">各模型最新一天的毛利。點一行進入拆解和試算。</p>
       <div class="scroll"><table><tr><th>模型</th><th>日期</th><th class="n">毛利</th><th class="n">日變化</th><th class="n">20 日</th><th>單位</th><th>狀態</th></tr>
       ${models.map((m) => `<tr class="click" data-model="${m.code}"><td>${esc(m.name_zh)}</td><td class="nw">${m.margin.last_date ?? ""}</td>

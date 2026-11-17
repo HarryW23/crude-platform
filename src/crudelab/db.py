@@ -46,6 +46,8 @@ def init_engine(settings: Settings | None = None) -> Engine:
         @event.listens_for(_engine, "connect")
         def _enable_foreign_keys(dbapi_connection, _record):   # SQLite 預設不檢查外鍵
             dbapi_connection.execute("PRAGMA foreign_keys=ON")
+            dbapi_connection.execute("PRAGMA journal_mode=WAL")      # 前台、後台兩個進程同時讀寫
+            dbapi_connection.execute("PRAGMA busy_timeout=5000")
     _factory = sessionmaker(_engine, expire_on_commit=False)
     migrate(_engine)
     return _engine

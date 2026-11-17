@@ -1,5 +1,6 @@
-import { api } from "../api.js";
-import { errorBox, esc, num, signed } from "../ui.js";
+import { api } from "../../api.js";
+import { adminLink } from "../../site.js";
+import { errorBox, esc, num, signed } from "../../ui.js";
 
 const state = { projection: null };
 const pct = (v) => `${num(v * 100, 0)}%`;
@@ -23,7 +24,7 @@ export async function render(main) {
         <table><tr><th>模組</th><th>判斷</th><th>分數（−1 利空 … +1 利多）</th><th class="n">權重</th><th class="n">有結果的信號</th></tr>
           ${sig.modules.map((m) => `<tr class="click" data-module="${m.module}"><td><b>${esc(m.name_zh)}</b></td><td>${esc(m.label)}</td><td>${scoreBar(m.score)}</td>
             <td class="n">${m.weight ?? "—"}</td><td class="n">${m.signals_ok} / ${m.signals_total}</td></tr>`).join("")}</table>
-        <p class="muted" style="margin-top:8px">數據類信號：最新值相對回看期均值偏離幾個標準差（z），z ÷ 2 封頂後乘以方向。地緣：已確認且持續中事件的方向判斷之和 ÷ 4。點一行看明細。權重在「參數」頁的「推演」組裡改。</p></div>
+        <p class="muted" style="margin-top:8px">數據類信號：最新值相對回看期均值偏離幾個標準差（z），z ÷ 2 封頂後乘以方向。地緣：已確認且持續中事件的方向判斷之和 ÷ 4。點一行看明細。權重在${adminLink("params", "參數")}的「推演」組裡改。</p></div>
         <div id="signals"><p class="muted">點左邊任一模組，在這裡看它的信號明細。</p></div></div></div>
     <div class="panel"><h2>價格推演</h2>
         <div class="row" style="margin-bottom:10px">${projections.length ? `<select id="pick" aria-label="推演">${projections.map((p) => `<option value="${p.id}" ${p.id === state.projection ? "selected" : ""}>${esc(p.name_zh)}</option>`).join("")}</select>` : ""}
@@ -65,7 +66,7 @@ async function renderProjection(box, scenarios, main) {
       <div>平衡敏感度<b>${p.sensitivity.value == null ? '<span class="tag warn">未設定</span>' : num(p.sensitivity.value)}</b></div>
       <div>機率合計<b class="${Math.abs(p.total_probability - 1) < 1e-6 ? "" : "down"}">${pct(p.total_probability)}</b></div></div>
     ${p.problems.map((x) => `<div class="msg warn">${esc(x)}。</div>`).join("")}
-    ${p.sensitivity.value == null ? `<div class="msg">平衡敏感度（${p.sensitivity.parameter}）還沒有設定：全球平衡每多過剩 1 ${esc(p.balance.unit)}，${esc(a.name_zh)} 下跌多少 ${esc(a.unit)}。這是推演的核心假設，請到「參數」頁給出；在那之前，帶供需調整的分支算不出價格。</div>` : ""}
+    ${p.sensitivity.value == null ? `<div class="msg">平衡敏感度（${p.sensitivity.parameter}）還沒有設定：全球平衡每多過剩 1 ${esc(p.balance.unit)}，${esc(a.name_zh)} 下跌多少 ${esc(a.unit)}。這是推演的核心假設，請到${adminLink("params", "參數")}給出；在那之前，帶供需調整的分支算不出價格。</div>` : ""}
     <div class="scroll"><table><tr><th>分支</th><th class="n">機率</th><th class="n">直接價格調整</th><th class="n">平衡變化（1 個月）</th>
       ${p.horizons.map((h) => `<th class="n">${esc(h.name_zh)}</th>`).join("")}<th></th></tr>
       ${p.cases.map((c) => `<tr><td style="min-width:220px"><b>${esc(c.label)}</b><div class="muted">${c.scenario_code ? "情境 " + c.scenario_code : "基準（不加調整）"}</div>${c.note ? `<div class="ink2">${esc(c.note)}</div>` : ""}</td>

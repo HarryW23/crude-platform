@@ -3,6 +3,15 @@
 數據 → 指標 → 模型 → 推演 → 報告。四期都已完成：骨架、地域價差與煉廠盈利、供需平衡、地緣與推演與報告。
 版面以電腦端為主。
 
+系統是**兩個獨立的站點**，共用同一份數據：
+
+| 站點 | 預設地址 | 做什麼 |
+|---|---|---|
+| 前台 | <http://127.0.0.1:8000> | 研究：價差、供需、煉廠、事件、推演、報告、問答 |
+| 後台 | <http://127.0.0.1:8001> | 管理：數據導入、序列、指標、參數、數據源、日誌 |
+
+前台的接口裡不包含導入數據、改參數這些操作，後台的接口裡不包含研究功能。部署到服務器時可以只開放前台。
+
 架構、約定和擴展方法見 [docs/architecture.md](docs/architecture.md)。
 
 ## 現在能做什麼
@@ -52,7 +61,7 @@
 | Windows | `start-windows.bat` |
 | Mac | `start-mac.command` |
 
-第一次會自動安裝依賴（需要聯網，約一兩分鐘），之後直接啟動並打開瀏覽器。彈出的窗口要保持開著，關掉就停了。
+第一次會自動安裝依賴（需要聯網，約一兩分鐘），之後直接啟動前台和後台，並在瀏覽器裡打開前台。彈出的窗口要保持開著，關掉兩個站點就都停了。
 
 Mac 第一次雙擊如果被系統攔住，在文件上按右鍵選「打開」，再確認一次即可。
 
@@ -70,7 +79,10 @@ python3 -m venv .venv
 .venv/bin/crudelab serve --open
 ```
 
-Windows 把 `.venv/bin/` 換成 `.venv\Scripts\`。地址是 <http://127.0.0.1:8000>。
+Windows 把 `.venv/bin/` 換成 `.venv\Scripts\`。
+
+只啟動其中一個站點（分開部署時用）：`crudelab serve --site front` 或 `crudelab serve --site admin`。端口用 `--port`（前台）和 `--admin-port`（後台）指定。
+兩個站點互相連結用的對外地址由 `CRUDELAB_FRONT_URL`、`CRUDELAB_ADMIN_URL` 兩個環境變量指定，本機運行不用設。
 
 ### 用假數據試一遍
 
@@ -158,8 +170,8 @@ src/crudelab/
   projection.py         價格推演
   reports.py            報告快照與排版
   connectors/ imports.py 數據接入
-  api/                  接口
-  web/                  頁面
+  api/                  接口：app.py 定義前台和後台兩個應用各包含哪些路由
+  web/                  頁面：index.html 前台、admin.html 後台；js/views/front、js/views/admin
   llm/                  大模型接口：供應商接入、抽取與撰寫任務、數字核對
 tests/
 docs/architecture.md
@@ -186,7 +198,7 @@ export DATABASE_URL=postgresql+psycopg://crudelab:crudelab@localhost:5432/crudel
 - 不支援舊版 `.xls`；合併儲存格的表頭只算在第一列上。
 - EIA 接口沒有實際調用過，序列號未驗證。
 - 演示數據的日度行情預設給三年（`make-sample`），供需給六年多；都是隨機數。
-- 沒有登錄和權限，只應在本機使用。
+- 沒有登錄和權限，只應在本機使用。前台和後台已經分開，但兩邊目前都不需要密碼。
 
 ## 路線
 

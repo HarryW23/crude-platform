@@ -1,6 +1,7 @@
 // 指標看板：按 group 分組的表格 + 點選後的詳情（走勢、追溯）。地域價差和煉廠兩個前台頁面共用。
 import { api } from "./api.js";
 import { lineChart } from "./charts.js";
+import { adminLink } from "./site.js";
 import { deltaCell, esc, num, statusTag } from "./ui.js";
 
 const FREQ = { daily: "日", weekly: "周", monthly: "月", quarterly: "季" };
@@ -45,10 +46,11 @@ export async function showIndicator(box, summary) {
   panel.innerHTML = `<h2>${esc(summary.name_zh)} <span class="mono muted">${summary.code}</span></h2>
     <p class="sub mono">${esc(summary.formula)}${summary.notes ? `<br><span style="font-family:inherit">${esc(summary.notes)}</span>` : ""}</p>`;
   if (!data.length) {
-    const why = summary.status === "missing_parameter" ? `缺參數：${summary.missing_parameters.join("、")}。到「參數」頁錄入後即可計算。`
-      : summary.status === "missing_data" ? `缺數據：${summary.missing_series.join("、")}。`
+    const why = summary.status === "missing_parameter"
+      ? `缺參數：${esc(summary.missing_parameters.join("、"))}。到${adminLink("params", "參數")}錄入後即可計算。`
+      : summary.status === "missing_data" ? `缺數據：${esc(summary.missing_series.join("、"))}。`
       : "各輸入序列的日期沒有重疊。";
-    panel.append(Object.assign(document.createElement("p"), { className: "muted", textContent: "目前算不出結果。" + why }));
+    panel.insertAdjacentHTML("beforeend", `<p class="muted">目前算不出結果。${why}</p>`);
   } else {
     panel.append(lineChart(data, { unit: summary.unit }));
     const trace = await api(`/indicators/${summary.code}/trace`);

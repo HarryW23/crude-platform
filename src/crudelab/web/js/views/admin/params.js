@@ -1,5 +1,5 @@
-import { api } from "../api.js";
-import { errorBox, esc, time } from "../ui.js";
+import { api } from "../../api.js";
+import { errorBox, esc, time } from "../../ui.js";
 
 const since = (d) => d == null ? "" : d === "1900-01-01" ? "自始" : d;
 

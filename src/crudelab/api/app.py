@@ -1,4 +1,15 @@
-"""後台與前台共用的接口。頁面、命令行以外的任何調用方（包括之後的大模型工具調用）都走這一套。"""
+"""兩個站點：前台（研究）和後台（數據與參數管理）。
+
+它們是兩個獨立的應用，共用同一個數據庫和同一套計算核心，但接口不同：
+
+  前台  只讀的數據和指標 + 研究用的功能（情境、事件、推演、報告、問答）。
+        它的接口裡**沒有**導入數據、錄入數據、改參數、取數這些操作。
+  後台  只讀的數據和指標 + 數據與參數的管理。
+        它的接口裡**沒有**情境、事件、推演、報告、問答。
+
+分開的原因：兩邊的使用者和權限不同。部署時可以只把前台開放出去，後台只對內網或本機開放；
+以後加登錄，兩邊也可以用不同的權限。兩個應用可以在同一個進程裡各佔一個端口，也可以分開跑。
+"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -8,10 +19,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .. import db
-from ..config import load_config
-from ..master import sync_to_db
 from ..settings import Settings, get_settings
-from .deps import AppState
+from .deps import AppState, Site
 from .routes import (
     analysis,
     balances,
@@ -31,29 +40,28 @@ from .routes import (
 
 WEB_DIR = Path(__file__).resolve().parents[1] / "web"
 
+_COMMON = [core.router, series.router, indicators.router, parameters.router]
+ROUTERS = {
+    "front": [*_COMMON, refineries.router, balances.router, analysis.router, scenarios.router, geo.router,
+              outlook.router, reports.router, chat.router],
+    "admin": [*_COMMON, core.admin_router, series.admin_router, imports.admin_router, parameters.admin_router,
+              sources.admin_router],
+}
+_TITLES = {"front": "crudelab 前台", "admin": "crudelab 後台"}
+_PAGES = {"front": "index.html", "admin": "admin.html"}
 
-def load_and_sync(settings: Settings):
-    """載入配置並同步到數據庫。配置有錯時拋 ConfigError，數據庫不變。"""
-    cfg = load_config(settings.config_dir)
-    with db.session_scope() as session:
-        stats = sync_to_db(session, cfg)
-    return cfg, stats
 
-
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(settings: Settings | None = None, site: Site = "front") -> FastAPI:
     settings = settings or get_settings()
     db.init_engine(settings)
-    cfg, _ = load_and_sync(settings)
-
-    app = FastAPI(title="crudelab", version="0.4.0")
-    app.state.crudelab = AppState(settings=settings, cfg=cfg)
-    for module in (core, series, imports, indicators, parameters, refineries, balances, scenarios, analysis,
-                   geo, outlook, reports, chat, sources):
-        app.include_router(module.router, prefix="/api")
+    app = FastAPI(title=_TITLES[site], version="0.5.0")
+    app.state.crudelab = AppState(settings, site)
+    for router in ROUTERS[site]:
+        app.include_router(router, prefix="/api")
 
     @app.get("/", include_in_schema=False)
     def index():
-        return FileResponse(WEB_DIR / "index.html")
+        return FileResponse(WEB_DIR / _PAGES[site])
 
     app.mount("/static", StaticFiles(directory=WEB_DIR), name="static")
     return app

@@ -13,6 +13,8 @@ class Settings:
     config_dir: Path
     data_dir: Path
     database_url: str
+    front_url: str = "http://127.0.0.1:8000"      # 兩個站點互相連結時用的對外地址
+    admin_url: str = "http://127.0.0.1:8001"
 
     @property
     def raw_dir(self) -> Path:
@@ -24,4 +26,6 @@ def get_settings() -> Settings:
     config_dir = Path(os.environ.get("CRUDELAB_CONFIG_DIR", PROJECT_ROOT / "config"))
     data_dir = Path(os.environ.get("CRUDELAB_DATA_DIR", PROJECT_ROOT / "data"))
     database_url = os.environ.get("DATABASE_URL", f"sqlite:///{data_dir / 'crudelab.db'}")
-    return Settings(config_dir=config_dir, data_dir=data_dir, database_url=database_url)
+    return Settings(config_dir=config_dir, data_dir=data_dir, database_url=database_url,
+                    front_url=os.environ.get("CRUDELAB_FRONT_URL", "http://127.0.0.1:8000").rstrip("/"),
+                    admin_url=os.environ.get("CRUDELAB_ADMIN_URL", "http://127.0.0.1:8001").rstrip("/"))

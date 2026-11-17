@@ -13,7 +13,7 @@ from ...ingest import write_observations
 from ...models import AuditLog, DataSource, Observation, Series
 from ..deps import get_actor, get_db
 
-router = APIRouter(tags=["sources"])
+admin_router = APIRouter(tags=["sources"])         # 只在後台
 
 
 class PullRequest(BaseModel):
@@ -21,7 +21,7 @@ class PullRequest(BaseModel):
     end: date | None = None
 
 
-@router.get("/sources")
+@admin_router.get("/sources")
 def list_sources(session: Session = Depends(get_db)):
     connectors = list_connectors()
     counts = dict(session.execute(select(Observation.source_code, func.count())
@@ -38,7 +38,7 @@ def list_sources(session: Session = Depends(get_db)):
     return out
 
 
-@router.post("/sources/{code}/pull")
+@admin_router.post("/sources/{code}/pull")
 def pull(code: str, body: PullRequest, session: Session = Depends(get_db), actor: str = Depends(get_actor)):
     try:
         connector = get_connector(code)

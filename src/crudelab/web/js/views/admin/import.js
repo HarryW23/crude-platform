@@ -1,5 +1,5 @@
-import { api } from "../api.js";
-import { errorBox, esc, num, time } from "../ui.js";
+import { api } from "../../api.js";
+import { errorBox, esc, num, time } from "../../ui.js";
 
 const LAYOUT = { wide: "直排（一列日期）", wide_transposed: "橫排（日期在一行）", long: "長表", unrecognized: "無法識別，已跳過" };
 

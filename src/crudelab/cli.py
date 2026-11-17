@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -21,10 +22,13 @@ from .settings import get_settings
 
 
 def _init() -> dict:
-    from .api.app import load_and_sync
+    from .config import load_config
+    from .master import sync_to_db
     settings = get_settings()
     db.init_engine(settings)
-    return load_and_sync(settings)[1]
+    cfg = load_config(settings.config_dir)
+    with db.session_scope() as session:
+        return sync_to_db(session, cfg)
 
 
 def cmd_init(_args) -> int:
@@ -56,26 +60,47 @@ def _port_in_use(host: str, port: int) -> bool:
 
 
 def cmd_serve(args) -> int:
+    """啟動站點。預設前台和後台一起啟動，各佔一個端口；--site 可以只啟動其中一個（分開部署時用）。"""
+    import asyncio
+    from dataclasses import replace
+
     import uvicorn
 
     from .api.app import create_app
     from .config import ConfigError
-    url = f"http://{args.host}:{args.port}"
-    if _port_in_use(args.host, args.port):
-        print(f"端口 {args.port} 已經被佔用。如果是之前啟動的 crudelab 還開著，直接用瀏覽器打開 {url} 即可；\n"
-              f"否則換一個端口：crudelab serve --port {args.port + 1}", file=sys.stderr)
-        return 1
+    ports = {"front": args.port, "admin": args.admin_port or args.port + 1}
+    sites = ["front", "admin"] if args.site == "both" else [args.site]
+    for site in sites:
+        if _port_in_use(args.host, ports[site]):
+            print(f"端口 {ports[site]} 已經被佔用。如果是之前啟動的 crudelab 還開著，直接用瀏覽器打開 "
+                  f"http://{args.host}:{ports[site]} 即可；否則用 --port / --admin-port 換一個端口", file=sys.stderr)
+            return 1
+    base = get_settings()
+    settings = replace(base,      # 沒有用環境變量指定對外地址時，按實際端口互相連結
+                       front_url=os.environ.get("CRUDELAB_FRONT_URL") or f"http://{args.host}:{ports['front']}",
+                       admin_url=os.environ.get("CRUDELAB_ADMIN_URL") or f"http://{args.host}:{ports['admin']}")
     try:
-        app = create_app()
+        servers = [uvicorn.Server(uvicorn.Config(create_app(settings, site), host=args.host, port=ports[site],
+                                                 log_level="warning")) for site in sites]
     except ConfigError as exc:
         print(exc, file=sys.stderr)
         return 1
+    names = {"front": "前台", "admin": "後台"}
+    print("crudelab 已啟動（這個窗口要保持開著；按 Ctrl+C 停止）", flush=True)
+    for site in sites:
+        print(f"  {names[site]}：http://{args.host}:{ports[site]}", flush=True)
     if args.open:
         import threading
         import webbrowser
-        threading.Timer(1.0, webbrowser.open, args=(url,)).start()
-    print(f"crudelab 已啟動：{url}　（這個窗口要保持開著；按 Ctrl+C 停止）", flush=True)
-    uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
+        threading.Timer(1.0, webbrowser.open, args=(f"http://{args.host}:{ports[sites[0]]}",)).start()
+
+    async def run() -> None:
+        await asyncio.gather(*(server.serve() for server in servers))
+
+    try:
+        asyncio.run(run())
+    except KeyboardInterrupt:
+        pass
     return 0
 
 
@@ -148,9 +173,11 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("init", help="升級表結構並同步配置").set_defaults(func=cmd_init)
     sub.add_parser("check", help="只校驗配置").set_defaults(func=cmd_check)
-    p = sub.add_parser("serve", help="啟動後台")
+    p = sub.add_parser("serve", help="啟動前台和後台")
     p.add_argument("--host", default="127.0.0.1")
-    p.add_argument("--port", type=int, default=8000)
+    p.add_argument("--port", type=int, default=8000, help="前台端口")
+    p.add_argument("--admin-port", type=int, default=None, help="後台端口，預設是前台端口 + 1")
+    p.add_argument("--site", choices=["both", "front", "admin"], default="both", help="啟動哪個站點")
     p.add_argument("--open", action="store_true", help="啟動後自動打開瀏覽器")
     p.set_defaults(func=cmd_serve)
     p = sub.add_parser("import", help="導入 Excel / CSV")

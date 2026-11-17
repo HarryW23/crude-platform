@@ -1,7 +1,7 @@
-import { api } from "../api.js";
-import { balanceBars, scatterChart, seasonalChart } from "../charts.js";
-import { mountBoard } from "../indicator-board.js";
-import { errorBox, esc, num, signed, statusTag, time } from "../ui.js";
+import { api } from "../../api.js";
+import { balanceBars, scatterChart, seasonalChart } from "../../charts.js";
+import { mountBoard } from "../../indicator-board.js";
+import { errorBox, esc, num, signed, statusTag, time } from "../../ui.js";
 
 const FREQ = { weekly: "周度", monthly: "月度", quarterly: "季度", daily: "日度" };
 const state = { table: null, scenario: "", stock: null, relation: null };

@@ -1,22 +1,14 @@
 from datetime import UTC, datetime
 
 import pytest
-from fastapi.testclient import TestClient
-
-from crudelab.api.app import create_app
 
 
 @pytest.fixture()
-def client(settings):
-    return TestClient(create_app(settings))
-
-
-@pytest.fixture()
-def loaded_client(client, sample_path):
+def loaded_client(client, admin, sample_path):
     with sample_path.open("rb") as fh:
-        preview = client.post("/api/imports/preview", files={"file": ("s.xlsx", fh)},
+        preview = admin.post("/api/imports/preview", files={"file": ("s.xlsx", fh)},
                               data={"source_code": "demo"}).json()
-    done = client.post(f"/api/imports/{preview['batch_id']}/commit", json={})
+    done = admin.post(f"/api/imports/{preview['batch_id']}/commit", json={})
     assert done.status_code == 200 and done.json()["inserted"] > 1000
     return client
 
@@ -31,7 +23,7 @@ def test_pages_and_empty_state(client):
     assert client.get("/api/refineries/CN_FUEL_SD").json()["breakdown"] is None
 
 
-def test_data_flow(loaded_client):
+def test_data_flow(loaded_client, admin):
     client = loaded_client
     indicators = {i["code"]: i for i in client.get("/api/indicators").json()}
     assert indicators["SPR_BRENT_WTI"]["status"] == "ok"
@@ -50,23 +42,23 @@ def test_data_flow(loaded_client):
     last = client.get("/api/series/BRENT_M1/data").json()[-1]
     before = datetime.now(UTC).isoformat()
     point = {"series_code": "BRENT_M1", "obs_date": last["date"], "value": 123.0}
-    assert client.post("/api/observations", json={"points": [point]}).json()["inserted"] == 1
-    assert client.post("/api/observations", json={"points": [{**point, "value": 124.0}]}).json()["updated"] == 1
+    assert admin.post("/api/observations", json={"points": [point]}).json()["inserted"] == 1
+    assert admin.post("/api/observations", json={"points": [{**point, "value": 124.0}]}).json()["updated"] == 1
     assert client.get("/api/series/BRENT_M1/data").json()[-1]["value"] == 124.0
     assert client.get("/api/series/BRENT_M1/revisions").json()[0]["old_value"] == 123.0
     assert client.get("/api/series/BRENT_M1/data", params={"as_of": before}).json()[-1]["value"] == last["value"]
     assert client.get("/api/series/NOPE/data").status_code == 404
-    assert client.post("/api/observations", json={"points": [{**point, "series_code": "NOPE"}]}).status_code == 400
+    assert admin.post("/api/observations", json={"points": [{**point, "series_code": "NOPE"}]}).status_code == 400
 
-    sources = {s["code"]: s for s in client.get("/api/sources").json()}
+    sources = {s["code"]: s for s in admin.get("/api/sources").json()}
     assert sources["kpler"]["ready"] is False and sources["eia"]["series_supported"] == 24
-    assert client.post("/api/sources/kpler/pull", json={}).status_code == 409
-    assert client.post("/api/sources/manual/pull", json={}).status_code == 404
-    assert {a["action"] for a in client.get("/api/audit").json()} >= {"import", "manual_entry"}
-    assert client.post("/api/admin/reload-config").status_code == 200
+    assert admin.post("/api/sources/kpler/pull", json={}).status_code == 409
+    assert admin.post("/api/sources/manual/pull", json={}).status_code == 404
+    assert {a["action"] for a in admin.get("/api/audit").json()} >= {"import", "manual_entry"}
+    assert admin.post("/api/admin/reload-config").status_code == 200
 
 
-def test_parameters_api(loaded_client):
+def test_parameters_api(loaded_client, admin):
     client = loaded_client
     params = {p["key"]: p for p in client.get("/api/parameters").json()}
     assert params["CN_VAT_RATE"]["value"] == 0.13 and params["CN_VAT_RATE"]["valid_from"] == "2019-04-01"
@@ -79,17 +71,17 @@ def test_parameters_api(loaded_client):
 
     old = crack()
     assert "BBL_PER_T_GASOIL" in old["unverified_parameters"]
-    r = client.post("/api/parameters/BBL_PER_T_GASOIL/versions", json={"value": 7.6, "note": "測試"})
+    r = admin.post("/api/parameters/BBL_PER_T_GASOIL/versions", json={"value": 7.6, "note": "測試"})
     assert r.status_code == 200 and r.json()["valid_from"] == "1900-01-01"
     new = crack()
     assert new["last_value"] != old["last_value"] and "BBL_PER_T_GASOIL" not in new["unverified_parameters"]
     versions = client.get("/api/parameters/BBL_PER_T_GASOIL/versions").json()
     assert [(v["value"], v["effective"]) for v in versions] == [(7.6, True), (7.45, False)]   # 舊值保留，標為已被取代
 
-    client.post("/api/parameters/FLAT_TD3C/versions", json={"value": 22, "valid_from": "2026-01-01"})
+    admin.post("/api/parameters/FLAT_TD3C/versions", json={"value": 22, "valid_from": "2026-01-01"})
     assert {i["code"]: i for i in client.get("/api/indicators").json()}["FRT_TD3C_BBL"]["status"] == "missing_data"
-    assert client.post("/api/parameters/BBL_PER_T_GASOIL/verify", json={"verified": False}).status_code == 200
-    assert client.post("/api/parameters/NOPE/versions", json={"value": 1}).status_code == 400
+    assert admin.post("/api/parameters/BBL_PER_T_GASOIL/verify", json={"verified": False}).status_code == 200
+    assert admin.post("/api/parameters/NOPE/versions", json={"value": 1}).status_code == 400
 
 
 def test_refinery_api(loaded_client):
@@ -167,3 +159,61 @@ def test_balance_scenario_and_analysis_api(loaded_client):
     detail = client.get("/api/relations/BRENT_STRUCTURE_VS_US_STOCKS").json()
     assert detail["n"] == len(detail["points"]) and detail["x"]["unit"] == "kb"
     assert client.get("/api/relations/NOPE").status_code == 404
+
+
+def test_front_and_admin_are_separate_sites(sites, sample_path):
+    front, admin = sites["front"], sites["admin"]
+    assert front.get("/api/site").json()["site"] == "front" and admin.get("/api/site").json()["site"] == "admin"
+    assert "後台" in admin.get("/").text and "後台" not in front.get("/").text.split("<body")[1].split("<script")[0]
+
+    # 前台沒有任何管理數據和參數的接口
+    with sample_path.open("rb") as fh:
+        assert front.post("/api/imports/preview", files={"file": ("s.xlsx", fh)}).status_code == 404
+    point = {"points": [{"series_code": "BRENT_M1", "obs_date": "2026-09-01", "value": 1}]}
+    assert front.post("/api/observations", json=point).status_code == 404
+    assert front.post("/api/parameters/CN_PORT_MISC/versions", json={"value": 1}).status_code == 405
+    assert front.post("/api/parameters/CN_PORT_MISC/verify", json={}).status_code == 404
+    for path in ("/api/sources", "/api/audit", "/api/imports"):
+        assert front.get(path).status_code == 404
+    assert front.post("/api/sources/eia/pull", json={}).status_code == 404
+    assert front.post("/api/admin/reload-config").status_code == 404
+
+    # 後台沒有研究用的接口
+    for path in ("/api/scenarios", "/api/events", "/api/projections", "/api/reports", "/api/signals", "/api/refineries",
+                 "/api/balances", "/api/chat/tools", "/api/llm"):
+        assert admin.get(path).status_code == 404, path
+    assert admin.post("/api/chat", json={"question": "x"}).status_code == 404
+
+    # 兩邊共用同一份數據：後台錄入，前台立刻看得到
+    assert admin.post("/api/observations", json=point).json()["inserted"] == 1
+    assert front.get("/api/series/BRENT_M1/data").json()[0]["value"] == 1
+    assert admin.post("/api/parameters/CN_PORT_MISC/versions", json={"value": 55}).status_code == 200
+    assert {p["key"]: p for p in front.get("/api/parameters").json()}["CN_PORT_MISC"]["value"] == 55
+
+
+def test_config_changes_are_picked_up_without_restart(tmp_path, monkeypatch):
+    import shutil
+
+    from fastapi.testclient import TestClient
+
+    from crudelab.api import deps
+    from crudelab.api.app import create_app
+    from crudelab.settings import PROJECT_ROOT, Settings
+    monkeypatch.setattr(deps, "CONFIG_CHECK_INTERVAL", 0)
+    config = tmp_path / "config"
+    shutil.copytree(PROJECT_ROOT / "config", config)
+    settings = Settings(config_dir=config, data_dir=tmp_path / "data",
+                        database_url=f"sqlite:///{tmp_path / 'data' / 't.db'}")
+    front = TestClient(create_app(settings, "front"))
+    n = len(front.get("/api/indicators").json())
+
+    extra = config / "indicators" / "extra.yaml"
+    extra.write_text('- {code: SPR_TEST, name_zh: 測試, module: spread, unit: USD/bbl, formula: "BRENT_M1 - WTI_M2"}\n',
+                     encoding="utf-8")
+    assert len(front.get("/api/indicators").json()) == n + 1               # 沒有重啟，也沒有人通知它
+    extra.write_text('- {code: SPR_TEST, name_zh: 測試, module: spread, unit: USD/bbl, formula: "BRENT_M1 - NOPE"}\n',
+                     encoding="utf-8")
+    assert len(front.get("/api/indicators").json()) == n + 1               # 新配置有錯：沿用上一份正確的
+    assert "NOPE" in front.get("/api/site").json()["config_error"]
+    extra.unlink()
+    assert len(front.get("/api/indicators").json()) == n and front.get("/api/site").json()["config_error"] is None

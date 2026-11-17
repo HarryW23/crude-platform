@@ -11,7 +11,7 @@ from ...ingest import IngestError
 from ...models import ImportBatch
 from ..deps import AppState, get_actor, get_db, get_state
 
-router = APIRouter(tags=["imports"])
+admin_router = APIRouter(tags=["imports"])         # 只在後台
 
 
 class CommitRequest(BaseModel):
@@ -19,7 +19,7 @@ class CommitRequest(BaseModel):
     learn: bool = True
 
 
-@router.post("/imports/preview")
+@admin_router.post("/imports/preview")
 async def preview(file: UploadFile = File(...), source_code: str = Form("reuters_xls"),
                   session: Session = Depends(get_db), state: AppState = Depends(get_state),
                   actor: str = Depends(get_actor)):
@@ -29,7 +29,7 @@ async def preview(file: UploadFile = File(...), source_code: str = Form("reuters
         raise HTTPException(400, str(exc)) from exc
 
 
-@router.post("/imports/{batch_id}/commit")
+@admin_router.post("/imports/{batch_id}/commit")
 def commit(batch_id: int, body: CommitRequest, session: Session = Depends(get_db),
            actor: str = Depends(get_actor)):
     try:
@@ -38,7 +38,7 @@ def commit(batch_id: int, body: CommitRequest, session: Session = Depends(get_db
         raise HTTPException(400, str(exc)) from exc
 
 
-@router.get("/imports")
+@admin_router.get("/imports")
 def list_imports(session: Session = Depends(get_db)):
     rows = session.scalars(select(ImportBatch).where(ImportBatch.status == "committed")
                            .order_by(ImportBatch.id.desc()).limit(100))

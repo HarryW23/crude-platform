@@ -1,5 +1,5 @@
-import { api } from "../api.js";
-import { errorBox, esc, time } from "../ui.js";
+import { api } from "../../api.js";
+import { errorBox, esc, time } from "../../ui.js";
 
 const state = { report: null };
 

@@ -1,5 +1,5 @@
-import { api } from "../api.js";
-import { errorBox, esc } from "../ui.js";
+import { api } from "../../api.js";
+import { errorBox, esc } from "../../ui.js";
 
 // 對話只保存在這個瀏覽器分頁裡；關掉分頁就沒有了。伺服器只在操作日誌裡記下問了什麼、用了哪些工具。
 const KEY = "chat-turns";

@@ -1,7 +1,8 @@
-import { api } from "../api.js";
-import { lineChart, waterfall } from "../charts.js";
-import { mountBoard } from "../indicator-board.js";
-import { errorBox, esc, num, signed, statusTag } from "../ui.js";
+import { api } from "../../api.js";
+import { lineChart, waterfall } from "../../charts.js";
+import { mountBoard } from "../../indicator-board.js";
+import { adminLink } from "../../site.js";
+import { errorBox, esc, num, signed, statusTag } from "../../ui.js";
 
 const SIMPLE = /^[A-Z][A-Z0-9_]*$/;     // 價格直接就是一條序列或一個指標時，才能在試算裡直接加減
 const KIND = { benchmark: "國際基準", fuel: "國內燃料型", integrated: "國內一體化" };
@@ -40,7 +41,7 @@ async function renderModel(box, code) {
   const body = box.querySelector("#body");
   const s = m.margin;
   if (s.unverified_parameters.length) {
-    body.insertAdjacentHTML("beforeend", `<div class="msg warn">這個模型有 ${s.unverified_parameters.length} 項假設是暫定值，尚待核對（收率、加工費、稅率等）。結果僅供參考，請到「參數」頁核對。</div>`);
+    body.insertAdjacentHTML("beforeend", `<div class="msg warn">這個模型有 ${s.unverified_parameters.length} 項假設是暫定值，尚待核對（收率、加工費、稅率等）。結果僅供參考，請到${adminLink("params", "參數")}核對。</div>`);
   }
   if (!b) {
     const why = s.status === "missing_parameter" ? `缺參數：${s.missing_parameters.join("、")}`
@@ -88,7 +89,7 @@ function renderTables(root, m, base, scenario, state = { shifts: {} }) {
       ${lineRows(base.feeds, scenario?.feeds, "配比")}</table></div></div></div>
     <div class="row" style="margin-top:12px"><button class="btn primary" id="run">試算</button>
       ${cmp ? '<button class="btn" id="reset">清除試算</button>' : ""}
-      <span class="muted">改收率、配比、成本，或在「價格變動」填加減多少（單位 ${esc(m.unit)}），然後按試算。只是臨時計算，不會保存；要永久修改請到「參數」頁。</span></div>
+      <span class="muted">改收率、配比、成本，或在「價格變動」填加減多少（單位 ${esc(m.unit)}），然後按試算。只是臨時計算，不會保存；要永久修改請到${adminLink("params", "參數")}。</span></div>
     <div id="smsg"></div>`;
 
   root.querySelector("#reset")?.addEventListener("click", () => renderTables(root, m, base, null));

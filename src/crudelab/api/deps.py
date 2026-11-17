@@ -1,25 +1,73 @@
 """接口層的公共依賴：應用狀態、數據庫會話、操作者、指標引擎。"""
 from __future__ import annotations
 
+import time
 from collections.abc import Iterator
-from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
+from typing import Literal
 
 from fastapi import Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from .. import db
-from ..config import Config
+from ..config import Config, ConfigError, load_config
 from ..indicators import IndicatorEngine
+from ..master import sync_to_db
 from ..scenarios import ScenarioError
 from ..scenarios import load as load_scenario
 from ..settings import Settings
 
+Site = Literal["front", "admin"]
+CONFIG_CHECK_INTERVAL = 2.0     # 最多每隔幾秒檢查一次配置文件有沒有變
 
-@dataclass
+
+def _fingerprint(config_dir: Path) -> tuple:
+    return tuple(sorted((str(p), p.stat().st_mtime_ns, p.stat().st_size) for p in config_dir.rglob("*.yaml")))
+
+
 class AppState:
-    settings: Settings
-    cfg: Config
+    """一個站點進程的狀態。
+
+    前台和後台可能是兩個獨立的進程，所以配置不能靠「後台通知前台」來同步：
+    每個進程自己盯著 config/ 下的文件，發現改動就重新載入。新配置有錯時繼續用舊的，並把錯誤記在 config_error。
+    """
+
+    def __init__(self, settings: Settings, site: Site):
+        self.settings, self.site = settings, site
+        self.config_error: str | None = None
+        self._fingerprint = _fingerprint(settings.config_dir)
+        self._checked_at = time.monotonic()
+        self._cfg = self._load()            # 啟動時配置有錯直接拋出，不帶病啟動
+
+    def _load(self) -> Config:
+        cfg = load_config(self.settings.config_dir)
+        with db.session_scope() as session:
+            self._last_sync = sync_to_db(session, cfg)
+        return cfg
+
+    def reload(self) -> dict:
+        """立即重新載入。成功回傳同步統計；配置有錯拋 ConfigError 並保持原配置。"""
+        self._fingerprint, self._checked_at = _fingerprint(self.settings.config_dir), time.monotonic()
+        try:
+            self._cfg = self._load()
+        except ConfigError as exc:
+            self.config_error = str(exc)
+            raise
+        self.config_error = None
+        return self._last_sync
+
+    @property
+    def cfg(self) -> Config:
+        now = time.monotonic()
+        if now - self._checked_at >= CONFIG_CHECK_INTERVAL:
+            self._checked_at = now
+            if _fingerprint(self.settings.config_dir) != self._fingerprint:
+                try:
+                    self.reload()
+                except ConfigError:
+                    pass                    # 已記在 config_error，繼續用舊配置
+        return self._cfg
 
 
 def get_state(request: Request) -> AppState:
@@ -32,7 +80,7 @@ def get_db() -> Iterator[Session]:
 
 
 def get_actor() -> str:
-    """當前操作者。第一期單人本機使用，固定為 local；接登錄時只改這一處。"""
+    """當前操作者。目前沒有登錄，固定為 local；接登錄時只改這一處。"""
     return "local"
 
 
@@ -44,11 +92,12 @@ def get_engine(session: Session = Depends(get_db), state: AppState = Depends(get
                as_of: datetime | None = Depends(get_as_of),
                scenario: str | None = Query(None, description="套用這個已保存的情境")) -> IndicatorEngine:
     """按請求參數建引擎：as_of 還原歷史時點，scenario 套用已保存的情境。兩者都不給就是當前的基準視圖。"""
+    cfg = state.cfg
     try:
-        loaded = load_scenario(session, state.cfg, scenario, as_of) if scenario else None
+        loaded = load_scenario(session, cfg, scenario, as_of) if scenario else None
     except ScenarioError as exc:
         raise HTTPException(404, str(exc)) from exc
-    return IndicatorEngine(session, state.cfg, as_of=as_of, scenario=loaded)
+    return IndicatorEngine(session, cfg, as_of=as_of, scenario=loaded)
 
 
 def get_base_engine(session: Session = Depends(get_db), state: AppState = Depends(get_state),

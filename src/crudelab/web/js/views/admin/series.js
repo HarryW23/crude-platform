@@ -1,6 +1,6 @@
-import { api } from "../api.js";
-import { lineChart } from "../charts.js";
-import { errorBox, esc, MODULES, num, time } from "../ui.js";
+import { api } from "../../api.js";
+import { lineChart } from "../../charts.js";
+import { errorBox, esc, MODULES, num, time } from "../../ui.js";
 
 export async function render(main) {
   const rows = await api("/series");
