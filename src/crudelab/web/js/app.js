@@ -105,5 +105,21 @@ try {
 } catch (e) {
   document.getElementById("banner").innerHTML = errorBox(e);
 }
+// 後台：有定時任務最近一次是失敗時，在「定時任務」的導覽上顯示紅點（不用配置任何通知渠道也有）
+async function refreshAlerts() {
+  if (SITE.site !== "admin" || !ready) return;
+  const button = nav.querySelector('button[data-page="schedule"]');
+  try {
+    const status = await api("/schedule");
+    button.querySelector(".dot")?.remove();
+    if (status.failing.length) {
+      button.insertAdjacentHTML("beforeend", `<span class="dot" title="有 ${status.failing.length} 個任務最近一次執行失敗"></span>`);
+    }
+  } catch { /* 取不到就不顯示，不打擾 */ }
+}
+window.addEventListener("crudelab:refresh-alerts", refreshAlerts);
+refreshAlerts();
+setInterval(refreshAlerts, 60000);
+
 window.addEventListener("hashchange", () => { if (ready) show(location.hash.slice(1)); });
 if (ready) show(location.hash.slice(1));

@@ -1,0 +1,28 @@
+# 通知：定時任務出問題時發到哪裡。
+#
+# 規則（只針對定時觸發的執行；手動點「立即運行」的當場就看到結果了，不發）：
+#   on_failure    任務剛失敗時發一條
+#   repeat_hours  之後如果一直失敗，每隔這麼多小時提醒一次（不會每次失敗都發）
+#   on_recovery   恢復正常時發一條
+#
+# 渠道 channels：每個渠道在後台「定時任務」頁各有一個開關，並可以發測試消息。
+#   地址和密碼不寫在這裡。群機器人的地址本身就是密鑰，用下面的命令保存（輸入不回顯）：
+#     crudelab secret set NOTIFY_WECOM_WEBHOOK       企業微信群機器人
+#     crudelab secret set NOTIFY_DINGTALK_WEBHOOK    釘釘群機器人（安全設置選「自定義關鍵詞」，關鍵詞填 crudelab）
+#     crudelab secret set NOTIFY_FEISHU_WEBHOOK      飛書群機器人
+#     crudelab secret set NOTIFY_SLACK_WEBHOOK       Slack
+#     crudelab secret set NOTIFY_WEBHOOK_URL         自定義地址（收到一個 JSON）
+#     crudelab secret set SMTP_PASSWORD              郵箱密碼或授權碼
+#   沒保存地址的渠道不會發送，也不算失敗。只保留你要用的渠道即可，其餘可以刪掉。
+on_failure: true
+on_recovery: true
+repeat_hours: 6
+
+channels:
+  - {code: WECOM, name_zh: 企業微信群, type: wecom}
+  - {code: DINGTALK, name_zh: 釘釘群, type: dingtalk}
+  - {code: FEISHU, name_zh: 飛書群, type: feishu}
+  # 郵件示例：改成你的郵箱設定後把 enabled 改成 true（或在後台打開開關）
+  # - {code: EMAIL, name_zh: 郵件, type: email, enabled: false,
+  #    smtp_host: smtp.example.com, smtp_port: 465, smtp_security: ssl,
+  #    mail_from: alerts@example.com, mail_to: [you@example.com]}

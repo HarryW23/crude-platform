@@ -238,6 +238,12 @@ WS 點折成 美元/桶 還需要 Worldscale 每年的基準費率，見下面�
 | `ANTHROPIC_API_KEY` | Claude 大模型 |
 | `CRUDELAB_LLM_API_KEY` | 其他兼容接口的大模型（CRUDELAB_LLM_PROVIDER=compatible） |
 | `DATABASE_URL` | 數據庫連接串（用 PostgreSQL 時含密碼） |
+| `NOTIFY_WECOM_WEBHOOK` | 通知：企業微信群機器人的地址 |
+| `NOTIFY_DINGTALK_WEBHOOK` | 通知：釘釘群機器人的地址 |
+| `NOTIFY_FEISHU_WEBHOOK` | 通知：飛書群機器人的地址 |
+| `NOTIFY_SLACK_WEBHOOK` | 通知：Slack 的 incoming webhook 地址 |
+| `NOTIFY_WEBHOOK_URL` | 通知：自定義接收地址 |
+| `SMTP_PASSWORD` | 通知：發郵件用的郵箱密碼或授權碼 |
 | `LSEG_APP_KEY` | 路透 / LSEG 數據 API（預留） |
 | `LSEG_USERNAME` | 路透 / LSEG 帳號（預留） |
 | `LSEG_PASSWORD` | 路透 / LSEG 密碼（預留） |

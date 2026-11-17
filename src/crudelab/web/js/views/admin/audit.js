@@ -3,7 +3,7 @@ import { esc, time } from "../../ui.js";
 
 const ACTION = { import: "導入文件", manual_entry: "手動錄入", pull: "接口取數", purge: "清除數據", chat: "問答",
                  event_update: "修改事件", login: "登錄", login_failed: "登錄失敗", user_create: "建立帳號",
-                 user_update: "修改帳號", user_password: "重設密碼", job_run: "手動運行任務" };
+                 user_update: "修改帳號", user_password: "重設密碼", job_run: "手動運行任務", switch: "切換開關" };
 
 export async function render(main) {
   const rows = await api("/audit");

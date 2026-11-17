@@ -15,6 +15,7 @@ config/ 的結構：
     geo/playbooks.yaml         地緣事件預案
     projection.yaml            價格推演設定
     schedule.yaml              定時任務
+    notifications.yaml         通知渠道與規則
 
 校驗一次做完並一次報全：結構（字段名、類型）、引用（單位、地區、品種、公式裡的名字）、
 唯一性（代碼、別名）、公式語法、循環引用、量綱。任何一項不過，整份配置都不生效。
@@ -40,6 +41,7 @@ from .schema import (
     CommodityDef,
     IndicatorDef,
     LocationDef,
+    NotificationsDef,
     ParameterDef,
     PlaybookDef,
     ProjectionSettings,
@@ -85,6 +87,7 @@ class Config:
     playbooks: dict[str, PlaybookDef] = field(default_factory=dict)
     projection: ProjectionSettings | None = None
     schedule: ScheduleDef = field(default_factory=ScheduleDef)
+    notifications: NotificationsDef = field(default_factory=NotificationsDef)
 
     @property
     def market_series(self) -> list[str]:
@@ -226,6 +229,11 @@ def load_config(config_dir: Path) -> Config:
     schedule_path = config_dir / "schedule.yaml"
     if schedule_path.exists():
         cfg.schedule = ld.build(ScheduleDef, ld.read(schedule_path) or {}, schedule_path) or ScheduleDef()
+    notify_path = config_dir / "notifications.yaml"
+    if notify_path.exists():
+        cfg.notifications = (ld.build(NotificationsDef, ld.read(notify_path) or {}, notify_path)
+                             or NotificationsDef())
+        ld.keyed(cfg.notifications.channels, "通知渠道")
     cfg.parameters = ld.keyed(params, "參數", key="key")
     cfg.indicators = ld.keyed(indicators, "指標")
     cfg.refineries = ld.keyed(specs, "煉廠模型")

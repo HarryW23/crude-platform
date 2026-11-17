@@ -369,3 +369,40 @@ class JobDef(Strict):
 class ScheduleDef(Strict):
     timezone: str = "Asia/Shanghai"
     jobs: list[JobDef] = []
+
+
+# ------------------------------ 通知 ------------------------------
+
+class ChannelDef(Strict):
+    """一個通知渠道。地址和密碼不寫在這裡：群機器人的地址本身就是密鑰，一律用 crudelab secret set 保存。
+
+    type 與對應的密鑰名：
+      wecom 企業微信群機器人 → NOTIFY_WECOM_WEBHOOK      dingtalk 釘釘群機器人 → NOTIFY_DINGTALK_WEBHOOK
+      feishu 飛書群機器人   → NOTIFY_FEISHU_WEBHOOK      slack → NOTIFY_SLACK_WEBHOOK
+      webhook 自定義地址（收到一個 JSON）→ NOTIFY_WEBHOOK_URL
+      email 郵件 → SMTP_PASSWORD（其餘郵件設定寫在這裡）
+    """
+    code: str = Code
+    name_zh: str
+    type: Literal["wecom", "dingtalk", "feishu", "slack", "webhook", "email"]
+    enabled: bool = True
+    smtp_host: str | None = None
+    smtp_port: int = Field(default=465, ge=1, le=65535)
+    smtp_security: Literal["ssl", "starttls"] = "ssl"
+    smtp_username: str | None = None
+    mail_from: str | None = None
+    mail_to: list[str] = []
+
+    @model_validator(mode="after")
+    def _check(self):
+        if self.type == "email" and not (self.smtp_host and self.mail_from and self.mail_to):
+            raise ValueError("email 渠道需要 smtp_host、mail_from、mail_to")
+        return self
+
+
+class NotificationsDef(Strict):
+    """什麼時候發通知。目前只針對定時任務：失敗、持續失敗的提醒、恢復。"""
+    on_failure: bool = True
+    on_recovery: bool = True
+    repeat_hours: int = Field(default=6, ge=1, le=168)     # 持續失敗時，隔多久再提醒一次
+    channels: list[ChannelDef] = []

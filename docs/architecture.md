@@ -101,7 +101,26 @@ config/*.yaml ──校驗──▶ Config ──同步──▶ 數據庫主數
 - 調度器預設跟著後台應用跑（`crudelab serve`），也可以單獨跑（`crudelab scheduler`）。它每輪寫一次心跳，頁面據此顯示是否在運行。
 - 加一種新動作：在 `jobs.py` 寫一個函數並登記到 `ACTIONS`，在 `schema.JobDef` 的 `action` 裡加上它的名字。
 
-沒有做的：失敗通知（郵件、消息）；失敗後自動重試；任務之間的依賴（例如「導入完成後再出報告」，目前只能靠把時間錯開）。
+沒有做的：失敗後自動重試；任務之間的依賴（例如「導入完成後再出報告」，目前只能靠把時間錯開）。
+
+### 開關
+
+`switches.py`。後台頁面上能點的開關都存在 `switch` 表：`scheduler`（自動運行總開關）、`job:代碼`、`notify`（通知總開關）、`channel:代碼`。
+沒有記錄時用配置文件裡的 `enabled`，有記錄時以表為準（和參數的做法一致：配置給預設值，後台改了以後台為準）。
+開關只管「自動」：關掉的任務仍可手動運行，關掉的渠道仍可發測試。每次切換記入操作日誌。
+
+### 通知
+
+`notifications.py`，規則和渠道在 `config/notifications.yaml`。
+
+- 只在調度器裡、任務執行完之後調用（`after_run`）。判斷（`decide`）和發送（`send`）分開，判斷是純邏輯。
+- 發的時機：剛失敗、持續失敗超過 `repeat_hours`、恢復。「跳過」不算有結果；手動觸發的不發。
+- **群機器人的地址是密鑰**，和 API key 走同一套：`credentials.KNOWN` 登記、`crudelab secret set` 保存、不進配置。
+- 內容發出前過一遍脫敏；發送失敗只記狀態碼或異常類型，不記地址；地址必須是 https（本機除外）。
+- 發送失敗不影響任務，也不重試。每次通知和各渠道的結果記在 `notification` 表。
+- 加一種渠道：在 `schema.ChannelDef.type` 加名字，在 `notifications._payload`（或另寫一個發送函數）裡加格式，在 `WEBHOOK_CREDENTIALS` 和 `credentials.KNOWN` 登記密鑰名。
+
+沒有做的：程序本身掛掉時的通知（需要外部監控來盯心跳）；數據長時間沒更新的提醒；按任務分別指定通知對象。
 
 ### 密鑰
 
@@ -169,6 +188,7 @@ config/*.yaml ──校驗──▶ Config ──同步──▶ 數據庫主數
 | 讓大模型多做一件事 | 在 `llm/tasks.py` 加一個函數：提示詞、輸出校驗、結果怎麼交給人確認 | 是 |
 | 讓問答能查更多東西 | 在 `llm/chat.py` 加一個 `tool_*` 函數並登記到 `TOOLS`。工具必須唯讀 | 是 |
 | 加 / 改一個定時任務 | `config/schedule.yaml` | 否 |
+| 加 / 改通知渠道和規則 | `config/notifications.yaml` | 否 |
 | 加一個新單位 | `config/master/units.yaml`（必要時加原子單位） | 否 |
 | 加一個公式函數 | `formula.py` 的 `FUNCTIONS`，並在 `infer_unit` 說明它對單位的影響 | 是 |
 | 接通一個數據源 | 見 `connectors/reserved.py` 開頭的步驟 | 是 |

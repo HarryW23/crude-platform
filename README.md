@@ -125,12 +125,39 @@ Windows 把 `.venv/bin/` 換成 `.venv\Scripts\`。
 自動導入只入庫能認出來的列；有認不出的列時，任務結果裡會提示，到後台「數據導入」頁手動上傳一次並指定對應，之後同樣的表頭就能自動識別。
 
 在後台的「定時任務」頁可以看每個任務下次什麼時候跑、最近的結果和完整的執行記錄，也可以點「立即運行」。
-改時間、停用任務、加任務，直接改 `config/schedule.yaml`，幾秒內生效。
+改時間、加任務，直接改 `config/schedule.yaml`，幾秒內生效。
+
+**開關**：「定時任務」頁上每個任務有自己的開關，另有一個「自動運行總開關」。關掉的任務不會自動執行，但仍可以手動運行。
+配置文件裡的 `enabled` 只是預設值；在頁面上點過之後，以頁面為準。
+
+### 失敗通知
+
+定時任務失敗時可以發到群裡或郵箱。規則：剛失敗時發一條；持續失敗每 6 小時提醒一次；恢復時再發一條。手動運行的不發。
+
+不配置任何渠道也有站內提醒：有任務最近一次執行失敗時，後台導覽列的「定時任務」上會出現紅點。
+
+配置一個渠道只要保存它的地址（輸入不回顯）。以企業微信為例，在群裡添加一個「群機器人」，複製它的 Webhook 地址，然後：
+
+```bash
+.venv/bin/crudelab secret set NOTIFY_WECOM_WEBHOOK
+```
+
+| 渠道 | 保存地址的密鑰名 | 備註 |
+|---|---|---|
+| 企業微信群機器人 | `NOTIFY_WECOM_WEBHOOK` | |
+| 釘釘群機器人 | `NOTIFY_DINGTALK_WEBHOOK` | 機器人的安全設置選「自定義關鍵詞」，關鍵詞填 `crudelab` |
+| 飛書群機器人 | `NOTIFY_FEISHU_WEBHOOK` | |
+| Slack | `NOTIFY_SLACK_WEBHOOK` | 要先在 `config/notifications.yaml` 加一個 `type: slack` 的渠道 |
+| 自定義地址 | `NOTIFY_WEBHOOK_URL` | 同上，`type: webhook`；收到一個 JSON |
+| 郵件 | `SMTP_PASSWORD` | 郵箱服務器等設定寫在 `config/notifications.yaml`，裡面有示例 |
+
+保存後到「定時任務」頁點該渠道的「發送測試」，確認群裡收到。每個渠道有自己的開關，另有一個「通知總開關」。
+**群機器人的地址等同於密碼**：拿到它的人就能往你的群裡發消息，所以和 API key 一樣保管，不要貼到別處。
 
 要知道的行為：
 - **程序開著才會執行。** 電腦關機或窗口關掉期間到點的任務不會跑；重新啟動後，12 小時內錯過的按時刻執行的任務會補跑一次。
 - 生成報告時如果數據還沒更新，報告就是舊數據的快照。日報的時間請排在數據導入之後。
-- 任務失敗只會記在「定時任務」頁，**不會主動通知你**。
+- 通知只在程序運行時才發得出來：整個程序掛掉或電腦關機時，沒有人會通知你。
 - 命令行：`crudelab run-job` 列出任務，`crudelab run-job 代碼` 立即運行，`crudelab scheduler` 單獨運行調度器，`crudelab serve --no-scheduler` 不帶調度器啟動。
 
 ## 數據與接口
@@ -260,6 +287,7 @@ config/                 所有可調的東西
   geo/playbooks.yaml    地緣事件預案
   projection.yaml       價格推演設定
   schedule.yaml         定時任務
+  notifications.yaml    通知渠道與規則
 src/crudelab/
   schema.py config.py   配置的結構與校驗
   units.py formula.py   單位代數、公式語言
@@ -277,6 +305,8 @@ src/crudelab/
   projection.py         價格推演
   reports.py            報告快照與排版
   jobs.py scheduler.py  定時任務：動作與執行、時間與調度
+  switches.py           後台的開關
+  notifications.py      失敗通知
   connectors/ imports.py 數據接入
   api/                  接口：app.py 定義前台和後台兩個應用各包含哪些路由
   web/                  頁面：index.html 前台、admin.html 後台；js/views/front、js/views/admin
@@ -314,4 +344,4 @@ docs/architecture.md
 3. ✅ 供需平衡
 4. ✅ 地緣政治 + 推演 + 報告
 
-之後可以做的：任務失敗時的通知、統計預測模型作為推演的輸入、Word 格式報告、服務器部署配置。
+之後可以做的：統計預測模型作為推演的輸入、Word 格式報告、服務器部署配置。

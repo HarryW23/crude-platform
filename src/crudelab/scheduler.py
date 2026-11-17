@@ -15,7 +15,7 @@ import socket
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from . import db, jobs
+from . import db, jobs, notifications, switches
 from .config import Config
 from .models import JobRun, SchedulerHeartbeat, utcnow
 from .schema import WEEKDAYS, JobDef
@@ -65,8 +65,9 @@ def next_slot(job: JobDef, now: datetime, tz: ZoneInfo) -> datetime | None:
     return None
 
 
-def should_run(job: JobDef, slot: datetime | None, now: datetime) -> bool:
-    if not job.enabled or slot is None:
+def should_run(job: JobDef, slot: datetime | None, now: datetime, enabled: bool | None = None) -> bool:
+    """enabled：這個任務的開關目前的實際狀態（後台點過就以後台為準）；不給就用配置裡的預設值。"""
+    if not (job.enabled if enabled is None else enabled) or slot is None:
         return False
     if job.every_minutes is not None:
         return True                                   # 間隔任務：當前這一格還沒跑就跑
@@ -96,16 +97,23 @@ def tick(cfg: Config, settings: Settings, now: datetime | None = None) -> list[d
             session.add(SchedulerHeartbeat(id=1, at=now, host=socket.gethostname()[:128]))
         else:
             beat.at, beat.host = now, socket.gethostname()[:128]
+        state = switches.load(session, cfg)
+    if not state[switches.SCHEDULER]:                 # 總開關關著：只報心跳，什麼都不執行
+        return []
     tz = ZoneInfo(cfg.schedule.timezone)
     results = []
     for job in cfg.schedule.jobs:
         slot = due_slot(job, now, tz)
-        if not should_run(job, slot, now):
+        if not should_run(job, slot, now, state[switches.job_key(job.code)]):
             continue
         run_id = jobs.claim(job.code, slot, "schedule")
         if run_id is None:                            # 這個時點已經執行過（或別的進程正在執行）
             continue
         result = jobs.execute(cfg, settings, job, run_id)
+        try:
+            result["notified"] = notifications.after_run(cfg, job, run_id)
+        except Exception:                             # 通知出錯不能影響調度
+            log.exception("為任務 %s 發通知時出錯", job.code)
         log.warning("定時任務 %s：%s　%s", job.code, result["status"], result["message"])
         results.append(result)
     return results
@@ -121,15 +129,22 @@ def status(cfg: Config, now: datetime | None = None) -> dict:
 
     with db.session_scope() as session:
         beat = session.get(SchedulerHeartbeat, 1)
+        state, changed = switches.load(session, cfg), switches.overridden(session)
+        master = state[switches.SCHEDULER]
         out_jobs = []
         for job in cfg.schedule.jobs:
             last = next(iter(jobs.recent_runs(session, 1, job.code)), None)
+            key = switches.job_key(job.code)
+            enabled = state[key]
             out_jobs.append({
-                "code": job.code, "name_zh": job.name_zh, "enabled": job.enabled, "action": job.action,
-                "schedule": describe(job), "next_run": local(next_slot(job, now, tz)) if job.enabled else None,
+                "code": job.code, "name_zh": job.name_zh, "enabled": enabled, "action": job.action,
+                "switch": key, "default_enabled": job.enabled, "overridden": key in changed,
+                "schedule": describe(job),
+                "next_run": local(next_slot(job, now, tz)) if enabled and master else None,
                 "last": None if last is None else {"status": last.status, "message": last.message,
                                                    "trigger": last.trigger, "at": local(last.started_at)}})
-        return {"timezone": cfg.schedule.timezone, "now": local(now),
+        return {"timezone": cfg.schedule.timezone, "now": local(now), "enabled": master,
+                "failing": [j["code"] for j in out_jobs if j["last"] and j["last"]["status"] == "failed"],
                 "running": beat is not None and now - beat.at <= HEARTBEAT_FRESH,
                 "last_heartbeat": local(beat.at) if beat else None, "jobs": out_jobs}
 

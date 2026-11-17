@@ -6,7 +6,7 @@
   判斷       scenario / adjustment / event / projection / projection_case —— 人的判斷，和數據分開存
   產出       report —— 生成時刻的快照
   帳號       user_account / user_session
-  調度       job_run / scheduler_heartbeat
+  調度       job_run / scheduler_heartbeat / switch / notification
   修訂歷史   observation_revision
   操作日誌   audit_log
 
@@ -297,6 +297,30 @@ class JobRun(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime)
     message: Mapped[str | None] = mapped_column(Text)                # 給人看的一句話結果（已脫敏）
     detail: Mapped[dict | None] = mapped_column(JSON)
+
+
+class Switch(Base):
+    """後台頁面上的開關。沒有記錄 = 用配置文件裡的預設值；有記錄 = 以這裡為準。
+
+    key 的寫法：scheduler（定時任務總開關）、job:任務代碼、notify（通知總開關）、channel:渠道代碼。
+    """
+    __tablename__ = "switch"
+    key: Mapped[str] = mapped_column(String(96), primary_key=True)
+    enabled: Mapped[bool] = mapped_column(Boolean)
+    updated_by: Mapped[str] = mapped_column(String(64))
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class Notification(Base):
+    """發出過的通知，以及每個渠道的發送結果（不含地址）。"""
+    __tablename__ = "notification"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    job_code: Mapped[str | None] = mapped_column(String(64), index=True)
+    event: Mapped[str] = mapped_column(String(16))                   # failure / reminder / recovery / test
+    title: Mapped[str] = mapped_column(String(200))
+    body: Mapped[str] = mapped_column(Text)
+    results: Mapped[dict] = mapped_column(JSON)                      # {渠道代碼: "ok" 或失敗原因}
 
 
 class SchedulerHeartbeat(Base):
