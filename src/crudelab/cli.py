@@ -48,11 +48,34 @@ def cmd_check(_args) -> int:
     return 0
 
 
+def _port_in_use(host: str, port: int) -> bool:
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(0.5)
+        return sock.connect_ex((host, port)) == 0
+
+
 def cmd_serve(args) -> int:
     import uvicorn
 
     from .api.app import create_app
-    uvicorn.run(create_app(), host=args.host, port=args.port)
+    from .config import ConfigError
+    url = f"http://{args.host}:{args.port}"
+    if _port_in_use(args.host, args.port):
+        print(f"端口 {args.port} 已經被佔用。如果是之前啟動的 crudelab 還開著，直接用瀏覽器打開 {url} 即可；\n"
+              f"否則換一個端口：crudelab serve --port {args.port + 1}", file=sys.stderr)
+        return 1
+    try:
+        app = create_app()
+    except ConfigError as exc:
+        print(exc, file=sys.stderr)
+        return 1
+    if args.open:
+        import threading
+        import webbrowser
+        threading.Timer(1.0, webbrowser.open, args=(url,)).start()
+    print(f"crudelab 已啟動：{url}　（這個窗口要保持開著；按 Ctrl+C 停止）", flush=True)
+    uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
     return 0
 
 
@@ -128,6 +151,7 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("serve", help="啟動後台")
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=8000)
+    p.add_argument("--open", action="store_true", help="啟動後自動打開瀏覽器")
     p.set_defaults(func=cmd_serve)
     p = sub.add_parser("import", help="導入 Excel / CSV")
     p.add_argument("file")

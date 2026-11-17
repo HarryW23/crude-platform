@@ -1,0 +1,3 @@
+# Windows 批處理文件必須用 CRLF 換行，否則 goto 標籤可能失效
+*.bat text eol=crlf
+*.command text eol=lf

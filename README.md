@@ -43,6 +43,21 @@
 
 ## 啟動
 
+需要先安裝 [Python 3.11 或更新版本](https://www.python.org/downloads/)（Windows 安裝時勾選「Add python.exe to PATH」）。
+
+**雙擊啟動**
+
+| 系統 | 雙擊這個文件 |
+|---|---|
+| Windows | `start-windows.bat` |
+| Mac | `start-mac.command` |
+
+第一次會自動安裝依賴（需要聯網，約一兩分鐘），之後直接啟動並打開瀏覽器。彈出的窗口要保持開著，關掉就停了。
+
+Mac 第一次雙擊如果被系統攔住，在文件上按右鍵選「打開」，再確認一次即可。
+
+**手動啟動**（雙擊不成功時，或在 Linux 上）
+
 ```bash
 python3 -m venv .venv
 ```
@@ -52,10 +67,10 @@ python3 -m venv .venv
 ```
 
 ```bash
-.venv/bin/crudelab serve
+.venv/bin/crudelab serve --open
 ```
 
-打開 <http://127.0.0.1:8000>。Windows 把 `.venv/bin/` 換成 `.venv\Scripts\`。
+Windows 把 `.venv/bin/` 換成 `.venv\Scripts\`。地址是 <http://127.0.0.1:8000>。
 
 ### 用假數據試一遍
 
