@@ -21,6 +21,7 @@ from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
 
 from ..ingest import Obs
+from ..periods import parse_period
 
 MAX_ROWS, MAX_COLS, HEADER_DEPTH = 50_000, 400, 12
 _DATE_FORMATS = ("%Y-%m-%d", "%Y/%m/%d", "%Y.%m.%d", "%Y%m%d", "%d-%b-%Y", "%d %b %Y", "%d-%b-%y",
@@ -69,8 +70,10 @@ def parse_date(value) -> date | None:
     if not isinstance(value, str):
         return None
     text = _TIME_TAIL.sub("", value.strip())
-    if not 6 <= len(text) <= 14:
+    if not 4 <= len(text) <= 14:
         return None
+    if (period := parse_period(text)) is not None:      # 2026-09、Sep-26、2026Q3 → 期間第一天
+        return period
     for fmt in _DATE_FORMATS:
         try:
             parsed = datetime.strptime(text, fmt).date()

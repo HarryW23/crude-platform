@@ -3,14 +3,19 @@ import { api } from "./api.js";
 import { lineChart } from "./charts.js";
 import { deltaCell, esc, num, statusTag } from "./ui.js";
 
+const FREQ = { daily: "日", weekly: "周", monthly: "月", quarterly: "季" };
+
+// 變化量按「期」算：日度指標是 1 / 5 / 20 個交易日，周度是 1 / 5 / 20 周，依此類推。
 export function indicatorTable(list, { formula = false } = {}) {
+  const freqs = new Set(list.map((i) => i.frequency));
+  const u = freqs.size === 1 ? FREQ[[...freqs][0]] : "期";
   return `<table><tr><th>指標</th>${formula ? "<th>公式</th>" : ""}<th>日期</th><th class="n">最新值</th>
-      <th class="n">日變化</th><th class="n">5 日</th><th class="n">20 日</th><th class="n" title="最新值在過去一年裡的百分位">一年分位</th>
+      <th class="n">${u === "日" ? "日變化" : "上" + u + "變化"}</th><th class="n">5 ${u}</th><th class="n">20 ${u}</th><th class="n" title="最新值在過去一年裡的百分位">一年分位</th>
       <th>單位</th><th>狀態</th></tr>
     ${list.map((i) => `<tr class="click" data-ind="${i.code}">
-      <td>${esc(i.name_zh)}<div class="mono muted">${i.code}</div></td>
+      <td>${esc(i.name_zh)}${freqs.size > 1 ? ` <span class="tag">${FREQ[i.frequency]}度</span>` : ""}<div class="mono muted">${i.code}</div></td>
       ${formula ? `<td class="mono">${esc(i.formula)}</td>` : ""}
-      <td class="nw">${i.last_date ?? ""}</td><td class="n">${i.status === "ok" ? num(i.last_value) : "—"}</td>
+      <td class="nw">${i.last_date ?? ""}${i.forecast_until ? `<div class="muted" title="之後的期間是預測值">預測至 ${i.forecast_until.slice(0, 7)}</div>` : ""}</td><td class="n">${i.status === "ok" ? num(i.last_value) : "—"}</td>
       ${deltaCell(i.chg_1d)}${deltaCell(i.chg_5d)}${deltaCell(i.chg_20d)}
       <td class="n">${i.percentile_1y == null ? "" : num(i.percentile_1y, 0) + "%"}</td>
       <td class="nw">${esc(i.unit)}</td><td>${statusTag(i)}</td></tr>`).join("")}</table>`;
@@ -34,7 +39,7 @@ function traceNode(n) {
 }
 
 export async function showIndicator(box, summary) {
-  box.innerHTML = '<div class="panel inset"><p class="muted">載入中…</p></div>';
+  box.innerHTML = '<div class="panel"><p class="muted">載入中…</p></div>';
   const panel = box.firstElementChild;
   const data = await api(`/indicators/${summary.code}/data`);
   panel.innerHTML = `<h2>${esc(summary.name_zh)} <span class="mono muted">${summary.code}</span></h2>
@@ -50,7 +55,6 @@ export async function showIndicator(box, summary) {
     panel.insertAdjacentHTML("beforeend",
       `<h3>計算追溯 <span class="muted" style="font-weight:400">${trace.date}</span></h3><ul class="tree root">${traceNode(trace.tree)}</ul>`);
   }
-  box.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
 // 在 root 裡渲染分組看板。list 是 /indicators 的結果。
@@ -60,8 +64,9 @@ export function mountBoard(root, list, options = {}) {
     if (!groups.has(i.group)) groups.set(i.group, []);
     groups.get(i.group).push(i);
   }
-  root.innerHTML = '<div class="detail"></div>' + [...groups].map(([name, items]) =>
-    `<div class="panel"><h2>${esc(name)}</h2><div class="scroll">${indicatorTable(items, options)}</div></div>`).join("");
+  root.innerHTML = `<div class="split"><div>${[...groups].map(([name, items]) =>
+    `<div class="panel"><h2>${esc(name)}</h2><div class="scroll">${indicatorTable(items, options)}</div></div>`).join("")}</div>
+    <div class="detail"></div></div>`;
   const detail = root.querySelector(".detail");
   root.querySelectorAll("tr[data-ind]").forEach((tr) => tr.addEventListener("click", () => {
     root.querySelectorAll("tr.sel").forEach((r) => r.classList.remove("sel"));

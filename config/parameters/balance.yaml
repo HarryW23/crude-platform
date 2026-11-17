@@ -1,0 +1,3 @@
+# 供需模組用到的常數。字段說明見 conversion.yaml。
+- {key: DAYS_PER_WEEK, name_zh: 每周天數, value: 7, unit: d, group: 單位換算, verified: true,
+   description: 把周度庫存變化（千桶）折成 千桶/日}

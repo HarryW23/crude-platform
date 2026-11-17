@@ -18,4 +18,8 @@
 - {code: CHINA,     name_zh: 中國, region: 中國}
 - {code: SHANDONG,  name_zh: 山東, region: 中國}
 - {code: EAST_CHINA, name_zh: 華東, region: 中國}
+- {code: OECD,      name_zh: 經合組織, region: 全球}
+- {code: NON_OECD,  name_zh: 非經合組織, region: 全球}
+- {code: OPEC,      name_zh: 歐佩克, region: 全球}
+- {code: NON_OPEC,  name_zh: 非歐佩克, region: 全球}
 - {code: GLOBAL,    name_zh: 全球 / 不適用, region: 全球}

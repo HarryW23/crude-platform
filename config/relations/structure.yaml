@@ -1,0 +1,15 @@
+# 關係模型：用最近一段時間的樣本擬合 y = a + b·x，回答「按現在的 x，y 通常在什麼水平」。
+#   y / x          序列或指標代碼
+#   lookback_days  用最近多少天的樣本
+#   min_points     樣本少於這個數就不擬合（不硬算）
+# 這是描述性的統計關係，不是因果；擬合優度（R²）低的時候不要當結論用。
+
+- {code: BRENT_STRUCTURE_VS_US_STOCKS, name_zh: Brent 月差 與 美國原油庫存偏離,
+   y: TS_BRENT_M1_M3, x: STK_US_CRUDE_VS_5Y, lookback_days: 1095,
+   notes: 庫存低於五年均值時，近月相對遠月通常更強（月差走闊）}
+- {code: WTI_STRUCTURE_VS_CUSHING, name_zh: WTI 月差 與 庫欣庫存,
+   y: TS_WTI_M1_M3, x: EIA_CUSHING_STOCKS, lookback_days: 1095,
+   notes: 庫欣是 WTI 的交割地，庫存越低近月越緊}
+- {code: BRENT_STRUCTURE_VS_OECD_STOCKS, name_zh: Brent 月差 與 OECD 庫存偏離,
+   y: TS_BRENT_M1_M3, x: STK_OECD_VS_5Y, lookback_days: 1825, min_points: 24,
+   notes: 月度樣本，點數少，僅作參考}

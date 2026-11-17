@@ -47,3 +47,4 @@
 - {code: FREIGHT_DIRTY, name_zh: 原油油輪運費,     category: freight}
 - {code: FX,            name_zh: 匯率,             category: fx}
 - {code: US_FUNDAMENTAL, name_zh: 美國周度基本面,  category: fundamental}
+- {code: GLOBAL_FUNDAMENTAL, name_zh: 全球供需,     category: fundamental}

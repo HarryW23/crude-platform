@@ -1,4 +1,4 @@
-# 運費、匯率、基本面。字段說明見 crude.yaml。
+# 運費、匯率。字段說明見 crude.yaml。
 
 series:
   # ---------- 油輪運費（WS 點；折成 美元/桶 需要當年的基準費率，見 parameters/freight.yaml） ----------
@@ -14,17 +14,3 @@ series:
   # ---------- 匯率 ----------
   - {code: USDCNY, name_zh: 美元兌人民幣（1 美元合多少人民幣）, commodity: FX, location: GLOBAL, kind: fx, unit: CNY/USD, module: common,
      aliases: ["CNY=", "USD/CNY", "USDCNY", "美元人民幣"]}
-
-  # ---------- 美國周度基本面（EIA） ----------
-  - {code: EIA_CRUDE_STOCKS, name_zh: 美國商業原油庫存, commodity: US_FUNDAMENTAL, location: US, kind: stock, unit: kb,
-     frequency: weekly, module: balance, eia_id: PET.WCESTUS1.W, aliases: ["US Commercial Crude Stocks"]}
-  - {code: EIA_CUSHING_STOCKS, name_zh: 庫欣原油庫存, commodity: US_FUNDAMENTAL, location: CUSHING, kind: stock, unit: kb,
-     frequency: weekly, module: balance, eia_id: PET.W_EPC0_SAX_YCUOK_MBBL.W, aliases: ["Cushing Stocks"]}
-  - {code: EIA_GASOLINE_STOCKS, name_zh: 美國汽油庫存, commodity: US_FUNDAMENTAL, location: US, kind: stock, unit: kb,
-     frequency: weekly, module: balance, eia_id: PET.WGTSTUS1.W, aliases: ["US Gasoline Stocks"]}
-  - {code: EIA_DISTILLATE_STOCKS, name_zh: 美國餾分油庫存, commodity: US_FUNDAMENTAL, location: US, kind: stock, unit: kb,
-     frequency: weekly, module: balance, eia_id: PET.WDISTUS1.W, aliases: ["US Distillate Stocks"]}
-  - {code: EIA_CRUDE_PRODUCTION, name_zh: 美國原油產量, commodity: US_FUNDAMENTAL, location: US, kind: flow, unit: kb/d,
-     frequency: weekly, module: balance, eia_id: PET.WCRFPUS2.W, aliases: ["US Crude Production"]}
-  - {code: EIA_REFINERY_UTIL, name_zh: 美國煉廠開工率, commodity: US_FUNDAMENTAL, location: US, kind: ratio, unit: pct,
-     frequency: weekly, module: balance, eia_id: PET.WPULEUS3.W, aliases: ["US Refinery Utilization"]}

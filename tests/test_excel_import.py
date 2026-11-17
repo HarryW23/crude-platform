@@ -22,7 +22,10 @@ def test_messy_workbook_layouts_are_detected(session, settings, sample_bytes):
     preview = preview_file(session, settings, sample_bytes, "sample.xlsx", "demo")
     layouts = {s["name"]: s["layout"] for s in preview["sheets"]}
     assert layouts == {"期貨": "wide", "新加坡成品油": "wide_transposed", "升貼水": "long", "中國": "wide",
-                       "說明": "unrecognized"}
+                       "EIA周度": "wide", "STEO月度": "wide", "說明": "unrecognized"}
+    steo = _cols(preview, "STEO月度")["OPEC液體產量"]                   # 表頭是「2026-09」這種期間寫法
+    assert steo["series_code"] == "STEO_OPEC_SUPPLY" and steo["n_values"] == 96
+    assert (steo["first_date"], steo["last_date"]) == ("2020-01-01", "2027-12-01")
     assert _cols(preview, "中國")["美元人民幣"]["series_code"] == "USDCNY"
     assert _cols(preview, "中國")["SC M1"]["n_values"] == 55            # 國慶假期 5 個交易日沒有數據
 
@@ -89,4 +92,8 @@ def test_cell_parsers():
     assert parse_date("2026/8/3 00:00:00") == date(2026, 8, 3)
     assert parse_date(20260803) == date(2026, 8, 3)
     assert parse_date(70.5) is None and parse_date("Brent") is None and parse_date("12345") is None
+    assert parse_date("2026-09") == date(2026, 9, 1) and parse_date("Sep-26") == date(2026, 9, 1)
+    assert parse_date("2026Q3") == date(2026, 7, 1) and parse_date("3Q26") == date(2026, 7, 1)
+    assert parse_date("2026年9月") == date(2026, 9, 1) and parse_date("Q5 2026") is None
+    assert parse_date("2026.09") is None and parse_date("May") is None           # 像數字或不完整的不算
     assert parse_number("1,234.5") == 1234.5 and parse_number("N/A") is None and parse_number(True) is None

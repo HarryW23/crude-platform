@@ -1,0 +1,18 @@
+# 供需平衡表：供應各項之和 − 需求各項之和 = 平衡（隱含庫存變化，正 = 累庫）。
+# 系統自動編譯成一組指標（代碼以 BAL_{code}_ 開頭）。
+#   unit       全表口徑。每一項 value 的單位都必須等於它（載入時檢查）
+#   frequency  期間粒度。月度、季度數據記在期間第一天；未來期間的值就是預測
+#   supply / demand   各項。value 是公式片段，可以直接是一條序列，也可以是幾條序列的組合
+#   actual_stock_change  可選：實際觀測到的庫存變化，用來算「未解釋項」
+# 你自己的判斷不要改在這裡：在前台建一個「情境」，把調整加在單項上，並寫明依據。
+code: GLOBAL
+name_zh: 全球液體燃料平衡（EIA 口徑）
+unit: mb/d
+frequency: monthly
+notes: 以 EIA 短期能源展望（STEO）為底稿，含其預測期。需求按 OECD / 非 OECD 分，供應按 OPEC / 非 OPEC 分。
+supply:
+  - {code: OPEC,    name_zh: OPEC,    value: STEO_OPEC_SUPPLY}
+  - {code: NONOPEC, name_zh: 非 OPEC, value: STEO_NONOPEC_SUPPLY}
+demand:
+  - {code: OECD,    name_zh: OECD,    value: STEO_OECD_DEMAND}
+  - {code: NONOECD, name_zh: 非 OECD, value: STEO_NONOECD_DEMAND}

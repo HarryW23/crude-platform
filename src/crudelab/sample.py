@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import math
 import random
 from datetime import date, timedelta
 from pathlib import Path
@@ -20,14 +21,22 @@ def _walk(rng: random.Random, start: float, step: float, n: int) -> list[float]:
     return out
 
 
-def write_sample_workbook(path: Path, days: int = 60, seed: int = 7) -> None:
-    rng = random.Random(seed)
-    dates = []
-    d = date(2026, 8, 3)
-    while len(dates) < days:
+END = date(2026, 10, 23)          # 演示數據的最後一個交易日（固定，方便測試）
+
+
+def _weekdays_ending(end: date, count: int) -> list[date]:
+    out, d = [], end
+    while len(out) < count:
         if d.weekday() < 5:
-            dates.append(d)
-        d += timedelta(days=1)
+            out.append(d)
+        d -= timedelta(days=1)
+    return out[::-1]
+
+
+def write_sample_workbook(path: Path, days: int = 60, seed: int = 7) -> None:
+    """days：日度行情的交易日數。供需的周度、月度數據固定給 6 年多，夠算五年同期。"""
+    rng = random.Random(seed)
+    dates = _weekdays_ending(END, days)
 
     brent = _walk(rng, 70, 0.9, days)
     cols = {  # 表頭兩行：名稱 / RIC
@@ -76,7 +85,50 @@ def write_sample_workbook(path: Path, days: int = 60, seed: int = 7) -> None:
                     round(brent[i] * 105 + 900 + rng.gauss(0, 40)), round(brent[i] * 95 + 500 + rng.gauss(0, 40)),
                     round(4800 + rng.gauss(0, 60)), round(2400 + rng.gauss(0, 50))])
 
+    _balance_sheets(wb, rng)
     ws4 = wb.create_sheet("說明")
     ws4.append(["這一頁只有文字，系統會標記為無法識別並跳過。"])
     path.parent.mkdir(parents=True, exist_ok=True)
     wb.save(path)
+
+
+def _balance_sheets(wb: Workbook, rng: random.Random) -> None:
+    """供需演示數據：EIA 式的周度表（周五）和 STEO 式的月度表（含預測期，表頭用「2026-09」這種期間寫法）。"""
+    fridays, d = [], END
+    while d >= date(2020, 1, 3):
+        fridays.append(d)
+        d -= timedelta(days=7)
+    fridays.reverse()
+    ws = wb.create_sheet("EIA周度")
+    ws.append(["Week ending", "美國商業原油庫存", "美國戰略儲備", "庫欣庫存", "美國汽油庫存", "美國餾分油庫存",
+               "美國原油產量", "美國原油進口", "美國原油出口", "美國煉廠加工量", "美國成品油表需", "美國汽油表需",
+               "美國餾分油表需"])
+    crude, spr = 440_000.0, 400_000.0
+    for i, day in enumerate(fridays):
+        season = math.sin(2 * math.pi * (day.timetuple().tm_yday - 60) / 365)
+        production = 12_800 + 0.6 * i + rng.gauss(0, 60)
+        imports, exports = 6_300 + rng.gauss(0, 350), 4_000 + rng.gauss(0, 400)
+        runs = 16_000 + 700 * season + rng.gauss(0, 200)
+        unaccounted = rng.gauss(0, 250)
+        crude += 7 * (production + imports - exports - runs + unaccounted - 600)
+        crude += (430_000 - crude) * 0.03                      # 拉回均值，避免漂走
+        ws.append([day, round(crude), round(spr), round(32_000 - 9_000 * season + rng.gauss(0, 1500)),
+                   round(228_000 - 10_000 * season + rng.gauss(0, 2500)),
+                   round(120_000 + 12_000 * season + rng.gauss(0, 2500)),
+                   round(production), round(imports), round(exports), round(runs),
+                   round(20_200 + 600 * season + rng.gauss(0, 500)), round(8_900 + 500 * season + rng.gauss(0, 200)),
+                   round(3_900 - 300 * season + rng.gauss(0, 180))])
+
+    ws2 = wb.create_sheet("STEO月度")
+    ws2.append(["Month", "OPEC液體產量", "非OPEC液體產量", "OPEC原油產量", "OECD需求", "非OECD需求", "OECD商業庫存"])
+    stocks = 2_800.0
+    for n in range(96):                                        # 2020-01 … 2027-12
+        year, month = 2020 + n // 12, n % 12 + 1
+        season = math.cos(2 * math.pi * (month - 1) / 12)
+        opec = 32.0 + 0.01 * n + rng.gauss(0, 0.25)
+        nonopec = 68.0 + 0.04 * n + rng.gauss(0, 0.2)
+        oecd = 45.6 + 0.9 * season + rng.gauss(0, 0.2)
+        nonoecd = 54.5 + 0.05 * n + rng.gauss(0, 0.25)
+        stocks += (opec + nonopec - oecd - nonoecd) * 4 + (2_800 - stocks) * 0.05
+        ws2.append([f"{year}-{month:02d}", round(opec, 2), round(nonopec, 2), round(opec - 5.4, 2), round(oecd, 2),
+                    round(nonoecd, 2), round(stocks, 1)])

@@ -11,7 +11,7 @@ from collections.abc import Callable
 
 import pandas as pd
 
-from . import units
+from . import analytics, units
 from .units import DIMENSIONLESS, Dim
 
 # 函數表：新增函數時在這裡加一行，並在 _UNIT_RULES 裡說明它對單位的影響。
@@ -20,8 +20,10 @@ FUNCTIONS: dict[str, Callable] = {
     "ma": lambda x, n: x.rolling(int(n)).mean(),     # n 期均值
     "diff": lambda x, n=1: x.diff(int(n)),           # n 期變化
     "abs": lambda x: abs(x),
+    "yoy": lambda x: x - analytics.year_ago(x),      # 同比變化：減去一年前同期的值
+    "seasonal_avg": lambda x, n: analytics.seasonal_stats(x, int(n))["avg"],   # 前 n 年同期均值（n 年不齊則無值）
 }
-WINDOW_FUNCTIONS = {"lag", "ma", "diff"}             # 會用到更早日期的值
+WINDOW_FUNCTIONS = {"lag", "ma", "diff", "yoy", "seasonal_avg"}    # 會用到更早日期的值
 _BINOPS = {ast.Add: lambda a, b: a + b, ast.Sub: lambda a, b: a - b, ast.Mult: lambda a, b: a * b,
            ast.Div: lambda a, b: a / b, ast.Pow: lambda a, b: a ** b}
 
@@ -77,7 +79,7 @@ def infer_unit(formula: str, unit_of: Callable[[str], Dim]) -> Dim:
         if isinstance(node, ast.UnaryOp):
             return visit(node.operand)
         if isinstance(node, ast.Call):
-            return visit(node.args[0])              # lag / ma / diff / abs 都不改變單位
+            return visit(node.args[0])              # 目前所有函數都不改變單位
         assert isinstance(node, ast.BinOp)
         left = visit(node.left)
         if isinstance(node.op, ast.Pow):

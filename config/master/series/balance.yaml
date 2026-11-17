@@ -1,0 +1,66 @@
+# 供需：產量、需求、庫存、進出口。字段說明見 crude.yaml。
+# 期間型數據（月度、季度）一律記在期間第一天：2026 年 9 月 → 2026-09-01。未來期間的值就是預測。
+# eia_id 是 EIA 的序列號，供 EIA connector 取數；這些序列號是按記憶填的，沒有實際調用驗證過。
+
+series:
+  # ---------- 美國周度（EIA 周報，日期為周五） ----------
+  - {code: EIA_CRUDE_STOCKS, name_zh: 美國商業原油庫存, commodity: US_FUNDAMENTAL, location: US, kind: stock, unit: kb,
+     frequency: weekly, module: balance, eia_id: PET.WCESTUS1.W, aliases: ["US Commercial Crude Stocks", "美國商業原油庫存"]}
+  - {code: EIA_SPR_STOCKS, name_zh: 美國戰略儲備原油庫存, commodity: US_FUNDAMENTAL, location: US, kind: stock, unit: kb,
+     frequency: weekly, module: balance, eia_id: PET.WCSSTUS1.W, aliases: ["US SPR Stocks", "美國戰略儲備"]}
+  - {code: EIA_CUSHING_STOCKS, name_zh: 庫欣原油庫存, commodity: US_FUNDAMENTAL, location: CUSHING, kind: stock, unit: kb,
+     frequency: weekly, module: balance, eia_id: PET.W_EPC0_SAX_YCUOK_MBBL.W, aliases: ["Cushing Stocks", "庫欣庫存"]}
+  - {code: EIA_GASOLINE_STOCKS, name_zh: 美國汽油庫存, commodity: US_FUNDAMENTAL, location: US, kind: stock, unit: kb,
+     frequency: weekly, module: balance, eia_id: PET.WGTSTUS1.W, aliases: ["US Gasoline Stocks", "美國汽油庫存"]}
+  - {code: EIA_DISTILLATE_STOCKS, name_zh: 美國餾分油庫存, commodity: US_FUNDAMENTAL, location: US, kind: stock, unit: kb,
+     frequency: weekly, module: balance, eia_id: PET.WDISTUS1.W, aliases: ["US Distillate Stocks", "美國餾分油庫存"]}
+  - {code: EIA_JET_STOCKS, name_zh: 美國航煤庫存, commodity: US_FUNDAMENTAL, location: US, kind: stock, unit: kb,
+     frequency: weekly, module: balance, eia_id: PET.WKJSTUS1.W, aliases: ["US Jet Stocks", "美國航煤庫存"]}
+  - {code: EIA_CRUDE_PRODUCTION, name_zh: 美國原油產量, commodity: US_FUNDAMENTAL, location: US, kind: flow, unit: kb/d,
+     frequency: weekly, module: balance, eia_id: PET.WCRFPUS2.W, aliases: ["US Crude Production", "美國原油產量"]}
+  - {code: EIA_CRUDE_IMPORTS, name_zh: 美國原油進口, commodity: US_FUNDAMENTAL, location: US, kind: flow, unit: kb/d,
+     frequency: weekly, module: balance, eia_id: PET.WCRIMUS2.W, aliases: ["US Crude Imports", "美國原油進口"]}
+  - {code: EIA_CRUDE_EXPORTS, name_zh: 美國原油出口, commodity: US_FUNDAMENTAL, location: US, kind: flow, unit: kb/d,
+     frequency: weekly, module: balance, eia_id: PET.WCREXUS2.W, aliases: ["US Crude Exports", "美國原油出口"]}
+  - {code: EIA_REFINERY_INPUT, name_zh: 美國煉廠原油加工量, commodity: US_FUNDAMENTAL, location: US, kind: flow, unit: kb/d,
+     frequency: weekly, module: balance, eia_id: PET.WCRRIUS2.W, aliases: ["US Refinery Crude Input", "美國煉廠加工量"]}
+  - {code: EIA_REFINERY_UTIL, name_zh: 美國煉廠開工率, commodity: US_FUNDAMENTAL, location: US, kind: ratio, unit: pct,
+     frequency: weekly, module: balance, eia_id: PET.WPULEUS3.W, aliases: ["US Refinery Utilization", "美國煉廠開工率"]}
+  - {code: EIA_PRODUCT_SUPPLIED, name_zh: 美國成品油表觀需求（合計）, commodity: US_FUNDAMENTAL, location: US, kind: flow, unit: kb/d,
+     frequency: weekly, module: balance, eia_id: PET.WRPUPUS2.W, aliases: ["US Total Product Supplied", "美國成品油表需"]}
+  - {code: EIA_GASOLINE_SUPPLIED, name_zh: 美國汽油表觀需求, commodity: US_FUNDAMENTAL, location: US, kind: flow, unit: kb/d,
+     frequency: weekly, module: balance, eia_id: PET.WGFUPUS2.W, aliases: ["US Gasoline Supplied", "美國汽油表需"]}
+  - {code: EIA_DISTILLATE_SUPPLIED, name_zh: 美國餾分油表觀需求, commodity: US_FUNDAMENTAL, location: US, kind: flow, unit: kb/d,
+     frequency: weekly, module: balance, eia_id: PET.WDIUPUS2.W, aliases: ["US Distillate Supplied", "美國餾分油表需"]}
+  - {code: EIA_JET_SUPPLIED, name_zh: 美國航煤表觀需求, commodity: US_FUNDAMENTAL, location: US, kind: flow, unit: kb/d,
+     frequency: weekly, module: balance, eia_id: PET.WKJUPUS2.W, aliases: ["US Jet Supplied", "美國航煤表需"]}
+
+  # ---------- 全球月度（EIA 短期能源展望 STEO，含預測） ----------
+  - {code: STEO_OPEC_SUPPLY, name_zh: OPEC 液體燃料產量（EIA）, commodity: GLOBAL_FUNDAMENTAL, location: OPEC, kind: flow, unit: mb/d,
+     frequency: monthly, module: balance, eia_id: STEO.PAPR_OPEC.M, aliases: ["STEO OPEC Supply", "OPEC液體產量"]}
+  - {code: STEO_NONOPEC_SUPPLY, name_zh: 非 OPEC 液體燃料產量（EIA）, commodity: GLOBAL_FUNDAMENTAL, location: NON_OPEC, kind: flow, unit: mb/d,
+     frequency: monthly, module: balance, eia_id: STEO.PAPR_NONOPEC.M, aliases: ["STEO Non-OPEC Supply", "非OPEC液體產量"]}
+  - {code: STEO_OPEC_CRUDE, name_zh: OPEC 原油產量（EIA）, commodity: GLOBAL_FUNDAMENTAL, location: OPEC, kind: flow, unit: mb/d,
+     frequency: monthly, module: balance, eia_id: STEO.COPR_OPEC.M, aliases: ["STEO OPEC Crude", "OPEC原油產量"]}
+  - {code: STEO_US_CRUDE, name_zh: 美國原油產量（EIA 月度）, commodity: GLOBAL_FUNDAMENTAL, location: US, kind: flow, unit: mb/d,
+     frequency: monthly, module: balance, eia_id: STEO.COPRPUS.M, aliases: ["STEO US Crude Production"]}
+  - {code: STEO_OECD_DEMAND, name_zh: OECD 需求（EIA）, commodity: GLOBAL_FUNDAMENTAL, location: OECD, kind: flow, unit: mb/d,
+     frequency: monthly, module: balance, eia_id: STEO.PATC_OECD.M, aliases: ["STEO OECD Demand", "OECD需求"]}
+  - {code: STEO_NONOECD_DEMAND, name_zh: 非 OECD 需求（EIA）, commodity: GLOBAL_FUNDAMENTAL, location: NON_OECD, kind: flow, unit: mb/d,
+     frequency: monthly, module: balance, eia_id: STEO.PATC_NON_OECD.M, aliases: ["STEO Non-OECD Demand", "非OECD需求"]}
+  - {code: STEO_CHINA_DEMAND, name_zh: 中國需求（EIA）, commodity: GLOBAL_FUNDAMENTAL, location: CHINA, kind: flow, unit: mb/d,
+     frequency: monthly, module: balance, eia_id: STEO.PATC_CH.M, aliases: ["STEO China Demand", "中國需求EIA"]}
+  - {code: STEO_US_DEMAND, name_zh: 美國需求（EIA 月度）, commodity: GLOBAL_FUNDAMENTAL, location: US, kind: flow, unit: mb/d,
+     frequency: monthly, module: balance, eia_id: STEO.PATC_US.M, aliases: ["STEO US Demand"]}
+  - {code: STEO_OECD_STOCKS, name_zh: OECD 商業庫存（EIA）, commodity: GLOBAL_FUNDAMENTAL, location: OECD, kind: stock, unit: mb,
+     frequency: monthly, module: balance, eia_id: STEO.PASC_OECD_T3.M, aliases: ["STEO OECD Stocks", "OECD商業庫存"]}
+
+  # ---------- 其他機構（月報，Excel 導入；用來和 EIA 的口徑對照） ----------
+  - {code: IEA_WORLD_DEMAND, name_zh: 全球需求（IEA）, commodity: GLOBAL_FUNDAMENTAL, location: GLOBAL, kind: flow, unit: mb/d,
+     frequency: quarterly, module: balance, aliases: ["IEA World Demand", "IEA全球需求"]}
+  - {code: IEA_WORLD_SUPPLY, name_zh: 全球供應（IEA）, commodity: GLOBAL_FUNDAMENTAL, location: GLOBAL, kind: flow, unit: mb/d,
+     frequency: quarterly, module: balance, aliases: ["IEA World Supply", "IEA全球供應"]}
+  - {code: OPEC_WORLD_DEMAND, name_zh: 全球需求（OPEC）, commodity: GLOBAL_FUNDAMENTAL, location: GLOBAL, kind: flow, unit: mb/d,
+     frequency: quarterly, module: balance, aliases: ["OPEC World Demand", "OPEC全球需求"]}
+  - {code: OPEC_CALL_ON_OPEC, name_zh: 對 OPEC 原油的需求（OPEC）, commodity: GLOBAL_FUNDAMENTAL, location: OPEC, kind: flow, unit: mb/d,
+     frequency: quarterly, module: balance, aliases: ["Call on OPEC", "對OPEC原油需求"]}

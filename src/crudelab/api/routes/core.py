@@ -32,6 +32,7 @@ def overview(session: Session = Depends(get_db), state: AppState = Depends(get_s
         "parameters_unverified": sum(not p.verified for p in params),
         "parameters_missing": sum(1 for p in params if not engine.parameter_values(p.key).size),
         "refinery_models": len(state.cfg.refineries),
+        "balances": len(state.cfg.balances),
         "batches": session.scalar(select(func.count()).select_from(ImportBatch)
                                   .where(ImportBatch.status == "committed")),
     }

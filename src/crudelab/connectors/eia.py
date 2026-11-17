@@ -11,9 +11,22 @@ import httpx
 
 from ..ingest import Obs
 from ..models import Series
+from ..periods import parse_period
 from .base import ConnectorNotReady, ConnectorStatus, PullConnector
 
 BASE_URL = "https://api.eia.gov/v2/seriesid/"
+
+
+def _period_date(period: str) -> date | None:
+    """EIA 的 period：日 / 周是 YYYY-MM-DD，月是 YYYY-MM，季是 YYYY-Qn，年是 YYYY。期間型記在期間第一天。"""
+    if len(period) == 10:
+        try:
+            return date.fromisoformat(period)
+        except ValueError:
+            return None
+    if len(period) == 4 and period.isdigit():
+        return date(int(period), 1, 1)
+    return parse_period(period)
 
 
 class EIAConnector(PullConnector):
@@ -45,9 +58,10 @@ class EIAConnector(PullConnector):
                 resp.raise_for_status()
                 for row in resp.json().get("response", {}).get("data", []):
                     period, value = row.get("period"), row.get("value")
-                    if period is None or value is None or len(str(period)) != 10:
+                    when = _period_date(str(period)) if period is not None else None
+                    if when is None or value is None:
                         continue
-                    out.append(Obs(s.code, date.fromisoformat(str(period)), float(value), f"eia:{eia_id}"))
+                    out.append(Obs(s.code, when, float(value), f"eia:{eia_id}"))
         finally:
             if self._client is None:
                 client.close()

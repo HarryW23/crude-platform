@@ -1,0 +1,15 @@
+# 字段說明見 global.yaml。
+code: US_CRUDE
+name_zh: 美國原油周度平衡
+unit: kb/d
+frequency: weekly
+notes: >-
+  按 EIA 周報計算：產量 + 進口 − 出口 − 煉廠加工 = 隱含庫存變化，再和實際庫存變化（商業 + 戰略儲備）對比。
+  兩者之差是未解釋項，對應 EIA 的調整項，長期偏離說明某一項數據有問題。
+supply:
+  - {code: PRODUCTION, name_zh: 產量, value: EIA_CRUDE_PRODUCTION}
+  - {code: IMPORTS,    name_zh: 進口, value: EIA_CRUDE_IMPORTS}
+demand:
+  - {code: EXPORTS,    name_zh: 出口,     value: EIA_CRUDE_EXPORTS}
+  - {code: RUNS,       name_zh: 煉廠加工, value: EIA_REFINERY_INPUT}
+actual_stock_change: diff(EIA_CRUDE_STOCKS + EIA_SPR_STOCKS, 1) / DAYS_PER_WEEK

@@ -1,8 +1,9 @@
 """數據表定義。表結構的變更一律通過 migrations/ 下的遷移腳本，不要直接改庫。
 
-四類表：
+五類表：
   主數據     unit / location / commodity / data_source / series / series_alias / parameter
   事實數據   import_batch / observation / parameter_version
+  判斷       scenario / adjustment —— 人對數據的調整，和數據本身分開存
   修訂歷史   observation_revision
   操作日誌   audit_log
 
@@ -167,6 +168,32 @@ class Observation(Base):
     source_ref: Mapped[str | None] = mapped_column(String(256))      # 例如 "Sheet1!C15"
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)   # 第一次入庫
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)   # 當前值入庫
+
+
+class ScenarioRow(Base):
+    """情境：一組有名字的人為調整，疊加在數據之上，不改動數據本身。"""
+    __tablename__ = "scenario"
+    code: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name_zh: Mapped[str] = mapped_column(String(128))
+    description: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class Adjustment(Base):
+    """一條調整：在某段日期裡，給某個序列或指標加上一個數。只增不改；撤銷是填 removed_at。"""
+    __tablename__ = "adjustment"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    scenario_code: Mapped[str] = mapped_column(ForeignKey("scenario.code"), index=True)
+    target: Mapped[str] = mapped_column(String(64))                  # 序列或指標代碼
+    date_from: Mapped[date] = mapped_column(Date)
+    date_to: Mapped[date | None] = mapped_column(Date)               # 空 = 一直持續
+    delta: Mapped[float] = mapped_column(Float)
+    note: Mapped[str | None] = mapped_column(Text)                   # 依據：為什麼這樣調
+    created_by: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    removed_at: Mapped[datetime | None] = mapped_column(DateTime)
 
 
 # ----------------------------- 修訂歷史與日誌 -----------------------------

@@ -1,0 +1,57 @@
+# 模組二：供需。這裡是庫存、需求、機構口徑對照等單項指標；
+# 平衡表在 config/balances/ 下聲明，會自動編譯成 BAL_ 開頭的指標。字段說明見 spread.yaml。
+# 另有兩個季節性函數：
+#   seasonal_avg(x, n)  前 n 年同期的均值（任何一年缺同期值就不出結果）
+#   yoy(x)              減去一年前同期的值
+
+# ---------- 美國庫存（周度） ----------
+- {code: STK_US_CRUDE_VS_5Y, name_zh: 商業原油庫存 − 五年均值, module: balance, group: 美國庫存, unit: kb,
+   formula: "EIA_CRUDE_STOCKS - seasonal_avg(EIA_CRUDE_STOCKS, 5)"}
+- {code: STK_US_CRUDE_WOW, name_zh: 商業原油庫存周變化, module: balance, group: 美國庫存, unit: kb,
+   formula: "diff(EIA_CRUDE_STOCKS, 1)"}
+- {code: STK_US_CUSHING_VS_5Y, name_zh: 庫欣庫存 − 五年均值, module: balance, group: 美國庫存, unit: kb,
+   formula: "EIA_CUSHING_STOCKS - seasonal_avg(EIA_CUSHING_STOCKS, 5)"}
+- {code: STK_US_GASOLINE_VS_5Y, name_zh: 汽油庫存 − 五年均值, module: balance, group: 美國庫存, unit: kb,
+   formula: "EIA_GASOLINE_STOCKS - seasonal_avg(EIA_GASOLINE_STOCKS, 5)"}
+- {code: STK_US_DISTILLATE_VS_5Y, name_zh: 餾分油庫存 − 五年均值, module: balance, group: 美國庫存, unit: kb,
+   formula: "EIA_DISTILLATE_STOCKS - seasonal_avg(EIA_DISTILLATE_STOCKS, 5)"}
+- {code: COVER_US_CRUDE, name_zh: 商業原油庫存可用天數, module: balance, group: 美國庫存, unit: d,
+   formula: "EIA_CRUDE_STOCKS / EIA_REFINERY_INPUT", notes: 庫存 ÷ 煉廠加工量}
+
+# ---------- 美國需求（周度，四周均值以平滑周度噪音） ----------
+- {code: DEM_US_TOTAL_4W, name_zh: 成品油表觀需求（四周均值）, module: balance, group: 美國需求, unit: kb/d,
+   formula: "ma(EIA_PRODUCT_SUPPLIED, 4)"}
+- {code: DEM_US_TOTAL_YOY, name_zh: 成品油表觀需求同比, module: balance, group: 美國需求, unit: kb/d,
+   formula: "yoy(ma(EIA_PRODUCT_SUPPLIED, 4))"}
+- {code: DEM_US_GASOLINE_4W, name_zh: 汽油表觀需求（四周均值）, module: balance, group: 美國需求, unit: kb/d,
+   formula: "ma(EIA_GASOLINE_SUPPLIED, 4)"}
+- {code: DEM_US_GASOLINE_YOY, name_zh: 汽油表觀需求同比, module: balance, group: 美國需求, unit: kb/d,
+   formula: "yoy(ma(EIA_GASOLINE_SUPPLIED, 4))"}
+- {code: DEM_US_DISTILLATE_4W, name_zh: 餾分油表觀需求（四周均值）, module: balance, group: 美國需求, unit: kb/d,
+   formula: "ma(EIA_DISTILLATE_SUPPLIED, 4)"}
+- {code: DEM_US_DISTILLATE_YOY, name_zh: 餾分油表觀需求同比, module: balance, group: 美國需求, unit: kb/d,
+   formula: "yoy(ma(EIA_DISTILLATE_SUPPLIED, 4))"}
+- {code: RUN_US_REFINERY_YOY, name_zh: 煉廠加工量同比, module: balance, group: 美國需求, unit: kb/d,
+   formula: "yoy(ma(EIA_REFINERY_INPUT, 4))"}
+
+# ---------- 全球（月度，EIA 口徑） ----------
+- {code: GLB_SUPPLY, name_zh: 全球供應, module: balance, group: 全球供需, unit: mb/d,
+   formula: "STEO_OPEC_SUPPLY + STEO_NONOPEC_SUPPLY"}
+- {code: GLB_DEMAND, name_zh: 全球需求, module: balance, group: 全球供需, unit: mb/d,
+   formula: "STEO_OECD_DEMAND + STEO_NONOECD_DEMAND"}
+- {code: GLB_SUPPLY_YOY, name_zh: 全球供應同比, module: balance, group: 全球供需, unit: mb/d,
+   formula: "yoy(GLB_SUPPLY)"}
+- {code: GLB_DEMAND_YOY, name_zh: 全球需求同比, module: balance, group: 全球供需, unit: mb/d,
+   formula: "yoy(GLB_DEMAND)"}
+- {code: GLB_OPEC_CRUDE_MOM, name_zh: OPEC 原油產量月變化, module: balance, group: 全球供需, unit: mb/d,
+   formula: "diff(STEO_OPEC_CRUDE, 1)"}
+- {code: STK_OECD_VS_5Y, name_zh: OECD 商業庫存 − 五年均值, module: balance, group: 全球供需, unit: mb,
+   formula: "STEO_OECD_STOCKS - seasonal_avg(STEO_OECD_STOCKS, 5)"}
+- {code: COVER_OECD, name_zh: OECD 庫存可用天數, module: balance, group: 全球供需, unit: d,
+   formula: "STEO_OECD_STOCKS / STEO_OECD_DEMAND"}
+
+# ---------- 機構口徑對照（季度） ----------
+- {code: CMP_DEMAND_IEA_OPEC, name_zh: 全球需求：IEA − OPEC, module: balance, group: 機構對照, unit: mb/d,
+   formula: "IEA_WORLD_DEMAND - OPEC_WORLD_DEMAND"}
+- {code: CMP_IEA_BALANCE, name_zh: IEA 口徑平衡（供應 − 需求）, module: balance, group: 機構對照, unit: mb/d,
+   formula: "IEA_WORLD_SUPPLY - IEA_WORLD_DEMAND"}

@@ -7,6 +7,7 @@ atoms:
   - {code: t,   name_zh: 噸}
   - {code: gal, name_zh: 加侖}
   - {code: kb,  name_zh: 千桶}
+  - {code: mb,  name_zh: 百萬桶}
   - {code: d,   name_zh: 日}
   - {code: WS,  name_zh: WS 點}
   - {code: pct, name_zh: 百分點}
@@ -21,4 +22,6 @@ units:
   - {code: WS,      name_zh: WS 點,     dimension: freight}
   - {code: kb,      name_zh: 千桶,      dimension: volume}
   - {code: kb/d,    name_zh: 千桶/日,   dimension: flow}
+  - {code: mb,      name_zh: 百萬桶,    dimension: volume}
+  - {code: mb/d,    name_zh: 百萬桶/日, dimension: flow}
   - {code: pct,     name_zh: 百分點,    dimension: ratio}

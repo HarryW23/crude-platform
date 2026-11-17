@@ -48,11 +48,11 @@ async function renderModel(box, code) {
     body.insertAdjacentHTML("beforeend", `<div class="msg">目前算不出毛利。${esc(why)}。</div>`);
     return;
   }
-  body.insertAdjacentHTML("beforeend", `<h3>毛利走勢</h3>`);
-  body.append(lineChart(m.history, { unit: m.unit, height: 200 }));
-  body.insertAdjacentHTML("beforeend", `<h3>毛利拆解 <span class="muted" style="font-weight:400">${b.date}</span></h3>`);
-  body.append(waterfall(b.components, { unit: m.unit }));
-  body.insertAdjacentHTML("beforeend", `<div id="tables"></div>`);
+  body.insertAdjacentHTML("beforeend", `<div class="cols"><div><h3>毛利走勢</h3><div id="hist"></div></div>
+    <div><h3>毛利拆解 <span class="muted" style="font-weight:400">${b.date}</span></h3><div id="fall"></div></div></div>
+    <div id="tables"></div>`);
+  body.querySelector("#hist").append(lineChart(m.history, { unit: m.unit, height: 290 }));
+  body.querySelector("#fall").append(waterfall(b.components, { unit: m.unit }));
   renderTables(body.querySelector("#tables"), m, b, null);
 }
 
@@ -72,7 +72,7 @@ function renderTables(root, m, base, scenario, state = { shifts: {} }) {
   }).join("");
   const yieldSum = base.products.reduce((a, p) => a + (p.weight ?? 0), 0);
 
-  root.innerHTML = `<div class="grid2" style="margin-top:8px">
+  root.innerHTML = `<div class="cols" style="margin-top:8px">
     <div><h3>加減項</h3><div class="scroll"><table><tr><th>項目</th><th class="n">基準</th>${cmp ? '<th class="n">試算</th><th class="n">差異</th>' : ""}</tr>
       ${base.components.map((c, i) => {
         const v = c.value, w = scenario?.components[i].value;

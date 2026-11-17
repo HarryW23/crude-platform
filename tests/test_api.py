@@ -25,7 +25,7 @@ def test_pages_and_empty_state(client):
     assert client.get("/").status_code == 200
     assert client.get("/static/js/app.js").status_code == 200
     o = client.get("/api/overview").json()
-    assert o["observations"] == 0 and o["indicators_ok"] == 0 and o["series_total"] == 84
+    assert o["observations"] == 0 and o["indicators_ok"] == 0 and o["series_total"] == 106
     assert o["parameters_missing"] == 5 and o["refinery_models"] == 5
     assert all(i["status"] != "ok" and i["last_value"] is None for i in client.get("/api/indicators").json())
     assert client.get("/api/refineries/CN_FUEL_SD").json()["breakdown"] is None
@@ -59,7 +59,7 @@ def test_data_flow(loaded_client):
     assert client.post("/api/observations", json={"points": [{**point, "series_code": "NOPE"}]}).status_code == 400
 
     sources = {s["code"]: s for s in client.get("/api/sources").json()}
-    assert sources["kpler"]["ready"] is False and sources["eia"]["series_supported"] == 6
+    assert sources["kpler"]["ready"] is False and sources["eia"]["series_supported"] == 24
     assert client.post("/api/sources/kpler/pull", json={}).status_code == 409
     assert client.post("/api/sources/manual/pull", json={}).status_code == 404
     assert {a["action"] for a in client.get("/api/audit").json()} >= {"import", "manual_entry"}
@@ -115,3 +115,55 @@ def test_refinery_api(loaded_client):
     assert client.post("/api/refineries/CN_FUEL_SD/scenario", json={"parameters": {"NOPE": 1}}).status_code == 400
     assert client.post("/api/refineries/CN_INTEGRATED/scenario", json={}).status_code == 400
     assert client.get("/api/refineries/NOPE").status_code == 404
+
+
+def test_balance_scenario_and_analysis_api(loaded_client):
+    client = loaded_client
+    tables = {b["code"]: b for b in client.get("/api/balances").json()}
+    assert set(tables) == {"GLOBAL", "US_CRUDE"} and tables["GLOBAL"]["balance"]["status"] == "ok"
+
+    table = client.get("/api/balances/GLOBAL?past=6&future=6").json()
+    assert len(table["periods"]) == 12 and [p["forecast"] for p in table["periods"]] == [False] * 6 + [True] * 6
+    rows = {r["indicator"]: r for r in table["rows"]}
+    supply, demand = rows["BAL_GLOBAL_SUPPLY"]["values"], rows["BAL_GLOBAL_DEMAND"]["values"]
+    assert rows["BAL_GLOBAL_BALANCE"]["values"] == pytest.approx([s - d for s, d in zip(supply, demand)])
+    assert rows["BAL_GLOBAL_S_OPEC"]["adjustable"] and not rows["BAL_GLOBAL_SUPPLY"]["adjustable"]
+    weekly = client.get("/api/balances/US_CRUDE?past=4&future=4").json()
+    assert len(weekly["periods"]) == 4 and weekly["rows"][-1]["kind"] == "residual"     # 周度數據沒有預測期
+
+    # 建情境、加調整：平衡表在情境下變化，基準不變
+    assert client.post("/api/scenarios", json={"code": "MY_VIEW", "name_zh": "我的判斷"}).status_code == 200
+    assert client.post("/api/scenarios", json={"code": "MY_VIEW", "name_zh": "x"}).status_code == 400
+    start = table["periods"][8]["date"]
+    r = client.post("/api/scenarios/MY_VIEW/adjustments", json={
+        "target": "BAL_GLOBAL_S_OPEC", "date_from": start, "delta": 0.5, "note": "OPEC+ 增產"})
+    assert r.status_code == 200 and r.json()["unit"] == "mb/d" and r.json()["target_name"].endswith("OPEC")
+    assert client.post("/api/scenarios/MY_VIEW/adjustments",
+                       json={"target": "NOPE", "date_from": start, "delta": 1}).status_code == 400
+    adjusted = client.get("/api/balances/GLOBAL?past=6&future=6&scenario=MY_VIEW").json()
+    balance = next(r for r in adjusted["rows"] if r["kind"] == "balance")
+    diff = [v - b for v, b in zip(balance["values"], balance["base_values"])]
+    assert diff == pytest.approx([0] * 8 + [0.5] * 4)
+    assert client.get("/api/balances/GLOBAL?past=6&future=6").json()["rows"] == table["rows"]
+    assert client.get("/api/scenarios").json()[0]["adjustments"] == 1
+    assert client.get("/api/indicators/BAL_GLOBAL_BALANCE/data?scenario=NOPE").status_code == 404
+
+    adjustment_id = client.get("/api/scenarios/MY_VIEW/adjustments").json()[0]["id"]
+    assert client.delete(f"/api/adjustments/{adjustment_id}").status_code == 200
+    assert client.delete(f"/api/adjustments/{adjustment_id}").status_code == 404
+    assert client.delete("/api/scenarios/MY_VIEW").status_code == 200
+    assert client.get("/api/scenarios").json() == []
+
+    seasonal = client.get("/api/seasonal/EIA_CRUDE_STOCKS").json()
+    assert seasonal["unit"] == "kb" and 50 <= len(seasonal["points"]) <= 54
+    last = seasonal["points"][-1]
+    assert last["min"] <= last["avg"] <= last["max"]
+    assert client.get("/api/seasonal/BRENT_M1").json()["points"][-1]["avg"] is None      # 歷史不夠五年 → 不給區間
+    assert client.get("/api/seasonal/NOPE").status_code == 404
+
+    relations = {r["code"]: r for r in client.get("/api/relations").json()}
+    assert relations["BRENT_STRUCTURE_VS_US_STOCKS"]["status"] == "insufficient"         # 演示行情只有 60 天
+    assert "points" not in relations["BRENT_STRUCTURE_VS_US_STOCKS"]
+    detail = client.get("/api/relations/BRENT_STRUCTURE_VS_US_STOCKS").json()
+    assert detail["n"] == len(detail["points"]) and detail["x"]["unit"] == "kb"
+    assert client.get("/api/relations/NOPE").status_code == 404

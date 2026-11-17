@@ -42,7 +42,8 @@ def cmd_check(_args) -> int:
         print(exc, file=sys.stderr)
         return 1
     print(f"配置無誤：{len(cfg.series)} 條序列，{len(cfg.parameters)} 個參數，"
-          f"{len(cfg.indicators)} 個指標，{len(cfg.refineries)} 個煉廠模型")
+          f"{len(cfg.indicators)} 個指標，{len(cfg.refineries)} 個煉廠模型，"
+          f"{len(cfg.balances)} 張平衡表，{len(cfg.relations)} 個關係模型")
     return 0
 
 
@@ -96,7 +97,7 @@ def cmd_pull(args) -> int:
 
 def cmd_make_sample(args) -> int:
     from .sample import write_sample_workbook
-    write_sample_workbook(Path(args.output))
+    write_sample_workbook(Path(args.output), days=780)       # 三年日度行情，夠關係模型擬合
     print(f"已生成 {args.output}（全部是隨機生成的假數據，僅供試用；導入時數據源請選 demo）")
     return 0
 

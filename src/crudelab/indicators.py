@@ -32,14 +32,30 @@ MIN_OBS_FOR_PERCENTILE = 20
 
 
 @dataclass(frozen=True)
+class RangedShift:
+    """在 [date_from, date_to] 之間給 target（序列或指標）加上 delta。date_to 為空 = 一直持續。"""
+    target: str
+    date_from: date
+    date_to: date | None
+    delta: float
+
+
+@dataclass(frozen=True)
 class Scenario:
-    """假設情境。parameters：參數 key → 替換後的值（全時段）；shifts：序列或指標代碼 → 在其值上加的數。"""
+    """假設情境，疊加在數據之上，不寫庫。
+
+    parameters  參數 key → 替換後的值（全時段）
+    shifts      序列或指標代碼 → 在其值上加的數（全時段）
+    ranged      分時段的加減，見 RangedShift。保存的情境（scenarios.py）用的就是這個
+    """
     parameters: dict[str, float] = field(default_factory=dict)
     shifts: dict[str, float] = field(default_factory=dict)
+    ranged: tuple[RangedShift, ...] = ()
 
     def validate(self, cfg: Config) -> None:
         unknown = [k for k in self.parameters if k not in cfg.parameters]
-        unknown += [k for k in self.shifts if k not in cfg.series and k not in cfg.indicators]
+        unknown += [k for k in (*self.shifts, *(r.target for r in self.ranged))
+                    if k not in cfg.series and k not in cfg.indicators]
         if unknown:
             raise KeyError(f"情境裡有不存在的名字：{', '.join(unknown)}")
 
@@ -75,10 +91,28 @@ class IndicatorEngine:
         frame = self._versions.get(key)
         return frame["value"].astype(float) if frame is not None else pd.Series(dtype=float)
 
+    def _shifted(self, name: str, values: pd.Series) -> pd.Series:
+        """套用情境裡針對 name 的加減。"""
+        out = values + self.scenario.shifts.get(name, 0.0)
+        for r in self.scenario.ranged:
+            if r.target == name and len(out):
+                mask = out.index >= pd.Timestamp(r.date_from)
+                if r.date_to is not None:
+                    mask &= out.index <= pd.Timestamp(r.date_to)
+                out = out + np.where(mask, r.delta, 0.0)
+        return out
+
+    def series_values(self, code: str) -> pd.Series:
+        """一條原始序列的值（已套用情境）。"""
+        return self._shifted(code, to_series(self._all_points(), code))
+
+    def values(self, name: str) -> pd.Series:
+        """一個序列或指標的值。"""
+        return self.compute(name) if name in self.cfg.indicators else self.series_values(name)
+
     def _all_points(self) -> pd.DataFrame:
         if self._points is None:
-            leaves = sorted({s for code in self.cfg.indicators for s in self.dependencies(code)[0]})
-            self._points = load_points(self.session, leaves, as_of=self.as_of)
+            self._points = load_points(self.session, sorted(self.cfg.series), as_of=self.as_of)
         return self._points
 
     def dependencies(self, code: str) -> tuple[list[str], list[str]]:
@@ -123,7 +157,7 @@ class IndicatorEngine:
                 env[name] = self.compute(name)
                 tolerance[name] = ind.ffill_limit
             elif name in self.cfg.series:
-                env[name] = to_series(self._all_points(), name) + self.scenario.shifts.get(name, 0.0)
+                env[name] = self.series_values(name)
                 tolerance[name] = max(ind.ffill_limit, self.cfg.series[name].resolved_valid_days)
             else:
                 env[name] = self.parameter_values(name)
@@ -147,7 +181,7 @@ class IndicatorEngine:
                 else:
                     aligned[name] = values.reindex(index)
             raw = fx.evaluate(ind.formula, aligned)
-            result = raw.replace([np.inf, -np.inf], np.nan).dropna() + self.scenario.shifts.get(code, 0.0)
+            result = self._shifted(code, raw.replace([np.inf, -np.inf], np.nan).dropna())
         self._computed[code] = result.rename(code)
         return self._computed[code]
 
@@ -162,9 +196,12 @@ class IndicatorEngine:
 
     def summary(self, code: str) -> dict:
         ind = self.cfg.indicators[code]
-        values = self.compute(code)
+        every = self.compute(code)
+        # 「最新值」只看已經發生的期間；日期在今天之後的值是預測，不算最新（as_of 視圖以 as_of 那天為今天）
+        today = pd.Timestamp(self.as_of.date() if self.as_of else date.today())
+        values = every[every.index <= today] if not every.empty and code not in self._step else every
         missing_series, missing_params = self.missing_series(code), self.missing_parameters(code)
-        if len(values):
+        if len(every):
             status = "ok"
         elif missing_params:
             status = "missing_parameter"
@@ -174,8 +211,10 @@ class IndicatorEngine:
             status = "no_overlap"
         out = {"code": code, "name_zh": ind.name_zh, "module": ind.module, "group": ind.group, "unit": ind.unit,
                "formula": ind.formula, "notes": ind.notes, "model": ind.model, "hidden": ind.hidden,
+               "frequency": self.cfg.frequency_of(code),
                "status": status, "missing_series": missing_series, "missing_parameters": missing_params,
-               "unverified_parameters": self.unverified_parameters(code), "n": int(len(values)),
+               "unverified_parameters": self.unverified_parameters(code), "n": int(len(every)),
+               "forecast_until": every.index[-1].date().isoformat() if len(every) > len(values) else None,
                "last_date": None, "last_value": None, "chg_1d": None, "chg_5d": None, "chg_20d": None,
                "percentile_1y": None}
         if len(values):

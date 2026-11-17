@@ -9,6 +9,8 @@ config/ 的結構：
     parameters/*.yaml          參數
     indicators/*.yaml          指標
     refineries/*.yaml          煉廠模型（一個文件一個模型）
+    balances/*.yaml            供需平衡表（一個文件一張表）
+    relations/*.yaml           關係模型（線性擬合）
 
 校驗一次做完並一次報全：結構（字段名、類型）、引用（單位、地區、品種、公式裡的名字）、
 唯一性（代碼、別名）、公式語法、循環引用、量綱。任何一項不過，整份配置都不生效。
@@ -25,14 +27,18 @@ from pydantic import ValidationError
 
 from . import formula as fx
 from . import units
+from .balance import BalanceSpec, compile_balance
 from .refinery import RefinerySpec, compile_model
 from .schema import (
+    FREQUENCY_ORDER,
     AtomDef,
+    BalanceDef,
     CommodityDef,
     IndicatorDef,
     LocationDef,
     ParameterDef,
     RefineryModelDef,
+    RelationDef,
     SeriesDef,
     SeriesFile,
     SourceDef,
@@ -65,6 +71,17 @@ class Config:
     parameters: dict[str, ParameterDef] = field(default_factory=dict)
     indicators: dict[str, IndicatorDef] = field(default_factory=dict)
     refineries: dict[str, RefinerySpec] = field(default_factory=dict)
+    balances: dict[str, BalanceSpec] = field(default_factory=dict)
+    relations: dict[str, RelationDef] = field(default_factory=dict)
+
+    def frequency_of(self, name: str) -> str:
+        """一個序列或指標的頻率。指標取它依賴的序列裡最粗的頻率；只依賴參數的指標算 daily。"""
+        if name in self.series:
+            return self.series[name].frequency
+        if name not in self.indicators:
+            return "daily"
+        found = [self.frequency_of(n) for n in fx.names(self.indicators[name].formula)]
+        return max(found, key=FREQUENCY_ORDER.index, default="daily")
 
     def dim(self, unit: str) -> Dim:
         return units.parse_unit(unit, self.atoms)
@@ -131,6 +148,10 @@ class _Loader:
         return out
 
 
+def _optional(directory: Path) -> list[Path]:
+    return sorted(directory.glob("*.yaml")) if directory.is_dir() else []
+
+
 def load_config(config_dir: Path) -> Config:
     ld = _Loader(config_dir)
     master = config_dir / "master"
@@ -153,14 +174,23 @@ def load_config(config_dir: Path) -> Config:
     params = [p for path in ld.files("parameters") for p in ld.items(ParameterDef, path)]
     indicators = [i for path in ld.files("indicators") for i in ld.items(IndicatorDef, path)]
     specs: list[RefinerySpec] = []
-    refinery_dir = config_dir / "refineries"
-    for path in sorted(refinery_dir.glob("*.yaml")) if refinery_dir.is_dir() else []:
+    for path in _optional(config_dir / "refineries"):
         model = ld.build(RefineryModelDef, ld.read(path) or {}, path)
         if model:
             model_params, model_indicators, spec = compile_model(model)
             params += model_params
             indicators += model_indicators
             specs.append(spec)
+    balance_specs: list[BalanceSpec] = []
+    for path in _optional(config_dir / "balances"):
+        table = ld.build(BalanceDef, ld.read(path) or {}, path)
+        if table:
+            table_indicators, table_spec = compile_balance(table)
+            indicators += table_indicators
+            balance_specs.append(table_spec)
+    cfg.balances = ld.keyed(balance_specs, "平衡表")
+    cfg.relations = ld.keyed([r for path in _optional(config_dir / "relations")
+                              for r in ld.items(RelationDef, path)], "關係模型")
     cfg.parameters = ld.keyed(params, "參數", key="key")
     cfg.indicators = ld.keyed(indicators, "指標")
     cfg.refineries = ld.keyed(specs, "煉廠模型")
@@ -208,6 +238,11 @@ def _validate(cfg: Config) -> list[str]:
             if norm and owner_of.setdefault(norm, s.code) != s.code:
                 errors.append(f"別名「{alias}」同時指向 {owner_of[norm]} 和 {s.code}")
 
+    for r in cfg.relations.values():
+        for side in (r.y, r.x):
+            if side not in cfg.series and side not in cfg.indicators:
+                errors.append(f"關係模型 {r.code}：{side} 既不是序列也不是指標")
+
     errors += _validate_indicators(cfg)
     return errors
 
@@ -217,7 +252,7 @@ def _validate_indicators(cfg: Config) -> list[str]:
     known = set(cfg.series) | set(cfg.parameters) | set(cfg.indicators)
     deps: dict[str, list[str]] = {}
     for ind in cfg.indicators.values():
-        owner = f"指標 {ind.code}" + (f"（煉廠模型 {ind.model}）" if ind.model else "")
+        owner = f"指標 {ind.code}" + (f"（由模型 {ind.model} 生成）" if ind.model else "")
         try:
             deps[ind.code] = fx.names(ind.formula)
         except fx.FormulaError as exc:

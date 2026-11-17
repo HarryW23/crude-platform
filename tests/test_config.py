@@ -82,7 +82,7 @@ def test_sync_is_idempotent_and_backend_edits_win(session, cfg):
 
 
 def test_removed_series_is_deactivated_not_deleted(session, cfg, tmp_path):
-    smaller = load_config(_edit(tmp_path, "master/series/market.yaml",
+    smaller = load_config(_edit(tmp_path, "master/series/balance.yaml",
                                 lambda d: d["series"].pop(next(i for i, s in enumerate(d["series"])
                                                                if s["code"] == "EIA_REFINERY_UTIL"))))
     sync_to_db(session, smaller)

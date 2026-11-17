@@ -76,4 +76,5 @@ def sync_to_db(session: Session, cfg: Config) -> dict[str, int]:
             row.active = False
 
     return {"series": len(cfg.series), "parameters": len(cfg.parameters), "indicators": len(cfg.indicators),
-            "refinery_models": len(cfg.refineries), "new_aliases": new_aliases, "seeded_parameter_versions": seeded}
+            "refinery_models": len(cfg.refineries), "balances": len(cfg.balances),
+            "new_aliases": new_aliases, "seeded_parameter_versions": seeded}

@@ -14,8 +14,9 @@ EPOCH = date(1900, 1, 1)          # 「自始生效」的生效日期
 
 Module = Literal["spread", "balance", "geo", "refinery", "common"]
 SeriesKind = Literal["futures", "swap", "spot", "diff", "osp", "freight", "fx", "stock", "flow", "ratio"]
-Frequency = Literal["daily", "weekly", "monthly"]
-DEFAULT_VALID_DAYS: dict[str, int] = {"daily": 0, "weekly": 7, "monthly": 35}
+Frequency = Literal["daily", "weekly", "monthly", "quarterly"]      # 由細到粗
+FREQUENCY_ORDER: tuple[str, ...] = ("daily", "weekly", "monthly", "quarterly")
+DEFAULT_VALID_DAYS: dict[str, int] = {"daily": 0, "weekly": 7, "monthly": 35, "quarterly": 100}
 
 
 class Strict(BaseModel):
@@ -209,3 +210,44 @@ class RefineryModelDef(Strict):
         if self.tax is None and any(p.consumption_tax for p in self.products):
             raise ValueError("產品寫了 consumption_tax 但模型沒有 tax 設定")
         return self
+
+
+# ------------------------------ 平衡表 ------------------------------
+
+class BalanceLineDef(Strict):
+    code: str = Code
+    name_zh: str
+    value: str                     # 公式片段，單位必須等於平衡表的 unit
+
+
+class BalanceDef(Strict):
+    """供需平衡表：供應各項之和 − 需求各項之和 = 平衡（隱含庫存變化）。"""
+    code: str = Code
+    name_zh: str
+    unit: str
+    frequency: Frequency
+    ffill_limit: int = Field(default=0, ge=0)
+    notes: str | None = None
+    supply: list[BalanceLineDef] = Field(min_length=1)
+    demand: list[BalanceLineDef] = Field(min_length=1)
+    actual_stock_change: str | None = None     # 公式片段：實際觀測到的庫存變化，用來算未解釋項
+
+    @model_validator(mode="after")
+    def _check(self):
+        codes = [line.code for line in (*self.supply, *self.demand)]
+        if len(codes) != len(set(codes)):
+            raise ValueError("供應和需求各項的代碼不能重複")
+        return self
+
+
+# ------------------------------ 關係模型 ------------------------------
+
+class RelationDef(Strict):
+    """兩個量之間的線性關係：y = a + b·x。用來回答「按現在的 x，y 通常在什麼水平」。"""
+    code: str = Code
+    name_zh: str
+    y: str                         # 序列或指標代碼
+    x: str
+    lookback_days: int = Field(default=1095, ge=30)     # 用最近多少天的樣本來擬合
+    min_points: int = Field(default=30, ge=10)          # 樣本少於這個數就不擬合
+    notes: str | None = None
