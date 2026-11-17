@@ -14,11 +14,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from .. import db
+from .. import auth, db
 from ..settings import Settings, get_settings
 from .deps import AppState, Site
 from .routes import (
@@ -37,18 +37,24 @@ from .routes import (
     series,
     sources,
 )
+from .routes import auth as auth_routes
+from .security import guard
 
 WEB_DIR = Path(__file__).resolve().parents[1] / "web"
 
-_COMMON = [core.router, series.router, indicators.router, parameters.router]
+_COMMON = [core.router, series.router, indicators.router, parameters.router, auth_routes.router]
 ROUTERS = {
     "front": [*_COMMON, refineries.router, balances.router, analysis.router, scenarios.router, geo.router,
               outlook.router, reports.router, chat.router],
     "admin": [*_COMMON, core.admin_router, series.admin_router, imports.admin_router, parameters.admin_router,
-              sources.admin_router],
+              sources.admin_router, auth_routes.admin_router],
 }
 _TITLES = {"front": "crudelab 前台", "admin": "crudelab 後台"}
 _PAGES = {"front": "index.html", "admin": "admin.html"}
+
+
+class NoAdminAccount(RuntimeError):
+    """開了登錄卻沒有管理員：拒絕啟動，否則誰也進不去後台。"""
 
 
 def create_app(settings: Settings | None = None, site: Site = "front") -> FastAPI:
@@ -56,8 +62,13 @@ def create_app(settings: Settings | None = None, site: Site = "front") -> FastAP
     db.init_engine(settings)
     app = FastAPI(title=_TITLES[site], version="0.5.0")
     app.state.crudelab = AppState(settings, site)
+    if settings.auth_enabled:
+        with db.session_scope() as session:
+            if auth.count_admins(session) == 0:
+                raise NoAdminAccount("登錄功能已開啟，但還沒有任何管理員帳號。"
+                                     "請先運行：crudelab user add 用戶名 --role admin")
     for router in ROUTERS[site]:
-        app.include_router(router, prefix="/api")
+        app.include_router(router, prefix="/api", dependencies=[Depends(guard)])   # 每個接口都先過訪問控制
 
     @app.get("/", include_in_schema=False)
     def index():

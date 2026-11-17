@@ -79,9 +79,10 @@ def get_db() -> Iterator[Session]:
         yield session
 
 
-def get_actor() -> str:
-    """當前操作者。目前沒有登錄，固定為 local；接登錄時只改這一處。"""
-    return "local"
+def get_actor(request: Request) -> str:
+    """當前操作者：登錄功能開啟時是登錄的用戶名，關閉時固定為 local。寫入各種記錄的「誰做的」都來自這裡。"""
+    user = getattr(request.state, "user", None)
+    return user.username if user is not None else "local"
 
 
 def get_as_of(as_of: datetime | None = Query(None, description="還原這個時點（UTC）當時的數據")) -> datetime | None:

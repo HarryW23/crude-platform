@@ -1,10 +1,11 @@
 """數據表定義。表結構的變更一律通過 migrations/ 下的遷移腳本，不要直接改庫。
 
-六類表：
+七類表：
   主數據     unit / location / commodity / data_source / series / series_alias / parameter
   事實數據   import_batch / observation / parameter_version
   判斷       scenario / adjustment / event / projection / projection_case —— 人的判斷，和數據分開存
   產出       report —— 生成時刻的快照
+  帳號       user_account / user_session
   修訂歷史   observation_revision
   操作日誌   audit_log
 
@@ -256,6 +257,30 @@ class Report(Base):
     narrative_meta: Mapped[dict | None] = mapped_column(JSON)        # 哪個模型寫的、數字核對結果
     created_by: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class UserAccount(Base):
+    """登錄帳號。密碼只存加鹽哈希（auth.py）。帳號不刪除，只停用，這樣歷史記錄裡的操作者始終對得上。"""
+    __tablename__ = "user_account"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    username: Mapped[str] = mapped_column(String(64), unique=True)
+    password_hash: Mapped[str] = mapped_column(String(256))
+    role: Mapped[str] = mapped_column(String(16))                    # viewer / analyst / admin
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_by: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class UserSession(Base):
+    """一次登錄。瀏覽器拿到的是隨機令牌，這裡只存它的 SHA-256，所以數據庫洩漏也冒充不了任何人。"""
+    __tablename__ = "user_session"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("user_account.id"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime)
 
 
 # ----------------------------- 修訂歷史與日誌 -----------------------------

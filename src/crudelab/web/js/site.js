@@ -2,7 +2,8 @@
 import { api } from "./api.js";
 import { esc } from "./ui.js";
 
-export const SITE = { site: document.body.dataset.site, front_url: "", admin_url: "", config_error: null };
+export const SITE = { site: document.body.dataset.site, front_url: "", admin_url: "", config_error: null,
+                      auth: { enabled: false, user: null } };
 
 export async function loadSite() {
   Object.assign(SITE, await api("/site"));

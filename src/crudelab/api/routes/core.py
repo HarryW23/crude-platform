@@ -1,15 +1,17 @@
 """總覽、字典、日誌、維護。"""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from ...auth import ROLE_NAMES
 from ...config import ConfigError
 from ...indicators import IndicatorEngine
 from ...ingest import latest_market_date
 from ...models import AuditLog, ImportBatch, Observation, Parameter
 from ..deps import AppState, get_db, get_engine, get_state
+from ..security import current_user
 
 router = APIRouter(tags=["core"])                  # 兩個站點都有
 admin_router = APIRouter(tags=["admin"])           # 只在後台
@@ -56,10 +58,17 @@ def audit(limit: int = 200, session: Session = Depends(get_db)):
 
 
 @router.get("/site")
-def site(state: AppState = Depends(get_state)):
-    """這是哪個站點、另一個站點在哪、配置是否有錯。頁面用它畫導覽和互相連結。"""
+def site(request: Request, state: AppState = Depends(get_state)):
+    """這是哪個站點、另一個站點在哪、要不要登錄、現在是誰。頁面用它畫導覽、登錄框和互相連結。
+
+    這個地址不用登錄就能訪問，所以沒登錄時不回傳配置錯誤這類內部信息。
+    """
+    user = current_user(request)
+    enabled = state.settings.auth_enabled
     return {"site": state.site, "front_url": state.settings.front_url, "admin_url": state.settings.admin_url,
-            "config_error": state.config_error}
+            "auth": {"enabled": enabled, "user": None if user is None else {
+                "username": user.username, "role": user.role, "role_name": ROLE_NAMES[user.role]}},
+            "config_error": state.config_error if (user is not None or not enabled) else None}
 
 
 @admin_router.post("/admin/reload-config")

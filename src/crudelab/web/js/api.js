@@ -8,6 +8,10 @@ export async function api(path, options = {}) {
   }
   const response = await fetch("/api" + path, init);
   const body = await response.json().catch(() => ({}));
+  if (response.status === 401 && !path.startsWith("/auth/")) {
+    // 登錄過期或被登出：回到登錄畫面
+    window.dispatchEvent(new Event("crudelab:login-required"));
+  }
   if (!response.ok) {
     throw new Error(typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail ?? body));
   }

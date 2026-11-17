@@ -107,6 +107,52 @@ Windows 把 `.venv/bin/` 換成 `.venv\Scripts\`。
 | `crudelab pull eia` | 取 EIA 周度數據，需要環境變量 `EIA_API_KEY` |
 | `pytest` / `ruff check src tests` | 測試 / 代碼檢查 |
 
+## 登錄（預設關閉）
+
+本機自己用不需要登錄，所以預設是關的：不用密碼，操作者一律記為 `local`。
+**把站點開放給別人或放到服務器之前，必須先開啟。**
+
+三種角色：
+
+| 角色 | 前台查看 | 前台建情境、事件、推演、報告、問答 | 後台 |
+|---|---|---|---|
+| 只讀 `viewer` | ✓ | | |
+| 研究員 `analyst` | ✓ | ✓ | |
+| 管理員 `admin` | ✓ | ✓ | ✓ |
+
+開啟步驟：
+
+1. 建第一個管理員（會提示輸入密碼，至少 10 個字符）：
+
+   ```bash
+   .venv/bin/crudelab user add 你的用戶名 --role admin
+   ```
+
+2. 設環境變量後啟動：
+
+   ```bash
+   export CRUDELAB_AUTH=on
+   ```
+
+   ```bash
+   .venv/bin/crudelab serve
+   ```
+
+3. 其他人的帳號在後台的「帳號」頁建立，或用 `crudelab user add`。
+
+| 環境變量 | 說明 |
+|---|---|
+| `CRUDELAB_AUTH` | `on` 開啟登錄。預設關閉 |
+| `CRUDELAB_SESSION_HOURS` | 登錄後多久要重新登錄，預設 12 |
+| `CRUDELAB_COOKIE_SECURE` | 用 https 對外服務時設為 `on`，登錄憑證就只在加密連接上發送 |
+
+命令行的帳號管理：`crudelab user list / add / passwd / role / disable / enable`。忘記密碼時用 `passwd` 重設。
+
+對外提供服務時還需要做的（登錄功能本身不包辦）：
+- **必須用 https**，並設 `CRUDELAB_COOKIE_SECURE=on`。用 http 的話密碼和登錄憑證是明文傳輸的。
+- 在前面放一個反向代理（如 Nginx）做 https 和限流。程序自帶的「連錯 5 次鎖 15 分鐘」只是基本防護。
+- 後台建議不對公網開放，只允許內網或 VPN 訪問。
+
 ## 大模型（可選）
 
 不配置也能用：事件手動錄入，報告只有系統排版的正文。配置後多三項功能：從文字抽取事件草稿、為報告寫解讀、問答。
@@ -198,7 +244,8 @@ export DATABASE_URL=postgresql+psycopg://crudelab:crudelab@localhost:5432/crudel
 - 不支援舊版 `.xls`；合併儲存格的表頭只算在第一列上。
 - EIA 接口沒有實際調用過，序列號未驗證。
 - 演示數據的日度行情預設給三年（`make-sample`），供需給六年多；都是隨機數。
-- 沒有登錄和權限，只應在本機使用。前台和後台已經分開，但兩邊目前都不需要密碼。
+- 登錄功能預設關閉；沒開啟時只應在本機使用。開啟方法見「登錄」一節。
+- 只讀帳號在前台仍然看得到新建、保存這類按鈕，點了會提示權限不足（接口層已經攔住，只是按鈕沒有隱藏）。
 
 ## 路線
 
@@ -207,4 +254,4 @@ export DATABASE_URL=postgresql+psycopg://crudelab:crudelab@localhost:5432/crudel
 3. ✅ 供需平衡
 4. ✅ 地緣政治 + 推演 + 報告
 
-之後可以做的：定時自動取數和出報告、統計預測模型作為推演的輸入、登錄與權限、Word 格式報告。
+之後可以做的：定時自動取數和出報告、統計預測模型作為推演的輸入、Word 格式報告、服務器部署配置。

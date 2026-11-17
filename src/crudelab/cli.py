@@ -6,6 +6,7 @@
   crudelab import 文件 [--source …]   導入 Excel / CSV（只入庫能自動識別的列）
   crudelab pull eia                   從拉取型數據源取數
   crudelab make-sample 輸出.xlsx      生成一個演示用的假數據 Excel
+  crudelab user add 名字 --role admin  建立帳號（另有 list / passwd / role / disable / enable）
   crudelab purge-source demo          刪除某個數據源的全部數據點
 """
 from __future__ import annotations
@@ -79,13 +80,17 @@ def cmd_serve(args) -> int:
     settings = replace(base,      # 沒有用環境變量指定對外地址時，按實際端口互相連結
                        front_url=os.environ.get("CRUDELAB_FRONT_URL") or f"http://{args.host}:{ports['front']}",
                        admin_url=os.environ.get("CRUDELAB_ADMIN_URL") or f"http://{args.host}:{ports['admin']}")
+    from .api.app import NoAdminAccount
     try:
         servers = [uvicorn.Server(uvicorn.Config(create_app(settings, site), host=args.host, port=ports[site],
                                                  log_level="warning")) for site in sites]
-    except ConfigError as exc:
+    except (ConfigError, NoAdminAccount) as exc:
         print(exc, file=sys.stderr)
         return 1
     names = {"front": "前台", "admin": "後台"}
+    if not settings.auth_enabled and args.host not in ("127.0.0.1", "localhost", "::1"):
+        print("警告：登錄功能沒有啟用，而站點正對本機以外開放，任何連得上的人都能查看和修改數據。\n"
+              "      對外提供服務前請設 CRUDELAB_AUTH=on。", file=sys.stderr)
     print("crudelab 已啟動（這個窗口要保持開著；按 Ctrl+C 停止）", flush=True)
     for site in sites:
         print(f"  {names[site]}：http://{args.host}:{ports[site]}", flush=True)
@@ -144,6 +149,55 @@ def cmd_pull(args) -> int:
     return 0
 
 
+def cmd_user(args) -> int:
+    """帳號管理。第一個管理員只能從這裡建（那時還沒有人能登錄後台）。"""
+    import getpass
+
+    from sqlalchemy import select
+
+    from . import auth
+    from .models import UserAccount
+    db.init_engine(get_settings())
+
+    def ask_password() -> str:
+        if args.password_stdin:                      # 給腳本用：從標準輸入讀一行
+            return sys.stdin.readline().rstrip("\n")
+        first = getpass.getpass("密碼：")
+        if first != getpass.getpass("再輸入一次："):
+            raise auth.AuthError("兩次輸入的密碼不一樣")
+        return first
+
+    try:
+        with db.session_scope() as session:
+            if args.action == "list":
+                rows = list(session.scalars(select(UserAccount).order_by(UserAccount.id)))
+                for u in rows:
+                    print(f"{u.id:>3}  {u.username:<24} {auth.ROLE_NAMES[u.role]:<6} {'' if u.active else '已停用'}")
+                if not rows:
+                    print("還沒有任何帳號。")
+                return 0
+            if args.action == "add":
+                user = auth.create_user(session, args.username, ask_password(), args.role, actor="cli")
+                print(f"已建立帳號 {user.username}（{auth.ROLE_NAMES[user.role]}）")
+                return 0
+            user = auth.find(session, args.username)
+            if user is None:
+                raise auth.AuthError(f"沒有名為 {args.username} 的帳號")
+            if args.action == "passwd":
+                auth.set_password(session, user.id, ask_password(), actor="cli")
+                print(f"已重設 {user.username} 的密碼，它在各處的登錄都已失效")
+            elif args.action == "role":
+                auth.update_user(session, user.id, role=args.role, actor="cli")
+                print(f"{user.username} 的角色已改為 {auth.ROLE_NAMES[args.role]}")
+            else:
+                auth.update_user(session, user.id, active=args.action == "enable", actor="cli")
+                print(f"已{'啟用' if args.action == 'enable' else '停用'} {user.username}")
+    except auth.AuthError as exc:
+        print(exc, file=sys.stderr)
+        return 1
+    return 0
+
+
 def cmd_make_sample(args) -> int:
     from .sample import write_sample_workbook
     write_sample_workbook(Path(args.output), days=780)       # 三年日度行情，夠關係模型擬合
@@ -191,11 +245,20 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("make-sample", help="生成演示用假數據 Excel")
     p.add_argument("output")
     p.set_defaults(func=cmd_make_sample)
+    p = sub.add_parser("user", help="帳號管理")
+    p.add_argument("action", choices=["list", "add", "passwd", "role", "disable", "enable"])
+    p.add_argument("username", nargs="?")
+    p.add_argument("--role", choices=["viewer", "analyst", "admin"], default="viewer",
+                   help="viewer 只讀 / analyst 研究員 / admin 管理員")
+    p.add_argument("--password-stdin", action="store_true", help="從標準輸入讀密碼（給腳本用）")
+    p.set_defaults(func=cmd_user)
     p = sub.add_parser("purge-source", help="刪除某個數據源的全部數據點")
     p.add_argument("source")
     p.add_argument("--yes", action="store_true")
     p.set_defaults(func=cmd_purge)
     args = parser.parse_args(argv)
+    if args.command == "user" and args.action != "list" and not args.username:
+        parser.error("這個操作需要給用戶名")
     return args.func(args)
 
 
