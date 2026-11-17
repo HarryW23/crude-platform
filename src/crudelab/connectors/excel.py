@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import csv
 import re
+import zipfile
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime
@@ -19,6 +20,7 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
+from openpyxl.utils.exceptions import InvalidFileException
 
 from ..ingest import Obs
 from ..periods import parse_period
@@ -106,7 +108,11 @@ def read_grids(path: Path) -> tuple[dict[str, list[list]], dict[str, str]]:
     truncated: dict[str, str] = {}
     suffix = path.suffix.lower()
     if suffix in (".xlsx", ".xlsm"):
-        wb = load_workbook(path, read_only=True, data_only=True)
+        try:
+            wb = load_workbook(path, read_only=True, data_only=True)
+        except (zipfile.BadZipFile, InvalidFileException, KeyError, OSError):
+            # 文件損壞、其實不是 Excel（只是副檔名對）、或被密碼保護
+            raise ValueError("文件無法打開：可能已損壞、不是真正的 Excel 文件，或設了打開密碼") from None
         try:
             grids = {}
             for ws in wb.worksheets:

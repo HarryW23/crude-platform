@@ -34,6 +34,7 @@ from .routes import (
     refineries,
     reports,
     scenarios,
+    schedule,
     series,
     sources,
 )
@@ -47,7 +48,7 @@ ROUTERS = {
     "front": [*_COMMON, refineries.router, balances.router, analysis.router, scenarios.router, geo.router,
               outlook.router, reports.router, chat.router],
     "admin": [*_COMMON, core.admin_router, series.admin_router, imports.admin_router, parameters.admin_router,
-              sources.admin_router, auth_routes.admin_router],
+              sources.admin_router, auth_routes.admin_router, schedule.admin_router],
 }
 _TITLES = {"front": "crudelab 前台", "admin": "crudelab 後台"}
 _PAGES = {"front": "index.html", "admin": "admin.html"}

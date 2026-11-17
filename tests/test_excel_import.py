@@ -83,6 +83,8 @@ def test_csv_and_bad_files(session, settings):
     assert cols["CLc1"]["n_values"] == 1 and cols["CLc1"]["n_skipped"] == 1
     with pytest.raises(ImportFlowError, match="不支援"):
         preview_file(session, settings, b"x", "old.xls", "reuters_xls")
+    with pytest.raises(ImportFlowError, match="無法打開"):                 # 損壞的文件：給說明，不崩潰
+        preview_file(session, settings, b"not really a workbook", "broken.xlsx", "reuters_xls")
     with pytest.raises(ImportFlowError, match="不能用於文件導入"):
         preview_file(session, settings, csv, "x.csv", "kpler")
 

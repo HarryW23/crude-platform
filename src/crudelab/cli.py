@@ -6,6 +6,8 @@
   crudelab import 文件 [--source …]   導入 Excel / CSV（只入庫能自動識別的列）
   crudelab pull eia                   從拉取型數據源取數
   crudelab make-sample 輸出.xlsx      生成一個演示用的假數據 Excel
+  crudelab run-job [任務代碼]          立即運行一個定時任務（不給代碼則列出全部）
+  crudelab scheduler                  單獨運行調度器（serve 預設已包含）
   crudelab data-needs [--output 文件] 生成數據與接口需求清單
   crudelab secret set 名稱            保存一個 API key（輸入不回顯；另有 list / unset）
   crudelab user add 名字 --role admin  建立帳號（另有 list / passwd / role / disable / enable）
@@ -101,8 +103,28 @@ def cmd_serve(args) -> int:
         import webbrowser
         threading.Timer(1.0, webbrowser.open, args=(f"http://{args.host}:{ports[sites[0]]}",)).start()
 
+    with_scheduler = not args.no_scheduler and "admin" in sites      # 調度器跟著後台跑；只起前台時不跑
+    if with_scheduler:
+        print("  定時任務：已啟用（在後台的「定時任務」頁查看）", flush=True)
+
+    async def schedule_loop() -> None:
+        from . import jobs, scheduler
+        await asyncio.to_thread(jobs.recover_stale)
+        state = servers[-1].config.app.state.crudelab                # 後台應用的狀態：配置改了它會自動重新載入
+        while True:
+            try:
+                await asyncio.to_thread(scheduler.tick, state.cfg, settings)
+            except Exception:                                        # 調度器不能因為一次意外就停掉
+                scheduler.log.exception("調度器這一輪出錯")
+            await asyncio.sleep(scheduler.TICK_SECONDS)
+
     async def run() -> None:
-        await asyncio.gather(*(server.serve() for server in servers))
+        ticker = asyncio.create_task(schedule_loop()) if with_scheduler else None
+        try:
+            await asyncio.gather(*(server.serve() for server in servers))
+        finally:
+            if ticker:
+                ticker.cancel()
 
     try:
         asyncio.run(run())
@@ -205,6 +227,56 @@ def cmd_user(args) -> int:
     return 0
 
 
+def cmd_scheduler(_args) -> int:
+    """單獨運行調度器，不起網站。服務器上想把它和網站分成兩個進程時用。"""
+    import time
+
+    from . import jobs, scheduler
+    from .api.deps import AppState
+    settings = get_settings()
+    db.init_engine(settings)
+    credentials_ready()
+    state = AppState(settings, "admin")
+    jobs.recover_stale()
+    print(f"調度器已啟動，每 {scheduler.TICK_SECONDS} 秒檢查一次（按 Ctrl+C 停止）", flush=True)
+    try:
+        while True:
+            try:
+                scheduler.tick(state.cfg, settings)
+            except Exception:
+                scheduler.log.exception("調度器這一輪出錯")
+            time.sleep(scheduler.TICK_SECONDS)
+    except KeyboardInterrupt:
+        return 0
+
+
+def cmd_run_job(args) -> int:
+    from . import jobs
+    from .config import ConfigError, load_config
+    settings = get_settings()
+    db.init_engine(settings)
+    try:
+        cfg = load_config(settings.config_dir)
+        if args.code is None:
+            from . import scheduler
+            for job in cfg.schedule.jobs:
+                off = "" if job.enabled else "（停用）"
+                print(f"  {job.code:<18} {off}{scheduler.describe(job):<16} {job.name_zh}")
+            return 0
+        _init()
+        result = jobs.run_now(cfg, settings, args.code)
+    except (ConfigError, jobs.JobError) as exc:
+        print(exc, file=sys.stderr)
+        return 1
+    print(f"{result['status']}：{result['message']}")
+    return 0 if result["status"] != "failed" else 1
+
+
+def credentials_ready() -> None:
+    from . import credentials
+    credentials.install_log_redaction()
+
+
 def cmd_data_needs(args) -> int:
     from .config import ConfigError, load_config
     from .data_needs import render
@@ -288,6 +360,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--admin-port", type=int, default=None, help="後台端口，預設是前台端口 + 1")
     p.add_argument("--site", choices=["both", "front", "admin"], default="both", help="啟動哪個站點")
     p.add_argument("--open", action="store_true", help="啟動後自動打開瀏覽器")
+    p.add_argument("--no-scheduler", action="store_true", help="不運行定時任務（另外用 crudelab scheduler 單獨跑時用）")
     p.set_defaults(func=cmd_serve)
     p = sub.add_parser("import", help="導入 Excel / CSV")
     p.add_argument("file")
@@ -300,6 +373,10 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("make-sample", help="生成演示用假數據 Excel")
     p.add_argument("output")
     p.set_defaults(func=cmd_make_sample)
+    sub.add_parser("scheduler", help="單獨運行定時任務調度器").set_defaults(func=cmd_scheduler)
+    p = sub.add_parser("run-job", help="立即運行一個定時任務；不給名字則列出全部")
+    p.add_argument("code", nargs="?")
+    p.set_defaults(func=cmd_run_job)
     p = sub.add_parser("data-needs", help="生成數據與接口需求清單")
     p.add_argument("--output", help="寫入這個文件；不給就打印")
     p.set_defaults(func=cmd_data_needs)

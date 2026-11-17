@@ -14,6 +14,7 @@ config/ 的結構：
     signals/*.yaml             方向信號
     geo/playbooks.yaml         地緣事件預案
     projection.yaml            價格推演設定
+    schedule.yaml              定時任務
 
 校驗一次做完並一次報全：結構（字段名、類型）、引用（單位、地區、品種、公式裡的名字）、
 唯一性（代碼、別名）、公式語法、循環引用、量綱。任何一項不過，整份配置都不生效。
@@ -44,6 +45,7 @@ from .schema import (
     ProjectionSettings,
     RefineryModelDef,
     RelationDef,
+    ScheduleDef,
     SeriesDef,
     SeriesFile,
     SignalDef,
@@ -82,6 +84,7 @@ class Config:
     signals: dict[str, SignalDef] = field(default_factory=dict)
     playbooks: dict[str, PlaybookDef] = field(default_factory=dict)
     projection: ProjectionSettings | None = None
+    schedule: ScheduleDef = field(default_factory=ScheduleDef)
 
     @property
     def market_series(self) -> list[str]:
@@ -220,6 +223,9 @@ def load_config(config_dir: Path) -> Config:
     projection_path = config_dir / "projection.yaml"
     if projection_path.exists():
         cfg.projection = ld.build(ProjectionSettings, ld.read(projection_path) or {}, projection_path)
+    schedule_path = config_dir / "schedule.yaml"
+    if schedule_path.exists():
+        cfg.schedule = ld.build(ScheduleDef, ld.read(schedule_path) or {}, schedule_path) or ScheduleDef()
     cfg.parameters = ld.keyed(params, "參數", key="key")
     cfg.indicators = ld.keyed(indicators, "指標")
     cfg.refineries = ld.keyed(specs, "煉廠模型")
@@ -278,7 +284,32 @@ def _validate(cfg: Config) -> list[str]:
     for pb in cfg.playbooks.values():
         errors += [f"事件預案 {pb.code}：{i.target} 既不是序列也不是指標" for i in pb.impacts if not cfg.has(i.target)]
     errors += _validate_projection(cfg)
+    errors += _validate_schedule(cfg)
     errors += _validate_indicators(cfg)
+    return errors
+
+
+def _validate_schedule(cfg: Config) -> list[str]:
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+    errors = []
+    try:
+        ZoneInfo(cfg.schedule.timezone)
+    except (ZoneInfoNotFoundError, ValueError):
+        errors.append(f"schedule.yaml：不認識的時區 {cfg.schedule.timezone}")
+    seen: set[str] = set()
+    for job in cfg.schedule.jobs:
+        if job.code in seen:
+            errors.append(f"定時任務 {job.code} 重複定義")
+        seen.add(job.code)
+        if job.source is None:
+            continue
+        source = cfg.sources.get(job.source)
+        wanted = "api" if job.action == "pull" else "excel"
+        if source is None:
+            errors.append(f"定時任務 {job.code}：數據源 {job.source} 不存在")
+        elif source.kind != wanted:
+            errors.append(f"定時任務 {job.code}：{job.action} 需要 {wanted} 類型的數據源，"
+                          f"{job.source} 是 {source.kind}")
     return errors
 
 

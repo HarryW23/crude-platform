@@ -109,6 +109,30 @@ Windows 把 `.venv/bin/` 換成 `.venv\Scripts\`。
 | `crudelab data-needs` | 生成數據與接口需求清單 |
 | `pytest` / `ruff check src tests` | 測試 / 代碼檢查 |
 
+## 定時任務
+
+`crudelab serve` 啟動時會一併運行調度器（雙擊啟動也一樣），按 `config/schedule.yaml` 裡的安排自動做三類事：
+
+| 預設任務 | 時間（北京時間） | 做什麼 |
+|---|---|---|
+| 導入收件夾 | 每 10 分鐘 | 把 `data/inbox/` 裡的 Excel / CSV 導入，完成的移到 `done/`，出錯的移到 `failed/` |
+| 取 EIA 數據 | 每天 07:30 | 從 EIA 接口取數；沒設密鑰時只記「跳過」 |
+| 生成日報 | 周一至周五 18:30 | |
+| 生成周報 | 每周五 19:00 | |
+| 生成月報 | 每月 1 號 09:00 | 預設停用 |
+
+**收件夾的用法**：整理數據的同事把文件放進 `data/inbox/`（第一次啟動後自動建立），十分鐘內自動入庫。
+自動導入只入庫能認出來的列；有認不出的列時，任務結果裡會提示，到後台「數據導入」頁手動上傳一次並指定對應，之後同樣的表頭就能自動識別。
+
+在後台的「定時任務」頁可以看每個任務下次什麼時候跑、最近的結果和完整的執行記錄，也可以點「立即運行」。
+改時間、停用任務、加任務，直接改 `config/schedule.yaml`，幾秒內生效。
+
+要知道的行為：
+- **程序開著才會執行。** 電腦關機或窗口關掉期間到點的任務不會跑；重新啟動後，12 小時內錯過的按時刻執行的任務會補跑一次。
+- 生成報告時如果數據還沒更新，報告就是舊數據的快照。日報的時間請排在數據導入之後。
+- 任務失敗只會記在「定時任務」頁，**不會主動通知你**。
+- 命令行：`crudelab run-job` 列出任務，`crudelab run-job 代碼` 立即運行，`crudelab scheduler` 單獨運行調度器，`crudelab serve --no-scheduler` 不帶調度器啟動。
+
 ## 數據與接口
 
 系統需要哪些數據、從哪裡取得、需要什麼憑證、哪些要你確認授權，全部列在 [docs/data-requirements.md](docs/data-requirements.md)。
@@ -235,6 +259,7 @@ config/                 所有可調的東西
   signals/              方向信號
   geo/playbooks.yaml    地緣事件預案
   projection.yaml       價格推演設定
+  schedule.yaml         定時任務
 src/crudelab/
   schema.py config.py   配置的結構與校驗
   units.py formula.py   單位代數、公式語言
@@ -251,6 +276,7 @@ src/crudelab/
   signals.py            方向信號
   projection.py         價格推演
   reports.py            報告快照與排版
+  jobs.py scheduler.py  定時任務：動作與執行、時間與調度
   connectors/ imports.py 數據接入
   api/                  接口：app.py 定義前台和後台兩個應用各包含哪些路由
   web/                  頁面：index.html 前台、admin.html 後台；js/views/front、js/views/admin
@@ -288,4 +314,4 @@ docs/architecture.md
 3. ✅ 供需平衡
 4. ✅ 地緣政治 + 推演 + 報告
 
-之後可以做的：定時自動取數和出報告、統計預測模型作為推演的輸入、Word 格式報告、服務器部署配置。
+之後可以做的：任務失敗時的通知、統計預測模型作為推演的輸入、Word 格式報告、服務器部署配置。

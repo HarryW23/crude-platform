@@ -311,3 +311,61 @@ class ProjectionSettings(Strict):
     volatility_min_points: int = Field(default=60, ge=20)
     horizons: list[HorizonDef] = Field(min_length=1)
     module_weights: dict[Literal["spread", "balance", "refinery", "geo"], str]     # 模組 → 權重參數 key
+
+
+# ------------------------------ 定時任務 ------------------------------
+
+WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+
+
+class JobDef(Strict):
+    """一個定時任務：什麼時候、做什麼。
+
+    時間二選一：
+      at + days        每逢 days 的 at 時刻（時區見 schedule.yaml 的 timezone）。可再加 day_of_month 限定每月幾號
+      every_minutes    每隔幾分鐘
+    動作：
+      pull             從拉取型數據源取數（source = 數據源代碼）。沒配密鑰時記為「跳過」，不算失敗
+      import_folder    導入收件夾裡的 Excel / CSV（source = 記在哪個數據源名下；folder = data/ 下的文件夾）
+      report           生成報告（kind = daily / weekly / monthly；narrative = 是否讓大模型加解讀）
+    """
+    code: str = Code
+    name_zh: str
+    enabled: bool = True
+    action: Literal["pull", "import_folder", "report"]
+    at: str | None = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    days: list[Literal["mon", "tue", "wed", "thu", "fri", "sat", "sun"]] | Literal["daily", "weekdays"] = "daily"
+    day_of_month: int | None = Field(default=None, ge=1, le=28)
+    every_minutes: int | None = Field(default=None, ge=1, le=1440)
+    catch_up_hours: int = Field(default=12, ge=0, le=168)   # 程序沒開而錯過的任務，多少小時內補跑一次
+    source: str | None = None
+    folder: str = "inbox"
+    kind: Literal["daily", "weekly", "monthly"] | None = None
+    narrative: bool = False
+
+    @model_validator(mode="after")
+    def _check(self):
+        if (self.at is None) == (self.every_minutes is None):
+            raise ValueError("at 和 every_minutes 必須寫一個，且只能寫一個")
+        if self.every_minutes is not None and (self.days != "daily" or self.day_of_month is not None):
+            raise ValueError("every_minutes 不能和 days / day_of_month 一起用")
+        if self.action in ("pull", "import_folder") and not self.source:
+            raise ValueError(f"{self.action} 任務需要 source")
+        if self.action == "report" and not self.kind:
+            raise ValueError("report 任務需要 kind")
+        if ".." in self.folder or self.folder.startswith(("/", "\\")):
+            raise ValueError("folder 必須是 data/ 下的相對路徑")
+        return self
+
+    @property
+    def weekdays(self) -> set[int]:
+        if self.days == "daily":
+            return set(range(7))
+        if self.days == "weekdays":
+            return set(range(5))
+        return {WEEKDAYS.index(d) for d in self.days}
+
+
+class ScheduleDef(Strict):
+    timezone: str = "Asia/Shanghai"
+    jobs: list[JobDef] = []

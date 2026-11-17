@@ -1,0 +1,185 @@
+"""定時任務的執行：三種動作，以及「認領 → 執行 → 記結果」的流程。什麼時候執行由 scheduler.py 決定。
+
+每次執行都記一條 job_run，結果有四種：
+  ok        做完了
+  skipped   沒有可做的事（收件夾是空的、數據源還沒配密鑰）。不是錯誤
+  failed    出錯了。訊息是脫敏過的一句話；意料之外的異常只記類型，原文進服務器日誌
+  running   正在執行。進程被殺掉會留下這個狀態，下次啟動時由 scheduler.recover_stale 改成 failed
+"""
+from __future__ import annotations
+
+import logging
+import shutil
+import time
+from datetime import datetime, timedelta
+from pathlib import Path
+
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from . import credentials, db
+from . import reports as report_service
+from .config import Config
+from .connectors import ConnectorError, ConnectorNotReady, get_connector
+from .imports import ImportFlowError, commit_batch, preview_file
+from .ingest import IngestError, write_observations
+from .models import AuditLog, JobRun, Series, utcnow
+from .schema import JobDef
+from .settings import Settings
+
+ACTOR = "scheduler"
+IMPORTABLE = (".xlsx", ".xlsm", ".csv")
+SETTLE_SECONDS = 30           # 文件最後一次修改後過這麼久才導入，避免讀到還沒複製完的文件
+log = logging.getLogger("crudelab.jobs")
+
+Result = tuple[str, str, dict]   # (status, message, detail)
+
+
+class JobError(Exception):
+    """任務出錯，訊息可以直接給人看。"""
+
+
+# ------------------------------ 三種動作 ------------------------------
+
+def _pull(session: Session, cfg: Config, settings: Settings, job: JobDef) -> Result:
+    try:
+        connector = get_connector(job.source)
+        observations = connector.fetch(list(session.scalars(select(Series).where(Series.active))), None, None)
+    except KeyError:
+        raise JobError(f"數據源 {job.source} 沒有對應的取數接口") from None
+    except ConnectorNotReady as exc:
+        return "skipped", str(exc), {}
+    except ConnectorError as exc:
+        raise JobError(str(exc)) from None
+    stats = write_observations(session, observations, job.source, actor=ACTOR)
+    session.add(AuditLog(actor=ACTOR, action="pull", entity="data_source", entity_id=job.source, detail=stats))
+    return "ok", f"新增 {stats['inserted']}，更新 {stats['updated']}，未變 {stats['unchanged']}", stats
+
+
+def inbox_dir(settings: Settings, job: JobDef) -> Path:
+    return settings.data_dir / job.folder
+
+
+def _import_folder(session: Session, cfg: Config, settings: Settings, job: JobDef) -> Result:
+    """把收件夾裡的文件逐個導入（只入庫能自動識別的列），成功的移到 done/，失敗的移到 failed/。"""
+    folder = inbox_dir(settings, job)
+    for sub in (folder, folder / "done", folder / "failed"):
+        sub.mkdir(parents=True, exist_ok=True)
+    ready = [p for p in sorted(folder.iterdir())
+             if p.is_file() and p.suffix.lower() in IMPORTABLE and time.time() - p.stat().st_mtime >= SETTLE_SECONDS]
+    if not ready:
+        return "skipped", "收件夾裡沒有待導入的文件", {}
+    stamp = utcnow().strftime("%Y%m%d-%H%M%S")
+    files, failed = [], 0
+    for path in ready:
+        entry: dict = {"file": path.name}
+        try:
+            with session.begin_nested():
+                preview = preview_file(session, settings, path.read_bytes(), path.name, job.source, ACTOR)
+                result = commit_batch(session, preview["batch_id"], actor=ACTOR)
+            entry.update(inserted=result["inserted"], updated=result["updated"],
+                         unmapped=result["unmapped_columns"], warnings=preview["warnings"])
+            target = folder / "done"
+        except (ImportFlowError, IngestError, OSError) as exc:
+            entry["error"] = credentials.redact(exc)
+            failed += 1
+            target = folder / "failed"
+        shutil.move(str(path), str(target / f"{stamp}_{path.name}"))
+        files.append(entry)
+    done = [f for f in files if "error" not in f]
+    message = (f"導入 {len(done)} 個文件，新增 {sum(f['inserted'] for f in done)}，"
+               f"更新 {sum(f['updated'] for f in done)}")
+    unmapped = sum(f["unmapped"] for f in done)
+    if unmapped:
+        message += f"；有 {unmapped} 列沒有認出來，沒有導入（到「數據導入」頁手動上傳一次並指定對應，之後就能自動識別）"
+    if failed:
+        message += f"；{failed} 個文件失敗，已移到 failed/"
+    return ("failed" if failed else "ok"), message, {"files": files}
+
+
+def _report(session: Session, cfg: Config, settings: Settings, job: JobDef) -> Result:
+    try:
+        report = report_service.generate(session, cfg, job.kind, actor=ACTOR)
+    except report_service.ReportError as exc:
+        raise JobError(str(exc)) from None
+    message, detail = f"已生成《{report.title}》", {"report_id": report.id}
+    if job.narrative:
+        from .llm import LLMError, LLMNotConfigured, get_provider
+        from .llm.tasks import write_narrative
+        try:
+            result = write_narrative(get_provider(), report.markdown, report_service.KINDS[job.kind])
+            report.narrative, report.narrative_meta = result.pop("text"), result
+            message += "，含大模型解讀" + ("" if result["guard_passed"] else "（數字核對未通過）")
+        except LLMNotConfigured:
+            message += "；大模型未配置，沒有寫解讀"
+        except LLMError as exc:
+            message += f"；解讀失敗：{credentials.redact(exc)}"
+    return "ok", message, detail
+
+
+ACTIONS = {"pull": _pull, "import_folder": _import_folder, "report": _report}
+
+
+# ------------------------------ 認領與執行 ------------------------------
+
+def find_job(cfg: Config, code: str) -> JobDef:
+    for job in cfg.schedule.jobs:
+        if job.code == code:
+            return job
+    raise JobError(f"沒有名為 {code} 的定時任務")
+
+
+def claim(code: str, slot: datetime, trigger: str) -> int | None:
+    """認領一次執行。這個時點已經被別的進程認領過就回 None。"""
+    try:
+        with db.session_scope() as session:
+            run = JobRun(job_code=code, slot=slot, trigger=trigger, status="running")
+            session.add(run)
+            session.flush()
+            return run.id
+    except IntegrityError:
+        return None
+
+
+def execute(cfg: Config, settings: Settings, job: JobDef, run_id: int) -> dict:
+    """執行已認領的任務並記下結果。任何異常都被接住，不會把調度器打掉。"""
+    try:
+        with db.session_scope() as session:
+            status, message, detail = ACTIONS[job.action](session, cfg, settings, job)
+    except JobError as exc:
+        status, message, detail = "failed", credentials.redact(exc), {}
+    except Exception as exc:      # 意料之外：不把原文給頁面（可能含網址或路徑），詳情進日誌（日誌有脫敏）
+        log.exception("定時任務 %s 發生未預期的錯誤", job.code)
+        status, message, detail = "failed", f"未預期的錯誤（{type(exc).__name__}），詳情見服務器日誌", {}
+    with db.session_scope() as session:
+        run = session.get(JobRun, run_id)
+        run.status, run.message, run.detail, run.finished_at = status, message, detail, utcnow()
+        return {"id": run.id, "job": run.job_code, "status": status, "message": message}
+
+
+def run_now(cfg: Config, settings: Settings, code: str) -> dict:
+    """手動立即執行一個任務（不管它是否啟用、是否到點）。"""
+    job = find_job(cfg, code)
+    run_id = claim(code, utcnow(), "manual")
+    if run_id is None:
+        raise JobError("同一時刻已有一次執行，請稍後再試")
+    return execute(cfg, settings, job, run_id)
+
+
+def recent_runs(session: Session, limit: int = 100, code: str | None = None) -> list[JobRun]:
+    stmt = select(JobRun).order_by(JobRun.id.desc()).limit(limit)
+    if code:
+        stmt = stmt.where(JobRun.job_code == code)
+    return list(session.scalars(stmt))
+
+
+def recover_stale(older_than: timedelta = timedelta(hours=1)) -> int:
+    """把卡在「執行中」太久的記錄改成失敗（通常是執行到一半進程被關掉了）。"""
+    cutoff = utcnow() - older_than
+    with db.session_scope() as session:
+        rows = list(session.scalars(select(JobRun).where(JobRun.status == "running", JobRun.started_at < cutoff)))
+        for run in rows:
+            run.status, run.finished_at = "failed", utcnow()
+            run.message = "執行中斷：程序在任務完成前被關閉了"
+        return len(rows)

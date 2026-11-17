@@ -1,11 +1,12 @@
 """數據表定義。表結構的變更一律通過 migrations/ 下的遷移腳本，不要直接改庫。
 
-七類表：
+八類表：
   主數據     unit / location / commodity / data_source / series / series_alias / parameter
   事實數據   import_batch / observation / parameter_version
   判斷       scenario / adjustment / event / projection / projection_case —— 人的判斷，和數據分開存
   產出       report —— 生成時刻的快照
   帳號       user_account / user_session
+  調度       job_run / scheduler_heartbeat
   修訂歷史   observation_revision
   操作日誌   audit_log
 
@@ -281,6 +282,29 @@ class UserSession(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     expires_at: Mapped[datetime] = mapped_column(DateTime)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class JobRun(Base):
+    """定時任務的一次執行。(job_code, slot) 唯一：同一個時點的任務，不管有幾個進程在跑調度，只會被執行一次。"""
+    __tablename__ = "job_run"
+    __table_args__ = (UniqueConstraint("job_code", "slot"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    job_code: Mapped[str] = mapped_column(String(64), index=True)
+    slot: Mapped[datetime] = mapped_column(DateTime)                 # 這次執行對應的計劃時點（手動觸發時是觸發時刻）
+    trigger: Mapped[str] = mapped_column(String(16))                 # schedule / manual
+    status: Mapped[str] = mapped_column(String(16))                  # running / ok / skipped / failed
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime)
+    message: Mapped[str | None] = mapped_column(Text)                # 給人看的一句話結果（已脫敏）
+    detail: Mapped[dict | None] = mapped_column(JSON)
+
+
+class SchedulerHeartbeat(Base):
+    """調度器的心跳，只有一行。頁面用它判斷調度器是不是在運行。"""
+    __tablename__ = "scheduler_heartbeat"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    at: Mapped[datetime] = mapped_column(DateTime)
+    host: Mapped[str] = mapped_column(String(128))
 
 
 # ----------------------------- 修訂歷史與日誌 -----------------------------

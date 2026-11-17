@@ -1,0 +1,28 @@
+# 定時任務：什麼時候、自動做什麼。改完幾秒內自動生效，不用重啟。
+# 任務的執行情況在後台的「定時任務」頁看，那裡也可以手動立即運行。
+#
+#   時間二選一：
+#     at: "18:30" + days       days 可以是 daily（每天）、weekdays（周一至周五），或 [mon, wed, fri] 這樣的列表
+#                              再加 day_of_month: 1 可以限定每月幾號（1–28）
+#     every_minutes: 10        每隔幾分鐘
+#   enabled: false             停用這個任務（仍可在後台手動運行）
+#   catch_up_hours             程序沒開而錯過的任務，多少小時內補跑一次（預設 12；0 = 不補）
+#   動作 action：
+#     import_folder  導入收件夾裡的 Excel / CSV。folder 是 data/ 下的文件夾名，source 是記在哪個數據源名下
+#                    導完的文件移到 done/，出錯的移到 failed/。只入庫能自動識別的列
+#     pull           從接口取數。還沒配密鑰時只記「跳過」，不算失敗
+#     report         生成報告。kind: daily / weekly / monthly；narrative: true 會調用大模型寫解讀（要花錢）
+timezone: Asia/Shanghai
+
+jobs:
+  # 整理數據的同事把 Excel 放進 data/inbox/，十分鐘內自動導入
+  - {code: IMPORT_INBOX, name_zh: 導入收件夾, action: import_folder, source: reuters_xls, folder: inbox,
+     every_minutes: 10}
+
+  # EIA 周報通常在美東時間周三上午發佈（北京時間周三深夜），周四早上取；另外每天取一次以涵蓋延期和月度數據
+  - {code: PULL_EIA, name_zh: 取 EIA 數據, action: pull, source: eia, at: "07:30", days: daily}
+
+  - {code: REPORT_DAILY, name_zh: 生成日報, action: report, kind: daily, at: "18:30", days: weekdays}
+  - {code: REPORT_WEEKLY, name_zh: 生成周報, action: report, kind: weekly, at: "19:00", days: [fri]}
+  - {code: REPORT_MONTHLY, name_zh: 生成月報, action: report, kind: monthly, at: "09:00", day_of_month: 1,
+     enabled: false}
