@@ -24,6 +24,7 @@ def _values(text: str) -> set[float]:
 def unknown_numbers(text: str, reference: str) -> list[str]:
     """text 裡出現、但 reference 裡找不到的數字（按絕對值比較，容許四捨五入到更少的小數位）。"""
     allowed = _values(reference) | _ALWAYS_ALLOWED
+    allowed |= {v * 100 for v in allowed if 0 < v < 1}          # 0.25 可以寫成 25%
     rounded = {round(v, d) for v in allowed for d in (0, 1, 2)}
     unknown = []
     for token in _NUMBER.findall(text):

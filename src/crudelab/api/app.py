@@ -15,6 +15,7 @@ from .deps import AppState
 from .routes import (
     analysis,
     balances,
+    chat,
     core,
     geo,
     imports,
@@ -47,7 +48,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="crudelab", version="0.4.0")
     app.state.crudelab = AppState(settings=settings, cfg=cfg)
     for module in (core, series, imports, indicators, parameters, refineries, balances, scenarios, analysis,
-                   geo, outlook, reports, sources):
+                   geo, outlook, reports, chat, sources):
         app.include_router(module.router, prefix="/api")
 
     @app.get("/", include_in_schema=False)

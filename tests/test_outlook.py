@@ -337,3 +337,119 @@ def test_phase4_api(settings, sample_path, monkeypatch):
     assert client.post("/api/reports", json={"kind": "yearly"}).status_code == 400
     assert client.delete(f"/api/projection-cases/{case['id']}").status_code == 200
     assert client.get("/api/reports/999").status_code == 404
+
+
+# ------------------------------ 對話式查詢 ------------------------------
+
+class ScriptedProvider(LLMProvider):
+    """按劇本逐步回覆的假模型，並記下每一步收到的內容。"""
+    name, model = "fake", "fake-1"
+
+    def __init__(self, *replies: str):
+        self.replies, self.prompts = list(replies), []
+
+    def complete(self, system, user, *, json=False, max_tokens=4000):
+        self.prompts.append({"system": system, "user": user})
+        return self.replies.pop(0)
+
+
+def step(tool, **args):
+    import json
+    return json.dumps({"tool": tool, "args": args}, ensure_ascii=False)
+
+
+def final(text):
+    import json
+    return json.dumps({"answer": text}, ensure_ascii=False)
+
+
+def test_chat_looks_up_data_and_answer_is_checked(loaded, cfg):
+    from crudelab.llm import chat
+    value = IndicatorEngine(loaded, cfg).summary("SPR_BRENT_WTI")["last_value"]
+    provider = ScriptedProvider(
+        step("search", query="Brent"),
+        step("get_values", code="SPR_BRENT_WTI", last=3),
+        final(f"Brent − WTI 最新為 {value:.2f} 美元/桶（2026-10-23）。"))
+    result = chat.answer(provider, loaded, cfg, "現在 Brent 和 WTI 的價差是多少？")
+    assert result["guard_passed"] and [s["tool"] for s in result["steps"]] == ["search", "get_values"]
+    assert any(m["code"] == "SPR_BRENT_WTI" for m in result["steps"][0]["result"]["matches"])
+    assert result["steps"][1]["result"]["last_value"] == pytest.approx(value, abs=1e-4)
+    assert "get_values" in provider.prompts[2]["user"] and "不要自己做算術" in provider.prompts[0]["system"]
+
+    made_up = ScriptedProvider(final("Brent 大約在 88.5 美元。"))          # 沒查數就報數字
+    bad = chat.answer(made_up, loaded, cfg, "Brent 多少錢？")
+    assert not bad["guard_passed"] and bad["unknown_numbers"] == ["88.5"] and bad["steps"] == []
+
+
+def test_chat_what_if_uses_the_engine_not_the_model(loaded, cfg):
+    from crudelab.llm import chat
+    set_value(loaded, "PROJ_PRICE_PER_BALANCE", 5.0)
+    loaded.commit()
+    start = month_start(0).isoformat()
+    provider = ScriptedProvider(
+        step("what_if", adjustments=[{"target": "BAL_GLOBAL_S_OPEC", "delta": -2, "date_from": start}]),
+        final("已試算。"))
+    result = chat.answer(provider, loaded, cfg, "如果 OPEC 從本月起少供應 2 百萬桶/日會怎樣？")
+    what_if = result["steps"][0]["result"]
+    rows = what_if["compared"][0]["rows"]
+    assert what_if["compared"][0]["code"] == "BAL_GLOBAL_BALANCE" and all(r["change"] == -2 for r in rows)
+    month = what_if["price"]["horizons"]["M1"]
+    assert month["balance_change"] == -2 and month["balance_effect"] == 10                # −5 × −2
+    assert month["central"] == pytest.approx(what_if["price"]["price"] + 10, abs=1e-3)
+    assert len(loaded.new) == 0 and len(loaded.dirty) == 0                                # 沒有寫入任何東西
+
+    # 之前的問答會帶進下一輪
+    again = ScriptedProvider(final("好的。"))
+    chat.answer(again, loaded, cfg, "那三個月呢？", [{"role": "user", "content": "先前的問題"},
+                                                     {"role": "assistant", "content": "先前的回答"}])
+    prompt = again.prompts[0]["user"]
+    assert "先前的回答" in prompt and prompt.rstrip().endswith("請輸出下一步的 JSON。")
+
+
+def test_chat_handles_bad_tool_calls_and_gives_up_cleanly(loaded, cfg):
+    from crudelab.llm import chat
+    provider = ScriptedProvider(step("delete_everything"), step("get_values", code="NOPE"),
+                                step("get_values", wrong_arg=1), step("list_indicators", module="x"),
+                                "這不是 JSON，直接作答。")
+    result = chat.answer(provider, loaded, cfg, "隨便問問")
+    errors = [s["result"]["error"] for s in result["steps"]]
+    assert "沒有名為 delete_everything 的工具" in errors[0] and "先用 search" in errors[1]
+    assert "參數不對" in errors[2] and "module 必須是" in errors[3]
+    assert result["answer"] == "這不是 JSON，直接作答。"
+    assert set(chat.TOOLS) == {"search", "get_values", "list_indicators", "get_balance", "get_refinery", "get_signals",
+                               "list_events", "list_scenarios", "get_projection", "get_parameter", "what_if"}
+
+    looping = ScriptedProvider(*[step("get_signals")] * (chat.MAX_STEPS + 1))
+    with pytest.raises(LLMError, match="仍沒有得出回答"):
+        chat.answer(looping, loaded, cfg, "?")
+
+
+def test_every_chat_tool_runs_on_real_data(loaded, cfg):
+    from crudelab.llm import chat
+    ctx = chat._Ctx(loaded, cfg, IndicatorEngine(loaded, cfg))
+    events.create(loaded, cfg, title="事件", status="ongoing", bias=1)
+    scenarios.create(loaded, "S", "情境")
+    projection.create(loaded, "推演")
+    loaded.commit()
+    calls = {"search": {"query": "柴油"}, "get_values": {"code": "EIA_CRUDE_STOCKS"},
+             "list_indicators": {"module": "spread"}, "get_balance": {"code": "GLOBAL", "scenario": "S"},
+             "get_refinery": {"code": "CN_FUEL_SD"}, "get_signals": {},
+             "list_events": {}, "list_scenarios": {}, "get_projection": {}, "get_parameter": {"key": "CN_VAT_RATE"},
+             "what_if": {"parameters": {"RM_CN_FUEL_SD_C_OPEX": 400}, "watch": ["RM_CN_FUEL_SD_MARGIN"]}}
+    import json
+    for name, args in calls.items():
+        result = chat._r(chat.TOOLS[name][0](ctx, **args))
+        assert json.dumps(result, ensure_ascii=False, default=str)          # 結果能序列化給模型
+    margin = chat._r(chat.tool_what_if(ctx, **calls["what_if"]))["compared"][0]["rows"][0]
+    assert margin["change"] == pytest.approx(-100)                           # 加工費 +100 → 毛利 −100
+    assert chat.tool_get_refinery(ctx, "CN_FUEL_SD")["components"][-1]["label"] == "毛利"
+    with pytest.raises(chat.ToolError, match="至少要給一項假設"):
+        chat.tool_what_if(ctx)
+
+
+def test_chat_api(settings, monkeypatch):
+    monkeypatch.delenv("CRUDELAB_LLM_PROVIDER", raising=False)
+    client = TestClient(create_app(settings))
+    assert len(client.get("/api/chat/tools").json()) == 11
+    assert client.post("/api/chat", json={"question": "Brent 多少？"}).status_code == 409      # 沒配大模型
+    assert client.post("/api/chat", json={"question": ""}).status_code == 422

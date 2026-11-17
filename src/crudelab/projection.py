@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 from datetime import date, datetime
 
 import numpy as np
@@ -26,8 +27,9 @@ from sqlalchemy.orm import Session
 
 from . import scenarios
 from .config import Config
-from .indicators import IndicatorEngine
+from .indicators import IndicatorEngine, Scenario
 from .models import Projection, ProjectionCase, utcnow
+from .schema import ProjectionSettings
 
 PERIOD_DAYS = {"daily": 1, "weekly": 7, "monthly": 31, "quarterly": 92}
 
@@ -126,24 +128,81 @@ def _balance_change(base: pd.Series, scenario: pd.Series, today: pd.Timestamp, e
     return float((window["scenario"] - window["base"]).mean()), len(window)
 
 
-def compute(session: Session, cfg: Config, projection_id: int, as_of: datetime | None = None) -> dict:
+@dataclass(frozen=True)
+class _Context:
+    """算一個分支需要的公共輸入：全部來自基準（不套情境）的數據。"""
+    settings: ProjectionSettings
+    today: pd.Timestamp
+    price: float | None
+    volatility: float | None
+    sensitivity: float | None
+    base_balance: pd.Series
+    period_days: int
+
+
+def _context(session: Session, cfg: Config, as_of: datetime | None) -> tuple[_Context, IndicatorEngine, pd.Series]:
     settings = cfg.projection
     if settings is None:
         raise ProjectionError("config/projection.yaml 不存在，無法推演")
-    row = require(session, projection_id)
     base = IndicatorEngine(session, cfg, as_of=as_of)
     today = pd.Timestamp(as_of.date() if as_of else date.today())
-    unit = cfg.series[settings.anchor].unit
-    balance_unit = cfg.indicators[settings.balance_indicator].unit
-
     prices = base.series_values(settings.anchor)
     prices = prices[prices.index <= today]
-    price = float(prices.iloc[-1]) if len(prices) else None
     volatility = (_volatility(prices, settings.volatility_lookback, settings.volatility_min_points)
                   if len(prices) else None)
-    sensitivity = base.value_at(settings.sensitivity_parameter, today.date())
-    base_balance = base.compute(settings.balance_indicator)
-    period_days = PERIOD_DAYS[cfg.frequency_of(settings.balance_indicator)]
+    return (_Context(settings, today, float(prices.iloc[-1]) if len(prices) else None, volatility,
+                     base.value_at(settings.sensitivity_parameter, today.date()),
+                     base.compute(settings.balance_indicator),
+                     PERIOD_DAYS[cfg.frequency_of(settings.balance_indicator)]), base, prices)
+
+
+def _case_cells(ctx: _Context, scenario_balance: pd.Series | None, price_adjustment: float) -> dict:
+    """一個分支在各期限的結果。scenario_balance 為 None = 基準分支（平衡不變）。"""
+    horizons = {}
+    for h in ctx.settings.horizons:
+        end = ctx.today + pd.Timedelta(days=h.calendar_days)
+        cell = {"balance_change": 0.0, "periods": 0, "balance_effect": 0.0, "central": None, "low": None,
+                "high": None, "reason": None}
+        if scenario_balance is not None:
+            change, n = _balance_change(ctx.base_balance, scenario_balance, ctx.today, end, ctx.period_days)
+            cell["balance_change"], cell["periods"] = change, n
+            if change is None:
+                cell["balance_effect"], cell["reason"] = None, "平衡表在這段期間沒有數據，算不出情境的影響"
+            elif change == 0:
+                cell["balance_effect"] = 0.0
+            elif ctx.sensitivity is None:
+                cell["balance_effect"] = None
+                cell["reason"] = f"缺參數 {ctx.settings.sensitivity_parameter}（平衡變化對價格的敏感度）"
+            else:
+                cell["balance_effect"] = -ctx.sensitivity * change
+        if ctx.price is not None and cell["balance_effect"] is not None:
+            cell["central"] = ctx.price + cell["balance_effect"] + price_adjustment
+            if ctx.volatility is not None:
+                band = ctx.price * ctx.volatility * math.sqrt(h.trading_days)
+                cell["low"], cell["high"], cell["band"] = cell["central"] - band, cell["central"] + band, band
+        horizons[h.code] = cell
+    return horizons
+
+
+def adhoc(session: Session, cfg: Config, scenario: Scenario, price_adjustment: float = 0.0,
+          as_of: datetime | None = None) -> dict:
+    """不保存、臨時算一個分支：給一個情境，回傳它在各期限的價格中樞與區間。問答的「如果…會怎樣」用它。"""
+    ctx, _, prices = _context(session, cfg, as_of)
+    balance = IndicatorEngine(session, cfg, as_of=as_of, scenario=scenario).compute(ctx.settings.balance_indicator)
+    return {"anchor": ctx.settings.anchor, "unit": cfg.series[ctx.settings.anchor].unit, "price": ctx.price,
+            "price_date": prices.index[-1].date().isoformat() if len(prices) else None,
+            "sensitivity": ctx.sensitivity, "balance_indicator": ctx.settings.balance_indicator,
+            "horizons": {h.code: {"name_zh": h.name_zh, **cell}
+                         for h, cell in zip(ctx.settings.horizons,
+                                            _case_cells(ctx, balance, price_adjustment).values(), strict=True)}}
+
+
+def compute(session: Session, cfg: Config, projection_id: int, as_of: datetime | None = None) -> dict:
+    row = require(session, projection_id)
+    ctx, _, prices = _context(session, cfg, as_of)
+    settings, price, volatility, sensitivity = ctx.settings, ctx.price, ctx.volatility, ctx.sensitivity
+    unit = cfg.series[settings.anchor].unit
+    balance_unit = cfg.indicators[settings.balance_indicator].unit
 
     problems = []
     if price is None:
@@ -160,33 +219,10 @@ def compute(session: Session, cfg: Config, projection_id: int, as_of: datetime |
     for c in case_rows:
         scenario_balance = (IndicatorEngine(session, cfg, as_of=as_of,
                                             scenario=scenarios.load(session, cfg, c.scenario_code, as_of))
-                            .compute(settings.balance_indicator) if c.scenario_code else base_balance)
-        horizons = {}
-        for h in settings.horizons:
-            end = today + pd.Timedelta(days=h.calendar_days)
-            cell = {"balance_change": 0.0, "periods": 0, "balance_effect": 0.0, "central": None, "low": None,
-                    "high": None, "reason": None}
-            if c.scenario_code:
-                change, n = _balance_change(base_balance, scenario_balance, today, end, period_days)
-                cell["balance_change"], cell["periods"] = change, n
-                if change is None:
-                    cell["balance_effect"], cell["reason"] = None, "平衡表在這段期間沒有數據，算不出情境的影響"
-                elif change == 0:
-                    cell["balance_effect"] = 0.0
-                elif sensitivity is None:
-                    cell["balance_effect"] = None
-                    cell["reason"] = f"缺參數 {settings.sensitivity_parameter}（平衡變化對價格的敏感度）"
-                else:
-                    cell["balance_effect"] = -sensitivity * change
-            if price is not None and cell["balance_effect"] is not None:
-                cell["central"] = price + cell["balance_effect"] + c.price_adjustment
-                if volatility is not None:
-                    band = price * volatility * math.sqrt(h.trading_days)
-                    cell["low"], cell["high"], cell["band"] = cell["central"] - band, cell["central"] + band, band
-            horizons[h.code] = cell
+                            .compute(settings.balance_indicator) if c.scenario_code else None)
         out_cases.append({"id": c.id, "label": c.label, "scenario_code": c.scenario_code,
                           "probability": c.probability, "price_adjustment": c.price_adjustment, "note": c.note,
-                          "horizons": horizons})
+                          "horizons": _case_cells(ctx, scenario_balance, c.price_adjustment)})
 
     expected = {}
     for h in settings.horizons:
