@@ -328,11 +328,12 @@ class JobDef(Strict):
       pull             從拉取型數據源取數（source = 數據源代碼）。沒配密鑰時記為「跳過」，不算失敗
       import_folder    導入收件夾裡的 Excel / CSV（source = 記在哪個數據源名下；folder = data/ 下的文件夾）
       report           生成報告（kind = daily / weekly / monthly；narrative = 是否讓大模型加解讀）
+      check_freshness  檢查數據有沒有斷更（規則在 freshness.yaml）。有斷更時記為失敗，從而觸發通知
     """
     code: str = Code
     name_zh: str
     enabled: bool = True
-    action: Literal["pull", "import_folder", "report"]
+    action: Literal["pull", "import_folder", "report", "check_freshness"]
     at: str | None = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
     days: list[Literal["mon", "tue", "wed", "thu", "fri", "sat", "sun"]] | Literal["daily", "weekdays"] = "daily"
     day_of_month: int | None = Field(default=None, ge=1, le=28)
@@ -406,3 +407,35 @@ class NotificationsDef(Strict):
     on_recovery: bool = True
     repeat_hours: int = Field(default=6, ge=1, le=168)     # 持續失敗時，隔多久再提醒一次
     channels: list[ChannelDef] = []
+
+
+# ------------------------------ 數據新鮮度 ------------------------------
+
+class FreshnessRule(Strict):
+    """一種頻率的序列多久沒更新算斷更。
+
+    basis   observed：看最新一個數據點的日期（不晚於今天）離今天多遠
+            received：看最近一次收到新值或修訂的時間離今天多遠。帶預測期的月度、季度數據用這個，
+                      因為它們的「最新日期」本來就在未來，看日期永遠不會斷更
+    count   weekdays：只數周一至周五（日度行情用，周末不算）；calendar：日曆天
+    """
+    max_days: int = Field(ge=1, le=400)
+    basis: Literal["observed", "received"] = "observed"
+    count: Literal["weekdays", "calendar"] = "calendar"
+
+
+class FreshnessOverride(FreshnessRule):
+    series: str
+
+
+class FreshnessDef(Strict):
+    defaults: dict[Literal["daily", "weekly", "monthly", "quarterly"], FreshnessRule] = {
+        "daily": FreshnessRule(max_days=3, count="weekdays"),
+        "weekly": FreshnessRule(max_days=14),
+        "monthly": FreshnessRule(max_days=40, basis="received"),
+        "quarterly": FreshnessRule(max_days=45, basis="received"),
+    }
+    watch: Literal["has_data", "all"] = "has_data"      # has_data：只檢查有過數據的序列
+    required: list[str] = []                            # 必須有數據的序列：從沒有過數據也報
+    ignore: list[str] = []                              # 不檢查的序列
+    overrides: list[FreshnessOverride] = []

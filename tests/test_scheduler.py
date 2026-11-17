@@ -91,7 +91,7 @@ def test_schedule_config_cross_checks(tmp_path):
     doc["timezone"] = "Mars/Olympus"
     doc["jobs"][0]["source"] = "eia"                                        # 收件夾任務配了一個接口型數據源
     doc["jobs"][1]["source"] = "nope"
-    doc["jobs"].append(dict(doc["jobs"][2]))
+    doc["jobs"].append(dict(next(j for j in doc["jobs"] if j["code"] == "REPORT_DAILY")))
     path.write_text(yaml.safe_dump(doc, allow_unicode=True), encoding="utf-8")
     with pytest.raises(ConfigError) as exc:
         load_config(target)

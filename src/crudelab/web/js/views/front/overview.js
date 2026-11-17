@@ -4,12 +4,16 @@ import { adminLink } from "../../site.js";
 import { deltaCell, esc, num, statusTag } from "../../ui.js";
 
 export async function render(main) {
-  const [o, models, indicators, balances, sig] = await Promise.all(
-    [api("/overview"), api("/refineries"), api("/indicators"), api("/balances"), api("/signals")]);
+  const [o, models, indicators, balances, sig, fresh] = await Promise.all(
+    [api("/overview"), api("/refineries"), api("/indicators"), api("/balances"), api("/signals"), api("/freshness")]);
   const headline = ["SPR_BRENT_WTI", "SPR_BRENT_DUBAI", "SPR_SC_BRENT", "TS_BRENT_M1_M3", "TS_WTI_M1_M3",
                     "CRK_US_321", "CRK_ICE_GASOIL", "CRK_SG_GASOIL", "STK_US_CRUDE_VS_5Y", "DEM_US_TOTAL_YOY"]
     .map((code) => indicators.find((i) => i.code === code)).filter(Boolean);
   const todo = [];
+  if (fresh.problems) {
+    const names = fresh.rows.filter((r) => r.status === "stale" || r.status === "never").slice(0, 4).map((r) => esc(r.name_zh));
+    todo.push(`<b>有 ${fresh.problems} 條序列超過期限沒有更新</b>（${names.join("、")}${fresh.problems > 4 ? " 等" : ""}），用到它們的數字可能是舊的。詳見${adminLink("series", "序列")}。`);
+  }
   if (!o.observations) todo.push(`還沒有任何數據。到${adminLink("import", "數據導入")}上傳 Excel，或在${adminLink("series", "序列")}手動錄入。`);
   if (o.parameters_missing) todo.push(`有 ${o.parameters_missing} 個必填參數還沒有數值（例如運費基準費率），用到它們的 ${o.indicators_missing_parameter} 個指標暫時算不出來。到${adminLink("params", "參數")}錄入。`);
   if (o.parameters_unverified) todo.push(`有 ${o.parameters_unverified} 個參數是暫定值，尚待核對（收率、加工費、稅率、換算係數）。在${adminLink("params", "參數")}核對。`);

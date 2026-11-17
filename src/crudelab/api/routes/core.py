@@ -42,6 +42,13 @@ def overview(session: Session = Depends(get_db), state: AppState = Depends(get_s
     }
 
 
+@router.get("/freshness")
+def data_freshness(session: Session = Depends(get_db), state: AppState = Depends(get_state)):
+    """每條被檢查的序列有沒有超過期限沒更新。規則在 config/freshness.yaml。"""
+    from ...freshness import check
+    return check(session, state.cfg)
+
+
 @router.get("/meta")
 def meta(state: AppState = Depends(get_state)):
     cfg = state.cfg

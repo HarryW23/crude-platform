@@ -172,10 +172,16 @@ def after_run(cfg: Config, job: JobDef, run_id: int) -> str | None:
         message = run.message or ""
     if event is None:
         return None
-    title = {"failure": f"定時任務失敗：{job.name_zh}", "reminder": f"定時任務仍在失敗：{job.name_zh}",
-             "recovery": f"定時任務已恢復：{job.name_zh}"}[event]
-    tail = "" if event == "recovery" else "\n到後台的「定時任務」頁查看詳情。"
-    send(cfg, title, f"任務：{job.name_zh}（{job.code}）\n結果：{message}{tail}", event=event, job_code=job.code)
+    if job.action == "check_freshness":
+        title = {"failure": "數據斷更", "reminder": "數據仍未更新", "recovery": "數據已恢復更新"}[event]
+        tail = "" if event == "recovery" else "\n到後台的「序列」頁查看全部序列的更新狀態。"
+        body = f"{message}{tail}"
+    else:
+        title = {"failure": f"定時任務失敗：{job.name_zh}", "reminder": f"定時任務仍在失敗：{job.name_zh}",
+                 "recovery": f"定時任務已恢復：{job.name_zh}"}[event]
+        tail = "" if event == "recovery" else "\n到後台的「定時任務」頁查看詳情。"
+        body = f"任務：{job.name_zh}（{job.code}）\n結果：{message}{tail}"
+    send(cfg, title, body, event=event, job_code=job.code)
     return event
 
 

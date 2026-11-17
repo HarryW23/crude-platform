@@ -16,6 +16,7 @@ config/ 的結構：
     projection.yaml            價格推演設定
     schedule.yaml              定時任務
     notifications.yaml         通知渠道與規則
+    freshness.yaml             數據斷更的判斷規則
 
 校驗一次做完並一次報全：結構（字段名、類型）、引用（單位、地區、品種、公式裡的名字）、
 唯一性（代碼、別名）、公式語法、循環引用、量綱。任何一項不過，整份配置都不生效。
@@ -39,6 +40,7 @@ from .schema import (
     AtomDef,
     BalanceDef,
     CommodityDef,
+    FreshnessDef,
     IndicatorDef,
     LocationDef,
     NotificationsDef,
@@ -88,6 +90,7 @@ class Config:
     projection: ProjectionSettings | None = None
     schedule: ScheduleDef = field(default_factory=ScheduleDef)
     notifications: NotificationsDef = field(default_factory=NotificationsDef)
+    freshness: FreshnessDef = field(default_factory=FreshnessDef)
 
     @property
     def market_series(self) -> list[str]:
@@ -234,6 +237,9 @@ def load_config(config_dir: Path) -> Config:
         cfg.notifications = (ld.build(NotificationsDef, ld.read(notify_path) or {}, notify_path)
                              or NotificationsDef())
         ld.keyed(cfg.notifications.channels, "通知渠道")
+    fresh_path = config_dir / "freshness.yaml"
+    if fresh_path.exists():
+        cfg.freshness = ld.build(FreshnessDef, ld.read(fresh_path) or {}, fresh_path) or FreshnessDef()
     cfg.parameters = ld.keyed(params, "參數", key="key")
     cfg.indicators = ld.keyed(indicators, "指標")
     cfg.refineries = ld.keyed(specs, "煉廠模型")
@@ -293,6 +299,13 @@ def _validate(cfg: Config) -> list[str]:
         errors += [f"事件預案 {pb.code}：{i.target} 既不是序列也不是指標" for i in pb.impacts if not cfg.has(i.target)]
     errors += _validate_projection(cfg)
     errors += _validate_schedule(cfg)
+    fr = cfg.freshness
+    for label, codes in (("required", fr.required), ("ignore", fr.ignore),
+                         ("overrides", [o.series for o in fr.overrides])):
+        errors += [f"freshness.yaml 的 {label}：{code} 不是序列" for code in codes if code not in cfg.series]
+    missing = [f for f in ("daily", "weekly", "monthly", "quarterly") if f not in fr.defaults]
+    if missing:
+        errors.append(f"freshness.yaml 的 defaults 缺少：{'、'.join(missing)}")
     errors += _validate_indicators(cfg)
     return errors
 

@@ -120,7 +120,19 @@ config/*.yaml ──校驗──▶ Config ──同步──▶ 數據庫主數
 - 發送失敗不影響任務，也不重試。每次通知和各渠道的結果記在 `notification` 表。
 - 加一種渠道：在 `schema.ChannelDef.type` 加名字，在 `notifications._payload`（或另寫一個發送函數）裡加格式，在 `WEBHOOK_CREDENTIALS` 和 `credentials.KNOWN` 登記密鑰名。
 
-沒有做的：程序本身掛掉時的通知（需要外部監控來盯心跳）；數據長時間沒更新的提醒；按任務分別指定通知對象。
+沒有做的：程序本身掛掉時的通知（需要外部監控來盯心跳）；按任務分別指定通知對象。
+
+### 數據斷更
+
+`freshness.py`，規則在 `config/freshness.yaml`。
+
+- 是一個定時任務動作（`check_freshness`）：有斷更就記為 `failed`，從而原樣復用失敗通知的首次提醒、持續提醒、恢復；
+  開關、紅點也都自動有。頁面和通知對這個動作換了措辭（「有斷更」「數據斷更」），免得看成程序出錯。
+- 兩種量法：`observed` 看最新數據點的日期（不晚於今天）；`received` 看最近一次收到新值或修訂的時間（`observation.updated_at`）。
+  帶預測期的月度、季度數據必須用後者，否則最新日期在未來，永遠不會斷更。
+- 日度預設按工作日數，不考慮節假日日曆，所以長假會誤報。要精確需要交易所日曆，目前沒做。
+- 只檢查有過數據的序列（`watch: has_data`），外加 `required` 裡的。「今天」按 `schedule.yaml` 的時區算。
+- 同一套結果供三處使用：定時任務、`/api/freshness`（前台總覽和後台序列頁都用它）。
 
 ### 密鑰
 
@@ -189,6 +201,7 @@ config/*.yaml ──校驗──▶ Config ──同步──▶ 數據庫主數
 | 讓問答能查更多東西 | 在 `llm/chat.py` 加一個 `tool_*` 函數並登記到 `TOOLS`。工具必須唯讀 | 是 |
 | 加 / 改一個定時任務 | `config/schedule.yaml` | 否 |
 | 加 / 改通知渠道和規則 | `config/notifications.yaml` | 否 |
+| 改斷更的期限、指定關鍵序列 | `config/freshness.yaml` | 否 |
 | 加一個新單位 | `config/master/units.yaml`（必要時加原子單位） | 否 |
 | 加一個公式函數 | `formula.py` 的 `FUNCTIONS`，並在 `infer_unit` 說明它對單位的影響 | 是 |
 | 接通一個數據源 | 見 `connectors/reserved.py` 開頭的步驟 | 是 |

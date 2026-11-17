@@ -1,0 +1,27 @@
+# 數據斷更提醒：序列多久沒更新算斷更。
+# 由定時任務 CHECK_FRESHNESS 每天檢查（見 schedule.yaml）；有斷更時通過失敗通知發出，前台總覽也會提示。
+#
+# defaults：按頻率的預設規則
+#   max_days  期限
+#   count     weekdays 只數周一至周五 / calendar 日曆天（預設）
+#   basis     observed 看最新數據的日期（預設）/ received 看最近一次收到新數據的時間
+#             帶預測期的月度、季度數據要用 received：它們的最新日期本來就在未來
+# watch      has_data：只檢查有過數據的序列（預設，不會為你從沒導入過的序列報警）/ all：全部
+# required   必須有數據的關鍵序列：從沒有過數據也會報
+# ignore     不檢查的序列
+# overrides  個別序列的規則，例如中國市場的數據遇到長假時放寬
+defaults:
+  daily:     {max_days: 3, count: weekdays}       # 周五的數據，下周三還沒更新到新日期就報
+  weekly:    {max_days: 14}                       # EIA 周報在下周三發佈，正常最多隔 13 天左右
+  monthly:   {max_days: 40, basis: received}      # 月報約每月一次
+  quarterly: {max_days: 45, basis: received}      # IEA / OPEC 的季度數字隨月報更新
+
+watch: has_data
+required: []
+ignore: []
+overrides:
+  - {series: ARAB_LIGHT_OSP_ASIA, max_days: 40, basis: received}
+  - {series: ARAB_MEDIUM_OSP_ASIA, max_days: 40, basis: received}
+  - {series: ARAB_HEAVY_OSP_ASIA, max_days: 40, basis: received}
+  - {series: BASRAH_MEDIUM_OSP_ASIA, max_days: 40, basis: received}
+  - {series: BASRAH_HEAVY_OSP_ASIA, max_days: 40, basis: received}

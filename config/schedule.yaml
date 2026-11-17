@@ -12,6 +12,7 @@
 #                    導完的文件移到 done/，出錯的移到 failed/。只入庫能自動識別的列
 #     pull           從接口取數。還沒配密鑰時只記「跳過」，不算失敗
 #     report         生成報告。kind: daily / weekly / monthly；narrative: true 會調用大模型寫解讀（要花錢）
+#     check_freshness  檢查數據有沒有斷更（規則在 freshness.yaml）。有斷更時記為失敗，從而觸發通知
 timezone: Asia/Shanghai
 
 jobs:
@@ -21,6 +22,9 @@ jobs:
 
   # EIA 周報通常在美東時間周三上午發佈（北京時間周三深夜），周四早上取；另外每天取一次以涵蓋延期和月度數據
   - {code: PULL_EIA, name_zh: 取 EIA 數據, action: pull, source: eia, at: "07:30", days: daily}
+
+  # 每個工作日早上檢查一次有沒有數據斷更；持續斷更時按 notifications.yaml 的 repeat_hours 提醒
+  - {code: CHECK_FRESHNESS, name_zh: 檢查數據斷更, action: check_freshness, at: "09:15", days: weekdays}
 
   - {code: REPORT_DAILY, name_zh: 生成日報, action: report, kind: daily, at: "18:30", days: weekdays}
   - {code: REPORT_WEEKLY, name_zh: 生成周報, action: report, kind: weekly, at: "19:00", days: [fri]}

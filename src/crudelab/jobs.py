@@ -118,7 +118,26 @@ def _report(session: Session, cfg: Config, settings: Settings, job: JobDef) -> R
     return "ok", message, detail
 
 
-ACTIONS = {"pull": _pull, "import_folder": _import_folder, "report": _report}
+MAX_LISTED = 8
+
+
+def _check_freshness(session: Session, cfg: Config, settings: Settings, job: JobDef) -> Result:
+    """有斷更就記為失敗：這樣斷更自動走失敗通知的流程（首次提醒、持續提醒、恢復）。"""
+    from . import freshness
+    result = freshness.check(session, cfg)
+    if result["checked"] == 0:
+        return "skipped", "還沒有任何數據，無從檢查", {}
+    problems = [r for r in result["rows"] if r["status"] in ("stale", "never")]
+    detail = {"stale": [{k: r[k] for k in ("code", "name_zh", "last", "lag", "max_days", "status")} for r in problems],
+              "checked": result["checked"]}
+    if not problems:
+        return "ok", f"檢查了 {result['checked']} 條序列，都在期限內", detail
+    lines = [freshness.summary_line(r) for r in problems[:MAX_LISTED]]
+    more = f"\n……另有 {len(problems) - MAX_LISTED} 條" if len(problems) > MAX_LISTED else ""
+    return "failed", f"{len(problems)} 條序列超過期限沒有更新：\n" + "\n".join(lines) + more, detail
+
+
+ACTIONS = {"pull": _pull, "import_folder": _import_folder, "report": _report, "check_freshness": _check_freshness}
 
 
 # ------------------------------ 認領與執行 ------------------------------
