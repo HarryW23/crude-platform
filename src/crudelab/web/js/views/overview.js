@@ -3,8 +3,8 @@ import { show } from "../app.js";
 import { deltaCell, esc, num, statusTag } from "../ui.js";
 
 export async function render(main) {
-  const [o, models, indicators, balances] = await Promise.all(
-    [api("/overview"), api("/refineries"), api("/indicators"), api("/balances")]);
+  const [o, models, indicators, balances, sig] = await Promise.all(
+    [api("/overview"), api("/refineries"), api("/indicators"), api("/balances"), api("/signals")]);
   const headline = ["SPR_BRENT_WTI", "SPR_BRENT_DUBAI", "SPR_SC_BRENT", "TS_BRENT_M1_M3", "TS_WTI_M1_M3",
                     "CRK_US_321", "CRK_ICE_GASOIL", "CRK_SG_GASOIL", "STK_US_CRUDE_VS_5Y", "DEM_US_TOTAL_YOY"]
     .map((code) => indicators.find((i) => i.code === code)).filter(Boolean);
@@ -15,6 +15,8 @@ export async function render(main) {
 
   main.innerHTML = `
     <div class="tiles">
+      <button class="tile" id="to-outlook"><div class="k">綜合方向信號</div><div class="v">${esc(sig.overall.label)}</div>
+        <div class="d">${sig.modules.map((m) => `${m.name_zh} ${m.label}`).join("　")}</div></button>
       <div class="tile"><div class="k">最新數據日期</div><div class="v">${o.last_obs_date ?? "—"}</div><div class="d">${num(o.observations, 0)} 個數據點</div></div>
       <div class="tile"><div class="k">有數據的序列</div><div class="v">${o.series_with_data} / ${o.series_total}</div></div>
       <div class="tile"><div class="k">可計算的指標</div><div class="v">${o.indicators_ok} / ${o.indicators_total}</div>
@@ -37,6 +39,7 @@ export async function render(main) {
       ${headline.map((i) => `<tr><td>${esc(i.name_zh)}</td><td class="nw">${i.last_date ?? ""}</td>
         <td class="n">${i.status === "ok" ? num(i.last_value) : "—"}</td>${deltaCell(i.chg_1d)}${deltaCell(i.chg_20d)}
         <td class="nw">${esc(i.unit)}</td><td>${statusTag(i)}</td></tr>`).join("")}</table></div></div></div>`;
+  main.querySelector("#to-outlook").addEventListener("click", () => show("outlook"));
   main.querySelectorAll("tr[data-balance]").forEach((tr) => tr.addEventListener("click", () => {
     sessionStorage.setItem("balance-table", tr.dataset.balance);
     show("balance");

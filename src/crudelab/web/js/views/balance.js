@@ -14,6 +14,8 @@ export async function render(main) {
   const stocks = series.filter((s) => s.kind === "stock");
   state.table = tables.some((t) => t.code === sessionStorage.getItem("balance-table"))
     ? sessionStorage.getItem("balance-table") : tables[0]?.code;
+  const handed = sessionStorage.getItem("balance-scenario");      // 從「地緣事件」跳過來時指定的情境
+  if (handed) { state.scenario = handed; sessionStorage.removeItem("balance-scenario"); }
   if (!scenarios.some((s) => s.code === state.scenario)) state.scenario = "";
   state.stock ??= stocks.find((s) => s.n)?.code ?? stocks[0]?.code;
   state.relation ??= relations[0]?.code;

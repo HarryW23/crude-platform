@@ -1,9 +1,10 @@
 """數據表定義。表結構的變更一律通過 migrations/ 下的遷移腳本，不要直接改庫。
 
-五類表：
+六類表：
   主數據     unit / location / commodity / data_source / series / series_alias / parameter
   事實數據   import_batch / observation / parameter_version
-  判斷       scenario / adjustment —— 人對數據的調整，和數據本身分開存
+  判斷       scenario / adjustment / event / projection / projection_case —— 人的判斷，和數據分開存
+  產出       report —— 生成時刻的快照
   修訂歷史   observation_revision
   操作日誌   audit_log
 
@@ -194,6 +195,67 @@ class Adjustment(Base):
     created_by: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     removed_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class Event(Base):
+    """地緣事件。draft=True 的是大模型從文字裡抽取、還沒有人確認的草稿，不參與任何計算。"""
+    __tablename__ = "event"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    title: Mapped[str] = mapped_column(String(200))
+    category: Mapped[str] = mapped_column(String(16))
+    location_code: Mapped[str | None] = mapped_column(String(32))
+    status: Mapped[str] = mapped_column(String(16))      # rumor / confirmed / ongoing / resolved / dismissed
+    bias: Mapped[int] = mapped_column(Integer)                       # 對油價的方向判斷：−2 強利空 … +2 強利多
+    started_on: Mapped[date | None] = mapped_column(Date)
+    ended_on: Mapped[date | None] = mapped_column(Date)
+    summary: Mapped[str | None] = mapped_column(Text)
+    source: Mapped[str | None] = mapped_column(Text)                 # 出處：連結或原文摘錄
+    scenario_code: Mapped[str | None] = mapped_column(ForeignKey("scenario.code"))   # 這個事件的量化影響
+    origin: Mapped[str] = mapped_column(String(16))                  # manual / llm
+    draft: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_by: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class Projection(Base):
+    """一次價格推演的設定：若干個情境分支，各有機率。結果每次按當前數據現算。"""
+    __tablename__ = "projection"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name_zh: Mapped[str] = mapped_column(String(128))
+    created_by: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class ProjectionCase(Base):
+    """推演裡的一個分支。scenario_code 為空 = 基準（只看數據，不加任何調整）。"""
+    __tablename__ = "projection_case"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    projection_id: Mapped[int] = mapped_column(ForeignKey("projection.id"), index=True)
+    label: Mapped[str] = mapped_column(String(128))
+    scenario_code: Mapped[str | None] = mapped_column(ForeignKey("scenario.code"))
+    probability: Mapped[float] = mapped_column(Float)                # 0–1
+    price_adjustment: Mapped[float] = mapped_column(Float, default=0.0)   # 直接加在價格上的判斷（如風險溢價）
+    note: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    removed_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class Report(Base):
+    """一份報告 = 生成那一刻的數據快照。生成後不再變化，之後數據怎麼改都不影響已出的報告。"""
+    __tablename__ = "report"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    kind: Mapped[str] = mapped_column(String(16))                    # daily / weekly / monthly
+    title: Mapped[str] = mapped_column(String(200))
+    data_date: Mapped[date | None] = mapped_column(Date)
+    facts: Mapped[dict] = mapped_column(JSON)                        # 結構化的事實：全部來自指標引擎
+    markdown: Mapped[str] = mapped_column(Text)                      # 由 facts 按固定模板排出的正文
+    narrative: Mapped[str | None] = mapped_column(Text)              # 大模型寫的解讀（可沒有）
+    narrative_meta: Mapped[dict | None] = mapped_column(JSON)        # 哪個模型寫的、數字核對結果
+    created_by: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 # ----------------------------- 修訂歷史與日誌 -----------------------------

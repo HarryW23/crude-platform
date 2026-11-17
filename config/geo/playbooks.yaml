@@ -1,0 +1,35 @@
+# 事件預案：某一類地緣事件通常影響平衡表的哪些項目。
+# 套用到具體事件時會生成一個情境，每一項的數值和時長都可以在套用時修改。
+#   impacts.target         受影響的序列或指標（通常是平衡表的單項）
+#   impacts.delta          示意值。這裡的數字只是讓表單有個起點，不是對任何真實事件的估計，套用時請改成你的判斷
+#   impacts.duration_days  持續天數；不寫 = 一直持續
+- code: CHOKEPOINT_DISRUPTION
+  name_zh: 航道受阻（供應中斷）
+  category: chokepoint
+  description: 霍爾木茲、曼德海峽等要道受阻，途經的出口量在一段時間內無法運出。
+  impacts:
+    - {target: BAL_GLOBAL_S_OPEC, delta: -3.0, duration_days: 30, note: 受阻的出口量（示意值，請修改）}
+- code: OPEC_OUTPUT_CHANGE
+  name_zh: 產油國產量政策調整
+  category: opec_policy
+  description: OPEC+ 宣佈增產或減產。增產填正數，減產填負數。
+  impacts:
+    - {target: BAL_GLOBAL_S_OPEC, delta: 0.5, note: 產量變化（示意值，請修改）}
+- code: EXPORT_SANCTION
+  name_zh: 制裁導致出口損失
+  category: sanction
+  description: 對某個非 OPEC 產油國的制裁收緊，一部分出口無法成交或運出。
+  impacts:
+    - {target: BAL_GLOBAL_S_NONOPEC, delta: -0.5, duration_days: 90, note: 損失的出口量（示意值，請修改）}
+- code: SUPPLY_OUTAGE
+  name_zh: 生產或設施中斷
+  category: outage
+  description: 油田、管道、港口因事故、罷工或天氣停產。
+  impacts:
+    - {target: BAL_GLOBAL_S_NONOPEC, delta: -0.3, duration_days: 14, note: 中斷的產量（示意值，請修改）}
+- code: DEMAND_SHOCK
+  name_zh: 需求衝擊
+  category: demand
+  description: 經濟下行、政策變化等導致需求偏離預期。需求減少填負數。
+  impacts:
+    - {target: BAL_GLOBAL_D_NONOECD, delta: -0.5, duration_days: 90, note: 需求變化（示意值，請修改）}

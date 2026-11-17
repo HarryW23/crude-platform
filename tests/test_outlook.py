@@ -1,0 +1,339 @@
+"""第四期：信號、事件、推演、報告、大模型接口。"""
+import math
+from datetime import date, timedelta
+
+import numpy as np
+import pytest
+from fastapi.testclient import TestClient
+
+from crudelab import events, projection, reports, scenarios, signals
+from crudelab.api.app import create_app
+from crudelab.indicators import IndicatorEngine
+from crudelab.ingest import Obs, write_observations
+from crudelab.llm import LLMNotConfigured, get_provider, status
+from crudelab.llm.base import LLMError, LLMProvider
+from crudelab.llm.guard import unknown_numbers
+from crudelab.llm.tasks import extract_events, write_narrative
+from crudelab.parameters import set_value
+
+TODAY = date.today()
+
+
+def put(session, code, dates, values):
+    write_observations(session, [Obs(code, d, float(v)) for d, v in zip(dates, values, strict=True)], "manual")
+    session.commit()
+
+
+def trading_days(n: int) -> list[date]:
+    out, d = [], TODAY
+    while len(out) < n:
+        if d.weekday() < 5:
+            out.append(d)
+        d -= timedelta(days=1)
+    return out[::-1]
+
+
+def month_start(offset: int) -> date:
+    index = TODAY.year * 12 + TODAY.month - 1 + offset
+    return date(index // 12, index % 12 + 1, 1)
+
+
+# ------------------------------ 信號 ------------------------------
+
+def test_signal_scores_follow_the_documented_formula(session, cfg):
+    days = trading_days(100)
+    m1 = [70.0] * 99 + [72.0]                                   # 月差最後一天從 1 跳到 3
+    put(session, "BRENT_M1", days, m1)
+    put(session, "BRENT_M3", days, [69.0] * 100)
+    result = signals.compute(session, IndicatorEngine(session, cfg))
+    spread = next(m for m in result["modules"] if m["module"] == "spread")
+    brent = next(s for s in spread["signals"] if s["code"] == "SIG_BRENT_STRUCTURE")
+    series = np.array([1.0] * 99 + [3.0])
+    z = (3.0 - series.mean()) / series.std(ddof=1)
+    assert brent["status"] == "ok" and brent["z"] == pytest.approx(z) and brent["score"] == 1.0     # z/2 封頂
+    assert spread["signals_ok"] == 1 and spread["score"] == 1.0 and spread["label"] == "強偏多"
+    assert next(s for s in spread["signals"] if s["code"] == "SIG_WTI_STRUCTURE")["status"] == "missing"
+    # 其餘模組沒有數據：不出分，也不拖累總分
+    assert [m["score"] for m in result["modules"] if m["module"] != "spread"] == [None, None, None]
+    assert result["overall"]["score"] == 1.0 and result["overall"]["modules_ok"] == 1
+
+
+def test_signal_needs_enough_history_and_respects_direction(session, cfg):
+    days = trading_days(20)
+    put(session, "BRENT_M1", days, [70 + i for i in range(20)])
+    put(session, "BRENT_M3", days, [69.0] * 20)
+    spread = signals.compute(session, IndicatorEngine(session, cfg))["modules"][0]
+    assert spread["signals"][0]["status"] == "insufficient" and spread["score"] is None      # 少於 30 個點
+
+    fridays = [TODAY - timedelta(days=7 * i) for i in range(6 * 52 + 2)][::-1]
+    put(session, "EIA_CRUDE_STOCKS", fridays, [400_000 + (30_000 if i > 6 * 52 - 4 else 0) + (i % 7) * 100
+                                               for i in range(len(fridays))])
+    balance = signals.compute(session, IndicatorEngine(session, cfg))["modules"][1]
+    stocks = next(s for s in balance["signals"] if s["code"] == "SIG_US_CRUDE_STOCKS")
+    assert stocks["z"] > 0 and stocks["score"] < 0 and balance["label"] in ("偏空", "強偏空")   # 庫存偏高 → 利空
+
+
+def test_geo_signal_comes_from_confirmed_events_only(session, cfg):
+    events.create(session, cfg, title="航道受阻", category="chokepoint", status="ongoing", bias=2)
+    events.create(session, cfg, title="傳聞", status="rumor", bias=2)
+    events.create(session, cfg, title="模型抽的草稿", status="confirmed", bias=-2, draft=True, origin="llm")
+    events.create(session, cfg, title="已結束", status="resolved", bias=-2)
+    session.commit()
+    result = signals.compute(session, IndicatorEngine(session, cfg))
+    geo = result["modules"][3]
+    assert geo["score"] == 0.5 and [s["name_zh"] for s in geo["signals"]] == ["航道受阻"]
+    set_value(session, "SIG_WEIGHT_GEO", 0)                       # 權重設為 0 → 不計入總分
+    session.commit()
+    assert signals.compute(session, IndicatorEngine(session, cfg))["overall"]["score"] is None
+
+
+# ------------------------------ 事件與預案 ------------------------------
+
+def test_event_validation_and_audit(session, cfg):
+    e = events.create(session, cfg, title="  OPEC+ 會議  ", category="opec_policy", location_code="OPEC")
+    assert e.title == "OPEC+ 會議"
+    events.update(session, cfg, e.id, {"status": "resolved", "bias": -1})
+    session.commit()
+    assert e.status == "resolved" and e.bias == -1
+    for bad, message in [({"bias": 3}, "方向判斷"), ({"status": "x"}, "狀態"), ({"category": "x"}, "類別"),
+                         ({"location_code": "MARS"}, "地區"), ({"title": " "}, "標題"), ({"id": 9}, "不能修改")]:
+        with pytest.raises(events.EventError, match=message):
+            events.update(session, cfg, e.id, bad)
+    with pytest.raises(events.EventError, match="沒有編號"):
+        events.update(session, cfg, 999, {"bias": 0})
+
+
+def test_playbook_turns_an_event_into_a_scenario(session, cfg):
+    e = events.create(session, cfg, title="海峽受阻", category="chokepoint", status="ongoing", bias=2)
+    draft = events.create(session, cfg, title="草稿", draft=True, origin="llm")
+    with pytest.raises(events.EventError, match="先確認"):
+        events.apply_playbook(session, cfg, draft.id, "CHOKEPOINT_DISRUPTION", TODAY)
+    with pytest.raises(events.EventError, match="沒有名為"):
+        events.apply_playbook(session, cfg, e.id, "NOPE", TODAY)
+    scenario = events.apply_playbook(session, cfg, e.id, "CHOKEPOINT_DISRUPTION", date(2026, 12, 1),
+                                     [{"target": "BAL_GLOBAL_S_OPEC", "delta": -2.0, "duration_days": 31}])
+    session.commit()
+    assert scenario.code == f"EVT_{e.id}" and e.scenario_code == scenario.code
+    adj = scenarios.adjustments(session, scenario.code)[0]
+    assert (adj.delta, adj.date_from, adj.date_to) == (-2.0, date(2026, 12, 1), date(2026, 12, 31))
+    events.apply_playbook(session, cfg, e.id, "DEMAND_SHOCK", date(2026, 12, 1))         # 再套一個：沿用同一個情境
+    assert len(scenarios.adjustments(session, scenario.code)) == 2
+    with pytest.raises(events.EventError, match="既不是序列也不是指標"):
+        events.apply_playbook(session, cfg, e.id, "DEMAND_SHOCK", TODAY, [{"target": "NOPE", "delta": 1}])
+
+
+# ------------------------------ 推演 ------------------------------
+
+@pytest.fixture()
+def market(session, cfg):
+    """250 個交易日、日波動恆為 ±1% 的 Brent，以及覆蓋未來四個月的全球平衡（每月過剩 0.5）。"""
+    days = trading_days(250)
+    prices, p = [], 80.0
+    for i in range(250):
+        p *= math.exp(0.01 if i % 2 else -0.01)
+        prices.append(p)
+    put(session, "BRENT_M1", days, prices)
+    months = [month_start(k) for k in range(-1, 4)]
+    for code, value in {"STEO_OPEC_SUPPLY": 33.0, "STEO_NONOPEC_SUPPLY": 70.0,
+                        "STEO_OECD_DEMAND": 46.0, "STEO_NONOECD_DEMAND": 56.5}.items():
+        put(session, code, months, [value] * 5)
+    return prices[-1]
+
+
+def test_projection_matches_hand_calculation(session, cfg, market):
+    price = market
+    scenarios.create(session, "TIGHT", "供應收緊")
+    scenarios.add_adjustment(session, cfg, "TIGHT", "BAL_GLOBAL_S_OPEC", month_start(0), None, -1.0, "減產")
+    p = projection.create(session, "測試推演")
+    base_case = projection.cases(session, p.id)[0]
+    projection.update_case(session, base_case.id, probability=0.6)
+    projection.add_case(session, cfg, p.id, "收緊", "TIGHT", 0.4, price_adjustment=2.0, note="另加風險溢價")
+    session.commit()
+
+    blocked = projection.compute(session, cfg, p.id)                 # 還沒給敏感度：情境分支算不出，也不硬算
+    assert blocked["cases"][1]["horizons"]["M1"]["central"] is None
+    assert "缺參數 PROJ_PRICE_PER_BALANCE" in blocked["cases"][1]["horizons"]["M1"]["reason"]
+    assert blocked["expected"]["M1"] is None
+    assert blocked["cases"][0]["horizons"]["M1"]["central"] == pytest.approx(price)
+
+    set_value(session, "PROJ_PRICE_PER_BALANCE", 8.0)
+    session.commit()
+    result = projection.compute(session, cfg, p.id)
+    returns = np.array([0.01 if i % 2 else -0.01 for i in range(1, 250)])
+    sigma = returns.std(ddof=1)
+    assert result["volatility"]["daily"] == pytest.approx(sigma) and result["anchor"]["price"] == pytest.approx(price)
+    base, tight = result["cases"]
+    for code, trading in (("W1", 5), ("M1", 21), ("M3", 63)):
+        band = price * sigma * math.sqrt(trading)
+        b, t = base["horizons"][code], tight["horizons"][code]
+        assert (b["central"], b["low"], b["high"]) == pytest.approx((price, price - band, price + band))
+        assert t["balance_change"] == pytest.approx(-1.0) and t["balance_effect"] == pytest.approx(8.0)
+        assert t["central"] == pytest.approx(price + 8.0 + 2.0)
+        assert result["expected"][code] == pytest.approx(0.6 * price + 0.4 * (price + 10.0))
+    assert tight["horizons"]["W1"]["periods"] == 1 and tight["horizons"]["M3"]["periods"] >= 3
+    assert result["problems"] == []
+
+
+def test_projection_reports_problems_instead_of_guessing(session, cfg, market):
+    p = projection.create(session, "測試")
+    projection.add_case(session, cfg, p.id, "多一個", None, 0.5)
+    session.commit()
+    result = projection.compute(session, cfg, p.id)
+    assert result["total_probability"] == 1.5 and result["expected"] == {"W1": None, "M1": None, "M3": None}
+    assert any("不等於 100%" in problem for problem in result["problems"])
+    for kwargs, message in [({"probability": 1.5}, "0 到 1"), ({"scenario_code": "NOPE"}, "沒有名為")]:
+        with pytest.raises(projection.ProjectionError, match=message):
+            projection.add_case(session, cfg, p.id, "x", **{"scenario_code": None, "probability": 0.1, **kwargs})
+    with pytest.raises(projection.ProjectionError, match="沒有編號"):
+        projection.compute(session, cfg, 999)
+
+
+def test_projection_without_price_history(session, cfg):
+    p = projection.create(session, "空")
+    session.commit()
+    result = projection.compute(session, cfg, p.id)
+    assert result["anchor"]["price"] is None and result["cases"][0]["horizons"]["M1"]["central"] is None
+    assert any("沒有數據" in problem for problem in result["problems"])
+
+
+# ------------------------------ 大模型接口 ------------------------------
+
+class FakeProvider(LLMProvider):
+    name, model = "fake", "fake-1"
+
+    def __init__(self, reply: str):
+        self.reply, self.calls = reply, []
+
+    def complete(self, system, user, *, json=False, max_tokens=4000):
+        self.calls.append({"system": system, "user": user, "json": json})
+        return self.reply
+
+
+def test_number_guard():
+    reference = "Brent 當前 81.23 美元/桶，月差 +1.50，庫存 430,000 千桶，分位 66%，日期 2026-10-23。"
+    assert unknown_numbers("Brent 在 81.23，月差 1.5，庫存 430000，分位 66%。", reference) == []
+    assert unknown_numbers("Brent 約 81.2 美元，四捨五入是 81。", reference) == []          # 四捨五入到更少位數可以
+    assert unknown_numbers("預計升至 85 美元，漲幅 4.6%。", reference) == ["85", "4.6"]
+    assert unknown_numbers("三大機構、第 2 季、100% 確定。", reference) == []
+
+
+def test_extraction_validates_and_never_trusts_the_model(cfg):
+    reply = """```json
+{"events": [
+  {"title": "海峽通行受阻", "category": "chokepoint", "location_code": "MEG", "status": "ongoing", "bias": 2,
+   "started_on": "2026-11-10", "summary": "摘要"},
+  {"title": "亂填的", "category": "aliens", "location_code": "MARS", "status": "weird", "bias": 1},
+  {"title": "", "bias": 0},
+  {"title": "方向超界", "bias": 9}
+]}
+```"""
+    provider = FakeProvider(reply)
+    found, dropped = extract_events(provider, "一段新聞", cfg)
+    assert dropped == 2 and [e.title for e in found] == ["海峽通行受阻", "亂填的"]
+    assert (found[1].category, found[1].location_code, found[1].status) == ("other", None, "rumor")
+    assert provider.calls[0]["json"] is True and "MEG（中東海灣）" in provider.calls[0]["system"]
+    with pytest.raises(LLMError, match="無法解析"):
+        extract_events(FakeProvider("抱歉，我不確定"), "x", cfg)
+
+
+def test_narrative_is_checked_against_the_report():
+    markdown = "Brent 當前 81.23 美元/桶。"
+    good = write_narrative(FakeProvider("Brent 在 81.23 附近。"), markdown, "日報")
+    assert good["guard_passed"] and good["model"] == "fake-1"
+    bad = write_narrative(FakeProvider("Brent 將升至 90。"), markdown, "日報")
+    assert not bad["guard_passed"] and bad["unknown_numbers"] == ["90"]
+
+
+def test_provider_selection_from_environment(monkeypatch):
+    for key in ("CRUDELAB_LLM_PROVIDER", "CRUDELAB_LLM_MODEL", "DEEPSEEK_API_KEY", "OPENAI_API_KEY"):
+        monkeypatch.delenv(key, raising=False)
+    assert status()["configured"] is False
+    with pytest.raises(LLMNotConfigured, match="還沒有配置"):
+        get_provider()
+    monkeypatch.setenv("CRUDELAB_LLM_PROVIDER", "deepseek")
+    with pytest.raises(LLMNotConfigured, match="DEEPSEEK_API_KEY"):
+        get_provider()
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "k")
+    assert (get_provider().name, get_provider().model) == ("deepseek", "deepseek-chat")
+    monkeypatch.setenv("CRUDELAB_LLM_PROVIDER", "openai")
+    monkeypatch.setenv("OPENAI_API_KEY", "k")
+    with pytest.raises(LLMNotConfigured, match="CRUDELAB_LLM_MODEL"):
+        get_provider()                                           # 不替使用者猜模型名
+    monkeypatch.setenv("CRUDELAB_LLM_PROVIDER", "nope")
+    assert "不認識" in status()["message"]
+
+
+# ------------------------------ 報告與接口 ------------------------------
+
+def test_report_is_a_snapshot_with_every_section(loaded, cfg):
+    events.create(loaded, cfg, title="航道受阻", category="chokepoint", status="ongoing", bias=2)
+    projection.create(loaded, "演示推演")
+    loaded.commit()
+    report = reports.generate(loaded, cfg, "weekly")
+    loaded.commit()
+    text = report.markdown
+    for heading in ("# 原油市場周報", "## 方向信號", "## 地域價差", "## 供需平衡", "## 煉廠盈利", "## 地緣事件",
+                    "## 價格推演"):
+        assert heading in text
+    assert "航道受阻" in text and "缺參數：FLAT_TD3C" in text and "待核對" in text
+    brent_wti = next(i for i in report.facts["indicators"]["spread"]["基準價差"] if i["code"] == "SPR_BRENT_WTI")
+    assert f"{brent_wti['last_value']:,.2f}" in text
+    assert unknown_numbers(text, text) == []
+    assert report.facts["data_date"] == "2026-10-23" and "數據截至 2026-10-23" in text   # 不被月度預測期帶偏
+
+    set_value(loaded, "BBL_PER_T_GASOIL", 9.0)                    # 之後改參數，不影響已生成的報告
+    loaded.commit()
+    assert loaded.get(type(report), report.id).markdown == text
+    with pytest.raises(reports.ReportError, match="報告類型"):
+        reports.generate(loaded, cfg, "yearly")
+
+
+def test_phase4_api(settings, sample_path, monkeypatch):
+    monkeypatch.delenv("CRUDELAB_LLM_PROVIDER", raising=False)
+    client = TestClient(create_app(settings))
+    with sample_path.open("rb") as fh:
+        batch = client.post("/api/imports/preview", files={"file": ("s.xlsx", fh)}, data={"source_code": "demo"}).json()
+    client.post(f"/api/imports/{batch['batch_id']}/commit", json={})
+
+    sig = client.get("/api/signals").json()
+    assert [m["module"] for m in sig["modules"]] == ["spread", "balance", "refinery", "geo"]
+    assert sig["overall"]["label"] in ("強偏多", "偏多", "中性", "偏空", "強偏空")
+
+    event = client.post("/api/events", json={"title": "海峽受阻", "category": "chokepoint", "status": "ongoing",
+                                             "bias": 2, "location_code": "MEG"}).json()
+    assert event["location_name"] == "中東海灣" and event["draft"] is False
+    assert client.post("/api/events", json={"title": "x", "bias": 5}).status_code == 400
+    assert client.patch(f"/api/events/{event['id']}", json={"bias": 1}).json()["bias"] == 1
+    playbooks = client.get("/api/playbooks").json()
+    assert playbooks[0]["impacts"][0]["unit"] == "mb/d"
+    applied = client.post(f"/api/events/{event['id']}/apply-playbook",
+                          json={"playbook": "CHOKEPOINT_DISRUPTION", "start": "2026-12-01"}).json()
+    assert applied == {"scenario_code": f"EVT_{event['id']}", "adjustments": 1}
+    assert client.get("/api/events").json()[0]["adjustments"] == 1
+    table = client.get(f"/api/balances/GLOBAL?scenario=EVT_{event['id']}").json()        # 事件的影響能在平衡表裡看
+    opec = next(r for r in table["rows"] if r["indicator"] == "BAL_GLOBAL_S_OPEC")
+    assert any(abs(v - b + 3.0) < 1e-9 for v, b in zip(opec["values"], opec["base_values"], strict=True))
+
+    assert client.get("/api/llm").json()["configured"] is False
+    assert client.post("/api/events/extract", json={"text": "一段足夠長的新聞文字內容"}).status_code == 409
+
+    pid = client.post("/api/projections", json={"name_zh": "十一月推演"}).json()["id"]
+    case = client.post(f"/api/projections/{pid}/cases", json={
+        "label": "海峽受阻", "scenario_code": f"EVT_{event['id']}", "probability": 0.3, "price_adjustment": 3}).json()
+    base_id = client.get(f"/api/projections/{pid}").json()["cases"][0]["id"]
+    assert client.patch(f"/api/projection-cases/{base_id}", json={"probability": 0.7}).status_code == 200
+    result = client.get(f"/api/projections/{pid}").json()
+    assert result["total_probability"] == pytest.approx(1.0) and len(result["cases"]) == 2
+    assert client.patch(f"/api/projection-cases/{case['id']}", json={"probability": 2}).status_code == 400
+    assert client.get("/api/projections/999").status_code == 404
+    assert client.get("/api/projections").json()[0]["cases"] == 2
+
+    report = client.post("/api/reports", json={"kind": "daily"}).json()
+    detail = client.get(f"/api/reports/{report['id']}").json()
+    assert "海峽受阻" in detail["markdown"] and "十一月推演" in detail["markdown"] and detail["narrative"] is None
+    download = client.get(f"/api/reports/{report['id']}/markdown")
+    assert download.headers["content-type"].startswith("text/markdown") and download.text == detail["markdown"]
+    assert client.post(f"/api/reports/{report['id']}/narrative").status_code == 409      # 沒配大模型
+    assert client.post("/api/reports", json={"kind": "yearly"}).status_code == 400
+    assert client.delete(f"/api/projection-cases/{case['id']}").status_code == 200
+    assert client.get("/api/reports/999").status_code == 404

@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 
 import pandas as pd
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .models import DataSource, Observation, ObservationRevision, Series, utcnow
@@ -121,3 +121,14 @@ def to_series(points: pd.DataFrame, code: str) -> pd.Series:
     part = points[points["series_code"] == code]
     return pd.Series(part["value"].to_numpy(dtype=float),
                      index=pd.DatetimeIndex(pd.to_datetime(part["obs_date"])), name=code).sort_index()
+
+
+def latest_market_date(session: Session, market_series: list[str], today: date | None = None) -> date | None:
+    """「數據截至哪一天」：日度和周度序列裡、不晚於今天的最新日期。
+
+    月度、季度數據記在期間第一天，還可能帶未來的預測期，不能用來回答這個問題。
+    """
+    if not market_series:
+        return None
+    return session.scalar(select(func.max(Observation.obs_date)).where(
+        Observation.series_code.in_(market_series), Observation.obs_date <= (today or date.today())))

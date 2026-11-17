@@ -31,6 +31,11 @@ from .schema import EPOCH
 MIN_OBS_FOR_PERCENTILE = 20
 
 
+def _empty() -> pd.Series:
+    """沒有結果時的回傳值。索引固定是日期型，調用方可以放心和日期比較。"""
+    return pd.Series(dtype=float, index=pd.DatetimeIndex([]))
+
+
 @dataclass(frozen=True)
 class RangedShift:
     """在 [date_from, date_to] 之間給 target（序列或指標）加上 delta。date_to 為空 = 一直持續。"""
@@ -89,7 +94,7 @@ class IndicatorEngine:
         if key in self.scenario.parameters:
             return pd.Series([float(self.scenario.parameters[key])], index=pd.DatetimeIndex([pd.Timestamp(EPOCH)]))
         frame = self._versions.get(key)
-        return frame["value"].astype(float) if frame is not None else pd.Series(dtype=float)
+        return frame["value"].astype(float) if frame is not None else _empty()
 
     def _shifted(self, name: str, values: pd.Series) -> pd.Series:
         """套用情境裡針對 name 的加減。"""
@@ -166,7 +171,7 @@ class IndicatorEngine:
         if not dynamic:
             self._step.add(code)
         if any(values.empty for values in env.values()):
-            result = pd.Series(dtype=float)
+            result = _empty()
         else:
             index = pd.DatetimeIndex([])
             for name in dynamic or env:

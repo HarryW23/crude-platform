@@ -43,7 +43,8 @@ def cmd_check(_args) -> int:
         return 1
     print(f"配置無誤：{len(cfg.series)} 條序列，{len(cfg.parameters)} 個參數，"
           f"{len(cfg.indicators)} 個指標，{len(cfg.refineries)} 個煉廠模型，"
-          f"{len(cfg.balances)} 張平衡表，{len(cfg.relations)} 個關係模型")
+          f"{len(cfg.balances)} 張平衡表，{len(cfg.relations)} 個關係模型，"
+          f"{len(cfg.signals)} 個信號，{len(cfg.playbooks)} 個事件預案")
     return 0
 
 

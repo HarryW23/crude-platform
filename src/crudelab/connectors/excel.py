@@ -23,7 +23,8 @@ from openpyxl.utils import get_column_letter
 from ..ingest import Obs
 from ..periods import parse_period
 
-MAX_ROWS, MAX_COLS, HEADER_DEPTH = 50_000, 400, 12
+# 讀取上限。超過時不會靜默丟棄：預覽裡會標明這張表被截斷了。
+MAX_ROWS, MAX_COLS, HEADER_DEPTH = 200_000, 16_384, 12
 _DATE_FORMATS = ("%Y-%m-%d", "%Y/%m/%d", "%Y.%m.%d", "%Y%m%d", "%d-%b-%Y", "%d %b %Y", "%d-%b-%y",
                  "%b %d, %Y", "%Y年%m月%d日", "%d/%m/%Y")
 _TIME_TAIL = re.compile(r"[ T]\d{1,2}:\d{2}(:\d{2})?(\.\d+)?$")
@@ -100,8 +101,9 @@ def parse_number(value) -> float | None:
     return None
 
 
-def read_grids(path: Path) -> dict[str, list[list]]:
-    """把文件讀成 {工作表名: 二維格子}。"""
+def read_grids(path: Path) -> tuple[dict[str, list[list]], dict[str, str]]:
+    """把文件讀成 {工作表名: 二維格子}，以及 {工作表名: 截斷說明}（只含被截斷的表）。"""
+    truncated: dict[str, str] = {}
     suffix = path.suffix.lower()
     if suffix in (".xlsx", ".xlsm"):
         wb = load_workbook(path, read_only=True, data_only=True)
@@ -109,10 +111,17 @@ def read_grids(path: Path) -> dict[str, list[list]]:
             grids = {}
             for ws in wb.worksheets:
                 rows = []
-                for row in ws.iter_rows(values_only=True, max_row=MAX_ROWS, max_col=MAX_COLS):
-                    rows.append(list(row))
+                width = 0
+                for row in ws.iter_rows(values_only=True):       # 不指定 max_col：只讀實際有內容的寬度
+                    if len(rows) >= MAX_ROWS:
+                        break
+                    width = max(width, len(row))
+                    rows.append(list(row[:MAX_COLS]))
                 grids[ws.title] = rows
-            return grids
+                if (ws.max_row or len(rows)) > MAX_ROWS or width > MAX_COLS:
+                    truncated[ws.title] = (f"這張表有 {ws.max_row or len(rows)} 行 × {width} 列，超過讀取上限"
+                                           f"（{MAX_ROWS} 行 × {MAX_COLS} 列），超出的部分沒有讀入")
+            return grids, truncated
         finally:
             wb.close()
     if suffix in (".csv", ".txt"):
@@ -127,7 +136,9 @@ def read_grids(path: Path) -> dict[str, list[list]]:
             raise ValueError("無法識別 CSV 的文字編碼")
         dialect = csv.Sniffer().sniff(text[:4096], delimiters=",;\t") if text.strip() else csv.excel
         rows = [[c if c != "" else None for c in row] for row in csv.reader(text.splitlines(), dialect)]
-        return {"CSV": rows[:MAX_ROWS]}
+        if len(rows) > MAX_ROWS:
+            truncated["CSV"] = f"文件有 {len(rows)} 行，超過讀取上限 {MAX_ROWS} 行，超出的部分沒有讀入"
+        return {"CSV": rows[:MAX_ROWS]}, truncated
     if suffix == ".xls":
         raise ValueError("不支援舊版 .xls，請在 Excel 裡另存為 .xlsx")
     raise ValueError(f"不支援的文件類型：{suffix or '（無副檔名）'}")
@@ -255,8 +266,11 @@ def parse_workbook(path: Path, resolver: Resolver,
                    mapping: dict[str, str | None] | None = None) -> tuple[list[SheetPreview], list[Obs]]:
     """mapping 為 None 時只做預覽；給了 mapping 時，回傳按 mapping（缺省用自動識別結果）取出的數據點。"""
     previews, observations = [], []
-    for name, grid in read_grids(path).items():
+    grids, truncated = read_grids(path)
+    for name, grid in grids.items():
         preview, obs = _parse_sheet(name, grid, resolver, mapping)
+        if name in truncated:
+            preview.note = "；".join(filter(None, [preview.note, truncated[name]]))
         previews.append(preview)
         observations.extend(obs)
     return previews, observations

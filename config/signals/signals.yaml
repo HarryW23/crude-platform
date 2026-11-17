@@ -1,0 +1,33 @@
+# 方向信號：看某個序列或指標的最新值相對自身歷史偏高還是偏低，折成 −1（利空）到 +1（利多）的分數。
+#   z     = (最新值 − 回看期均值) / 回看期標準差
+#   score = clip(z / 2, −1, 1) × direction
+#   direction  +1 = 數值越高對油價越利多；−1 = 越高越利空。這是方向判斷，請按你的理解核對
+#   lookback_days  回看多少天；min_points 樣本少於這個數就不出分
+#   weight     在模組內的權重
+# 地緣模組的信號來自事件庫（各事件的方向判斷），不在這裡定義。
+# 模組之間的權重是參數 SIG_WEIGHT_*，在後台修改。
+
+# ---------- 地域價差：月差結構和現貨相對期貨的強弱 ----------
+- {code: SIG_BRENT_STRUCTURE, name_zh: Brent 月差, module: spread, input: TS_BRENT_M1_M3, direction: 1,
+   notes: 近月相對遠月越強，現貨越緊}
+- {code: SIG_WTI_STRUCTURE, name_zh: WTI 月差, module: spread, input: TS_WTI_M1_M3, direction: 1}
+- {code: SIG_DUBAI_STRUCTURE, name_zh: Dubai 月差, module: spread, input: TS_DUBAI_M1_M3, direction: 1}
+- {code: SIG_DATED_FRONTLINE, name_zh: 即期 Brent 相對期貨, module: spread, input: SPR_DATED_FRONTLINE, direction: 1,
+   notes: 現貨升水越高，實貨越緊}
+
+# ---------- 供需：庫存、平衡、需求 ----------
+- {code: SIG_US_CRUDE_STOCKS, name_zh: 美國原油庫存偏離, module: balance, input: STK_US_CRUDE_VS_5Y, direction: -1,
+   lookback_days: 1095, notes: 庫存高於五年均值越多越利空}
+- {code: SIG_US_DISTILLATE_STOCKS, name_zh: 美國餾分油庫存偏離, module: balance, input: STK_US_DISTILLATE_VS_5Y, direction: -1,
+   lookback_days: 1095}
+- {code: SIG_OECD_STOCKS, name_zh: OECD 庫存偏離, module: balance, input: STK_OECD_VS_5Y, direction: -1,
+   lookback_days: 1825, min_points: 24}
+- {code: SIG_GLOBAL_BALANCE, name_zh: 全球平衡, module: balance, input: BAL_GLOBAL_BALANCE, direction: -1,
+   lookback_days: 1825, min_points: 24, notes: 供應過剩越大越利空}
+- {code: SIG_US_DEMAND, name_zh: 美國成品油需求同比, module: balance, input: DEM_US_TOTAL_YOY, direction: 1,
+   lookback_days: 1095}
+
+# ---------- 煉廠：利潤高，煉廠有動力多買原油 ----------
+- {code: SIG_US_321, name_zh: 美國 3-2-1 裂解, module: refinery, input: CRK_US_321, direction: 1}
+- {code: SIG_ICE_GASOIL_CRACK, name_zh: ICE 柴油裂解, module: refinery, input: CRK_ICE_GASOIL, direction: 1}
+- {code: SIG_SG_MARGIN, name_zh: 新加坡複雜型毛利, module: refinery, input: RM_SG_COMPLEX_MARGIN, direction: 1}

@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 from sqlalchemy import func, select
@@ -97,3 +97,24 @@ def test_cell_parsers():
     assert parse_date("2026年9月") == date(2026, 9, 1) and parse_date("Q5 2026") is None
     assert parse_date("2026.09") is None and parse_date("May") is None           # 像數字或不完整的不算
     assert parse_number("1,234.5") == 1234.5 and parse_number("N/A") is None and parse_number(True) is None
+
+
+def test_wide_transposed_sheets_are_not_silently_truncated(session, settings, tmp_path, monkeypatch):
+    from openpyxl import Workbook
+
+    from crudelab.connectors import excel
+    wb = Workbook()
+    ws = wb.active
+    days = [date(2024, 1, 1) + timedelta(days=i) for i in range(900)]           # 橫排 900 個日期
+    ws.append(["品種", *days])
+    ws.append(["新加坡柴油", *[90 + i * 0.01 for i in range(900)]])
+    path = tmp_path / "wide.xlsx"
+    wb.save(path)
+    preview = preview_file(session, settings, path.read_bytes(), "wide.xlsx", "demo")
+    column = preview["sheets"][0]["columns"][0]
+    assert column["n_values"] == 900 and column["last_date"] == days[-1].isoformat() and preview["warnings"] == []
+
+    monkeypatch.setattr(excel, "MAX_COLS", 100)                                  # 真的超過上限時：明說，不靜默
+    cut = preview_file(session, settings, path.read_bytes(), "wide.xlsx", "demo")
+    assert cut["sheets"][0]["columns"][0]["n_values"] == 99
+    assert any("沒有讀入" in w for w in cut["warnings"])

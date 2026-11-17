@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from ...config import ConfigError
 from ...indicators import IndicatorEngine
+from ...ingest import latest_market_date
 from ...models import AuditLog, ImportBatch, Observation, Parameter
 from ..deps import AppState, get_db, get_engine, get_state
 
@@ -23,7 +24,7 @@ def overview(session: Session = Depends(get_db), state: AppState = Depends(get_s
         "series_total": len(state.cfg.series),
         "series_with_data": session.scalar(select(func.count(func.distinct(Observation.series_code)))) or 0,
         "observations": session.scalar(select(func.count()).select_from(Observation)),
-        "last_obs_date": session.scalar(select(func.max(Observation.obs_date))),
+        "last_obs_date": latest_market_date(session, state.cfg.market_series),
         "indicators_total": len(visible),
         "indicators_ok": statuses.count("ok"),
         "indicators_missing_data": statuses.count("missing_data") + statuses.count("no_overlap"),

@@ -26,7 +26,7 @@ def test_pages_and_empty_state(client):
     assert client.get("/static/js/app.js").status_code == 200
     o = client.get("/api/overview").json()
     assert o["observations"] == 0 and o["indicators_ok"] == 0 and o["series_total"] == 106
-    assert o["parameters_missing"] == 5 and o["refinery_models"] == 5
+    assert o["parameters_missing"] == 6 and o["refinery_models"] == 5
     assert all(i["status"] != "ok" and i["last_value"] is None for i in client.get("/api/indicators").json())
     assert client.get("/api/refineries/CN_FUEL_SD").json()["breakdown"] is None
 

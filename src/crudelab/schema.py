@@ -251,3 +251,63 @@ class RelationDef(Strict):
     lookback_days: int = Field(default=1095, ge=30)     # 用最近多少天的樣本來擬合
     min_points: int = Field(default=30, ge=10)          # 樣本少於這個數就不擬合
     notes: str | None = None
+
+
+# ------------------------------ 信號 ------------------------------
+
+class SignalDef(Strict):
+    """一個方向信號：看某個序列或指標的最新值相對自身歷史偏高還是偏低。
+
+    z = (最新值 − 回看期均值) / 回看期標準差；score = clip(z / 2, −1, 1) × direction。
+    direction = +1 表示數值越高對油價越利多，−1 表示越高越利空。
+    """
+    code: str = Code
+    name_zh: str
+    module: Literal["spread", "balance", "refinery"]     # 地緣模組的信號來自事件庫，不在這裡定義
+    input: str
+    direction: Literal[1, -1]
+    lookback_days: int = Field(default=730, ge=30)
+    min_points: int = Field(default=30, ge=10)
+    weight: float = Field(default=1.0, gt=0)
+    notes: str | None = None
+
+
+# ------------------------------ 地緣：事件預案 ------------------------------
+
+EventCategory = Literal["conflict", "chokepoint", "sanction", "opec_policy", "outage", "policy", "demand", "other"]
+
+
+class ImpactDef(Strict):
+    target: str                    # 序列或指標代碼，通常是平衡表的單項
+    delta: float                   # 示意值：套用時由使用者確認或修改
+    duration_days: int | None = Field(default=None, ge=1)     # 空 = 一直持續
+    note: str | None = None
+
+
+class PlaybookDef(Strict):
+    """事件預案：某一類事件通常影響哪些項目。套用到具體事件時生成一個情境，數值可以逐項改。"""
+    code: str = Code
+    name_zh: str
+    category: EventCategory
+    description: str
+    impacts: list[ImpactDef] = Field(min_length=1)
+
+
+# ------------------------------ 推演設定 ------------------------------
+
+class HorizonDef(Strict):
+    code: str = Code
+    name_zh: str
+    calendar_days: int = Field(ge=1)
+    trading_days: int = Field(ge=1)
+
+
+class ProjectionSettings(Strict):
+    """價格推演的全局設定。算法見 projection.py。"""
+    anchor: str                    # 推演的價格：序列代碼
+    balance_indicator: str         # 用哪個平衡指標衡量情境對供需的影響
+    sensitivity_parameter: str     # 參數 key：平衡每變化一個單位，價格反向變化多少
+    volatility_lookback: int = Field(default=250, ge=20)
+    volatility_min_points: int = Field(default=60, ge=20)
+    horizons: list[HorizonDef] = Field(min_length=1)
+    module_weights: dict[Literal["spread", "balance", "refinery", "geo"], str]     # 模組 → 權重參數 key

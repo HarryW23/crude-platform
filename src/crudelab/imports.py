@@ -57,6 +57,7 @@ def preview_file(session: Session, settings: Settings, content: bytes, filename:
     earlier = session.scalars(select(ImportBatch.id).where(
         ImportBatch.sha256 == digest, ImportBatch.status == "committed")).all()
     warnings = _duplicates(previews, None)
+    warnings += [f"{p.name}：{p.note}" for p in previews if p.note and "沒有讀入" in p.note]
     if earlier:
         warnings.append(f"同一個文件之前已導入過（批次 {', '.join(map(str, earlier))}），重複導入不會產生重複數據")
     return {"batch_id": batch.id, "filename": filename, "source_code": source_code,

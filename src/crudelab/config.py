@@ -11,6 +11,9 @@ config/ 的結構：
     refineries/*.yaml          煉廠模型（一個文件一個模型）
     balances/*.yaml            供需平衡表（一個文件一張表）
     relations/*.yaml           關係模型（線性擬合）
+    signals/*.yaml             方向信號
+    geo/playbooks.yaml         地緣事件預案
+    projection.yaml            價格推演設定
 
 校驗一次做完並一次報全：結構（字段名、類型）、引用（單位、地區、品種、公式裡的名字）、
 唯一性（代碼、別名）、公式語法、循環引用、量綱。任何一項不過，整份配置都不生效。
@@ -37,10 +40,13 @@ from .schema import (
     IndicatorDef,
     LocationDef,
     ParameterDef,
+    PlaybookDef,
+    ProjectionSettings,
     RefineryModelDef,
     RelationDef,
     SeriesDef,
     SeriesFile,
+    SignalDef,
     SourceDef,
     Strict,
     UnitDef,
@@ -73,6 +79,21 @@ class Config:
     refineries: dict[str, RefinerySpec] = field(default_factory=dict)
     balances: dict[str, BalanceSpec] = field(default_factory=dict)
     relations: dict[str, RelationDef] = field(default_factory=dict)
+    signals: dict[str, SignalDef] = field(default_factory=dict)
+    playbooks: dict[str, PlaybookDef] = field(default_factory=dict)
+    projection: ProjectionSettings | None = None
+
+    @property
+    def market_series(self) -> list[str]:
+        """日度和周度的序列：用來判斷「數據截至哪一天」。"""
+        return [s.code for s in self.series.values() if s.frequency in ("daily", "weekly")]
+
+    def has(self, name: str) -> bool:
+        """name 是不是一個能取值的序列或指標。"""
+        return name in self.series or name in self.indicators
+
+    def name_of(self, name: str) -> str:
+        return self.indicators[name].name_zh if name in self.indicators else self.series[name].name_zh
 
     def frequency_of(self, name: str) -> str:
         """一個序列或指標的頻率。指標取它依賴的序列裡最粗的頻率；只依賴參數的指標算 daily。"""
@@ -191,6 +212,14 @@ def load_config(config_dir: Path) -> Config:
     cfg.balances = ld.keyed(balance_specs, "平衡表")
     cfg.relations = ld.keyed([r for path in _optional(config_dir / "relations")
                               for r in ld.items(RelationDef, path)], "關係模型")
+    cfg.signals = ld.keyed([s for path in _optional(config_dir / "signals")
+                            for s in ld.items(SignalDef, path)], "信號")
+    playbook_path = config_dir / "geo" / "playbooks.yaml"
+    if playbook_path.exists():
+        cfg.playbooks = ld.keyed(ld.items(PlaybookDef, playbook_path), "事件預案")
+    projection_path = config_dir / "projection.yaml"
+    if projection_path.exists():
+        cfg.projection = ld.build(ProjectionSettings, ld.read(projection_path) or {}, projection_path)
     cfg.parameters = ld.keyed(params, "參數", key="key")
     cfg.indicators = ld.keyed(indicators, "指標")
     cfg.refineries = ld.keyed(specs, "煉廠模型")
@@ -243,7 +272,36 @@ def _validate(cfg: Config) -> list[str]:
             if side not in cfg.series and side not in cfg.indicators:
                 errors.append(f"關係模型 {r.code}：{side} 既不是序列也不是指標")
 
+    for s in cfg.signals.values():
+        if not cfg.has(s.input):
+            errors.append(f"信號 {s.code}：{s.input} 既不是序列也不是指標")
+    for pb in cfg.playbooks.values():
+        errors += [f"事件預案 {pb.code}：{i.target} 既不是序列也不是指標" for i in pb.impacts if not cfg.has(i.target)]
+    errors += _validate_projection(cfg)
     errors += _validate_indicators(cfg)
+    return errors
+
+
+def _validate_projection(cfg: Config) -> list[str]:
+    p = cfg.projection
+    if p is None:
+        return []
+    errors = []
+    if p.anchor not in cfg.series:
+        errors.append(f"projection.yaml：anchor {p.anchor} 不是序列")
+    if p.balance_indicator not in cfg.indicators:
+        errors.append(f"projection.yaml：balance_indicator {p.balance_indicator} 不是指標")
+    for key in (p.sensitivity_parameter, *p.module_weights.values()):
+        if key not in cfg.parameters:
+            errors.append(f"projection.yaml：參數 {key} 不存在")
+    if errors:
+        return errors
+    try:    # 敏感度的單位必須是 價格單位 ÷ 平衡單位，這樣 敏感度 × 平衡變化 才是價格
+        expected = units.divide(cfg.dim(cfg.series[p.anchor].unit), cfg.dim(cfg.indicators[p.balance_indicator].unit))
+        if cfg.dim(cfg.parameters[p.sensitivity_parameter].unit) != expected:
+            errors.append(f"projection.yaml：{p.sensitivity_parameter} 的單位應該是 {units.format_dim(expected)}")
+    except units.UnitError as exc:
+        errors.append(f"projection.yaml：{exc}")
     return errors
 
 

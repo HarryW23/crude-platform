@@ -1,0 +1,15 @@
+# 價格推演的全局設定。算法說明見 src/crudelab/projection.py 開頭。
+anchor: BRENT_M1                          # 推演哪個價格
+balance_indicator: BAL_GLOBAL_BALANCE     # 用哪個平衡指標衡量各情境對供需的影響
+sensitivity_parameter: PROJ_PRICE_PER_BALANCE
+volatility_lookback: 250                  # 用最近多少個交易日的日收益率算波動
+volatility_min_points: 60                 # 少於這個數就不給區間
+horizons:
+  - {code: W1, name_zh: 1 周,   calendar_days: 7,  trading_days: 5}
+  - {code: M1, name_zh: 1 個月, calendar_days: 30, trading_days: 21}
+  - {code: M3, name_zh: 3 個月, calendar_days: 91, trading_days: 63}
+module_weights:                           # 各模組信號在綜合分數裡的權重（參數 key）
+  spread: SIG_WEIGHT_SPREAD
+  balance: SIG_WEIGHT_BALANCE
+  refinery: SIG_WEIGHT_REFINERY
+  geo: SIG_WEIGHT_GEO

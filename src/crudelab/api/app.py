@@ -12,7 +12,21 @@ from ..config import load_config
 from ..master import sync_to_db
 from ..settings import Settings, get_settings
 from .deps import AppState
-from .routes import analysis, balances, core, imports, indicators, parameters, refineries, scenarios, series, sources
+from .routes import (
+    analysis,
+    balances,
+    core,
+    geo,
+    imports,
+    indicators,
+    outlook,
+    parameters,
+    refineries,
+    reports,
+    scenarios,
+    series,
+    sources,
+)
 
 WEB_DIR = Path(__file__).resolve().parents[1] / "web"
 
@@ -30,10 +44,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     db.init_engine(settings)
     cfg, _ = load_and_sync(settings)
 
-    app = FastAPI(title="crudelab", version="0.3.0")
+    app = FastAPI(title="crudelab", version="0.4.0")
     app.state.crudelab = AppState(settings=settings, cfg=cfg)
     for module in (core, series, imports, indicators, parameters, refineries, balances, scenarios, analysis,
-                   sources):
+                   geo, outlook, reports, sources):
         app.include_router(module.router, prefix="/api")
 
     @app.get("/", include_in_schema=False)
