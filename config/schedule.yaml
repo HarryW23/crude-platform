@@ -13,6 +13,7 @@
 #     pull           從接口取數。還沒配密鑰時只記「跳過」，不算失敗
 #     report         生成報告。kind: daily / weekly / monthly；narrative: true 會調用大模型寫解讀（要花錢）
 #     check_freshness  檢查數據有沒有斷更（規則在 freshness.yaml）。有斷更時記為失敗，從而觸發通知
+#     backup         備份數據庫、配置和原始文件，並清理舊備份（位置和保留策略在 backup.yaml）
 timezone: Asia/Shanghai
 
 jobs:
@@ -30,3 +31,6 @@ jobs:
   - {code: REPORT_WEEKLY, name_zh: 生成周報, action: report, kind: weekly, at: "19:00", days: [fri]}
   - {code: REPORT_MONTHLY, name_zh: 生成月報, action: report, kind: monthly, at: "09:00", day_of_month: 1,
      enabled: false}
+
+  # 每天凌晨備份一次（避開導入和報告的時間）。失敗會走失敗通知
+  - {code: BACKUP_DAILY, name_zh: 每日備份, action: backup, at: "02:30", days: daily}

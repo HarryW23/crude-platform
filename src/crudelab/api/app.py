@@ -24,6 +24,7 @@ from .deps import AppState, Site
 from .routes import (
     analysis,
     backtest,
+    backups,
     balances,
     chat,
     core,
@@ -49,7 +50,7 @@ ROUTERS = {
     "front": [*_COMMON, refineries.router, balances.router, analysis.router, scenarios.router, geo.router,
               outlook.router, reports.router, chat.router, backtest.router],
     "admin": [*_COMMON, core.admin_router, series.admin_router, imports.admin_router, parameters.admin_router,
-              sources.admin_router, auth_routes.admin_router, schedule.admin_router],
+              sources.admin_router, auth_routes.admin_router, schedule.admin_router, backups.admin_router],
 }
 _TITLES = {"front": "crudelab 前台", "admin": "crudelab 後台"}
 _PAGES = {"front": "index.html", "admin": "admin.html"}

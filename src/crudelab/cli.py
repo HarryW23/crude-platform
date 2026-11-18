@@ -299,6 +299,82 @@ def cmd_scheduler(_args) -> int:
         return 0
 
 
+def _backup_file(settings, cfg, given: str) -> Path:
+    """命令行裡的備份文件：可以給路徑，也可以只給備份目錄裡的文件名。"""
+    from . import backup
+    path = Path(given).expanduser()
+    if not path.exists() and backup.NAME.match(given):
+        path = backup.directory(settings, cfg) / given
+    if not path.is_file():
+        raise backup.BackupError(f"找不到備份文件 {given}")
+    return path
+
+
+def cmd_backup(args) -> int:
+    from . import backup
+    from .config import load_config
+    settings = get_settings()
+    cfg = load_config(settings.config_dir)
+    try:
+        if args.action == "list":
+            rows = backup.list_backups(settings, cfg)
+            print(f"備份目錄：{backup.directory(settings, cfg)}")
+            for b in rows:
+                note = f"  ！{b['error']}" if b["error"] else f"  數據點 {b['observations']}，原始文件 {b['raw_files']} 個"
+                print(f"  {b['name']}  {b['size'] / 1e6:8.1f} MB  {b['label_zh']}{note}")
+            if not rows:
+                print("  還沒有備份")
+            return 0
+        if args.action == "verify":
+            if not args.file:
+                print("請給出要校驗的備份文件", file=sys.stderr)
+                return 1
+            result = backup.verify(_backup_file(settings, cfg, args.file))
+            print(f"校驗通過：{result['name']}，{result['files']} 個文件的校驗碼都一致")
+            return 0
+        if args.action == "prune":
+            removed = backup.prune(settings, cfg)
+            print(f"清理了 {len(removed)} 份舊的定時備份" + "".join(f"\n  {n}" for n in removed))
+            return 0
+        _init()
+        made = backup.create(settings, cfg, "manual")
+        print(f"已備份並校驗：{backup.directory(settings, cfg) / made['name']}（{made['size'] / 1e6:.1f} MB）")
+        if backup.same_disk(settings, cfg):
+            print("注意：備份和數據在同一塊磁盤上，防不了硬盤損壞。正式使用時把 config/backup.yaml 的 directory "
+                  "指到另一塊硬盤、NAS 或雲同步文件夾")
+        print("備份裡不含密鑰：換機器恢復後要用 crudelab secret set 重新錄入")
+        return 0
+    except backup.BackupError as exc:
+        print(exc, file=sys.stderr)
+        return 1
+
+
+def cmd_restore(args) -> int:
+    from . import backup
+    from .config import load_config
+    settings = get_settings()
+    cfg = load_config(settings.config_dir)
+    try:
+        path = _backup_file(settings, cfg, args.file)
+        manifest = backup.read_manifest(path)
+        counts = manifest.get("counts", {})
+        print(f"備份：{path.name}\n  做於 {manifest['created_at']}（UTC），程序版本 {manifest.get('version')}，"
+              f"數據點 {counts.get('observation')} 個，文件 {len(manifest['files'])} 個")
+        print(f"將覆蓋：{settings.safe_database_url} 和 {settings.data_dir} 下的同名文件"
+              + ("，以及配置文件" if args.with_config else "（配置文件不動，要一起恢復加 --with-config）"))
+        if not args.yes:
+            print("恢復前會先自動備份現在的數據。確認恢復請加 --yes", file=sys.stderr)
+            return 1
+        result = backup.restore(settings, cfg, path, with_config=args.with_config, force=args.force)
+    except backup.BackupError as exc:
+        print(exc, file=sys.stderr)
+        return 1
+    print("恢復完成。" + (f"恢復前的數據已備份為 {result['safety_backup']}，需要時可以再恢復回去。"
+                        if result["safety_backup"] else ""))
+    print("密鑰不在備份裡：如果是在新機器上恢復，用 crudelab secret list 檢查並重新錄入。")
+    return 0
+
+
 def cmd_run_job(args) -> int:
     from . import jobs
     from .config import ConfigError, load_config
@@ -433,6 +509,17 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("run-job", help="立即運行一個定時任務；不給名字則列出全部")
     p.add_argument("code", nargs="?")
     p.set_defaults(func=cmd_run_job)
+    p = sub.add_parser("backup", help="備份：不給動作就立即做一份手動備份")
+    p.add_argument("action", nargs="?", choices=["create", "list", "verify", "prune"], default="create",
+                   help="create 立即備份（預設）/ list 列出 / verify 校驗一份 / prune 按保留策略清理定時備份")
+    p.add_argument("file", nargs="?", help="verify 時要校驗的備份（路徑，或備份目錄裡的文件名）")
+    p.set_defaults(func=cmd_backup)
+    p = sub.add_parser("restore", help="從備份恢復（會先自動備份現在的數據）")
+    p.add_argument("file", help="備份文件（路徑，或備份目錄裡的文件名）")
+    p.add_argument("--yes", action="store_true", help="確認恢復")
+    p.add_argument("--with-config", action="store_true", help="連配置文件一起恢復（預設不動配置文件）")
+    p.add_argument("--force", action="store_true", help="跳過「服務還開著」和「恢復前備份失敗」的檢查")
+    p.set_defaults(func=cmd_restore)
     p = sub.add_parser("data-needs", help="生成數據與接口需求清單")
     p.add_argument("--output", help="寫入這個文件；不給就打印")
     p.set_defaults(func=cmd_data_needs)

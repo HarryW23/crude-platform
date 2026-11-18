@@ -112,6 +112,8 @@ Windows 把 `.venv/bin/` 換成 `.venv\Scripts\`。
 | `crudelab secret list / set / unset` | 密鑰管理 |
 | `crudelab data-needs` | 生成數據與接口需求清單 |
 | `crudelab backtest` | 回測信號和推演區間 |
+| `crudelab backup` / `backup list` / `backup verify 文件` | 立即備份 / 列出備份 / 校驗一份備份 |
+| `crudelab restore 文件 --yes` | 從備份恢復（先自動備份現在的數據） |
 | `pytest` / `ruff check src tests` | 測試 / 代碼檢查 |
 
 ## 回測
@@ -139,7 +141,7 @@ Windows 把 `.venv/bin/` 換成 `.venv\Scripts\`。
 
 ## 定時任務
 
-`crudelab serve` 啟動時會一併運行調度器（雙擊啟動也一樣），按 `config/schedule.yaml` 裡的安排自動做三類事：
+`crudelab serve` 啟動時會一併運行調度器（雙擊啟動也一樣），按 `config/schedule.yaml` 裡的安排自動執行：
 
 | 預設任務 | 時間（北京時間） | 做什麼 |
 |---|---|---|
@@ -149,6 +151,7 @@ Windows 把 `.venv/bin/` 換成 `.venv\Scripts\`。
 | 生成日報 | 周一至周五 18:30 | |
 | 生成周報 | 每周五 19:00 | |
 | 生成月報 | 每月 1 號 09:00 | 預設停用 |
+| 每日備份 | 每天 02:30 | 備份數據庫、配置和原始文件並校驗，清理舊的定時備份。見「備份與恢復」 |
 
 **收件夾的用法**：整理數據的同事把文件放進 `data/inbox/`（第一次啟動後自動建立），十分鐘內自動入庫。
 自動導入只入庫能認出來的列；有認不出的列時，任務結果裡會提示，到後台「數據導入」頁手動上傳一次並指定對應，之後同樣的表頭就能自動識別。
@@ -338,6 +341,7 @@ config/                 所有可調的東西
   freshness.yaml        數據斷更的判斷規則
   fair_value.yaml       公允價值模型
   backtest.yaml         回測設定（發佈延遲等）
+  backup.yaml           備份位置與保留策略
 src/crudelab/
   schema.py config.py   配置的結構與校驗
   units.py formula.py   單位代數、公式語言
@@ -362,6 +366,7 @@ src/crudelab/
   contracts.py          合約日曆與換月處理
   fair_value.py         基本面公允價值
   backtest.py           回測
+  backup.py             備份與恢復
   connectors/ imports.py 數據接入
   api/                  接口：app.py 定義前台和後台兩個應用各包含哪些路由
   web/                  頁面：index.html 前台、admin.html 後台；js/views/front、js/views/admin
@@ -372,7 +377,7 @@ docs/architecture.md
 
 ## 數據庫
 
-預設 SQLite，文件在 `data/crudelab.db`（不進 git，請自行備份 `data/`）。
+預設 SQLite，文件在 `data/crudelab.db`（不進 git，備份見下一節）。
 
 換 PostgreSQL：安裝 `pip install -e ".[postgres]"`，然後把連接串存進密鑰文件（輸入不回顯）：
 
@@ -380,7 +385,42 @@ docs/architecture.md
 .venv/bin/crudelab secret set DATABASE_URL
 ```
 
-連接串的格式是 `postgresql+psycopg://用戶名:密碼@主機:5432/庫名`。本機試驗可以用倉庫裡的 `docker-compose.yml` 起一個 PostgreSQL，密碼的設法寫在那個文件的開頭。PostgreSQL 路徑尚未實測。
+連接串的格式是 `postgresql+psycopg://用戶名:密碼@主機:5432/庫名`。本機試驗可以用倉庫裡的 `docker-compose.yml` 起一個 PostgreSQL，密碼的設法寫在那個文件的開頭。
+PostgreSQL 上的建表、導入、備份和恢復已經實測過；前台後台各頁面在 PostgreSQL 上還沒有完整走過一遍。
+
+## 備份與恢復
+
+**備什麼**：數據庫、`config/`、`data/` 下導入時保存的原始文件和收件夾，打包成一個 `.tar.gz`，附每個文件的 SHA-256。
+做完會立即完整校驗一遍（逐個文件核對校驗碼，SQLite 再做完整性檢查），不通過就刪掉並報錯。
+SQLite 用在線快照，服務開著也能備份；PostgreSQL 用 `pg_dump`（要裝 PostgreSQL 客戶端），密碼經環境變量傳給它，不出現在命令行上。
+
+**不備什麼**：密鑰。它們在 `~/.crudelab/secrets.env`，不在數據目錄；看起來像密鑰的文件名（`secrets*`、`*.env`、`*.pem`、`*.key`）
+即使出現在配置或數據目錄裡也會跳過。換機器恢復後用 `crudelab secret set` 重新錄入。備份文件本身權限是只有自己可讀。
+
+**什麼時候備份**：定時任務「每日備份」每天 02:30 做一份，失敗會走失敗通知；後台「備份」頁可以「立即備份」，命令行是 `crudelab backup`。
+
+**放在哪**：`config/backup.yaml` 的 `directory`，預設 `data/backups/`。**這只防誤刪、防改壞，防不了硬盤壞掉。**
+正式使用前，把它指到另一塊硬盤、NAS 或雲同步文件夾（例如 `directory: /Volumes/NAS/crudelab-backups`）；
+不同機器路徑不同時用環境變量 `CRUDELAB_BACKUP_DIR`。後台「備份」頁會提示備份是不是和數據在同一塊磁盤上。
+
+**保留多久**：定時備份保留最近 14 天每天一份、再往前 8 周每周一份、12 個月每月一份（可在 `backup.yaml` 改）。
+手動備份和恢復前的自動備份不會被自動刪除。
+
+**怎麼恢復**（只能用命令行，網頁上不提供，因為會覆蓋數據）：
+
+1. 關掉服務。
+2. 恢復：
+
+   ```bash
+   .venv/bin/crudelab restore crudelab-20261118-023000-scheduled.tar.gz --yes
+   ```
+
+   給文件名就在備份目錄裡找，也可以給完整路徑。它會先校驗備份，檢查表結構版本（更新版本程序做的備份要先升級程序），
+   再把現在的數據自動備份一份（類型「恢復前自動」），然後替換數據庫、放回原始文件、升級表結構，記一條日誌。
+   配置文件預設不動（它們在 git 裡），要一起恢復加 `--with-config`。
+3. 重新啟動服務。在新機器上恢復的話，`crudelab secret list` 檢查密鑰。
+
+建議每隔一段時間在另一台機器上實際恢復一次，確認備份真的能用。
 
 ## 已知限制
 

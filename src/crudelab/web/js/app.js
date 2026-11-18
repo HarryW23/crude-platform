@@ -8,7 +8,7 @@ const PAGES = {
           ["events", "地緣事件"], ["outlook", "推演"], ["backtest", "回測"], ["reports", "報告"],
           ["chat", "問答"]],
   admin: [["import", "數據導入"], ["series", "序列"], ["indicators", "指標"], ["params", "參數"],
-          ["sources", "數據源"], ["schedule", "定時任務"], ["users", "帳號"], ["audit", "日誌"]],
+          ["sources", "數據源"], ["schedule", "定時任務"], ["backups", "備份"], ["users", "帳號"], ["audit", "日誌"]],
 }[SITE.site];
 const IDS = PAGES.map(([id]) => id);
 const main = document.getElementById("main");

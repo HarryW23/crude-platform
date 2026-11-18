@@ -366,11 +366,12 @@ class JobDef(Strict):
       import_folder    導入收件夾裡的 Excel / CSV（source = 記在哪個數據源名下；folder = data/ 下的文件夾）
       report           生成報告（kind = daily / weekly / monthly；narrative = 是否讓大模型加解讀）
       check_freshness  檢查數據有沒有斷更（規則在 freshness.yaml）。有斷更時記為失敗，從而觸發通知
+      backup           備份數據庫、配置和原始文件，並按 backup.yaml 清理舊的定時備份
     """
     code: str = Code
     name_zh: str
     enabled: bool = True
-    action: Literal["pull", "import_folder", "report", "check_freshness"]
+    action: Literal["pull", "import_folder", "report", "check_freshness", "backup"]
     at: str | None = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
     days: list[Literal["mon", "tue", "wed", "thu", "fri", "sat", "sun"]] | Literal["daily", "weekdays"] = "daily"
     day_of_month: int | None = Field(default=None, ge=1, le=28)
@@ -489,6 +490,26 @@ class BacktestSettings(Strict):
     neutral_band: float = Field(default=0.15, gt=0, lt=1)    # 分數絕對值小於它算「中性」，不計入命中率
     min_effective_samples: int = Field(default=30, ge=5)      # 有效樣本少於它就標為樣本不足
     vintage_max_dates: int = Field(default=400, ge=10)        # 按入庫時間回測最多評估多少個日期（每個日期都要重算一遍）
+
+
+# ------------------------------ 備份 ------------------------------
+
+class BackupSettings(Strict):
+    """備份的設定。做法見 backup.py。
+
+    directory 相對路徑時在數據目錄（data/）下；絕對路徑可以指向另一塊硬盤、NAS 或雲同步文件夾。
+    放在和數據同一塊磁盤上只防誤刪、防改壞，防不了硬盤損壞：正式使用時務必指到別處。
+    環境變量 CRUDELAB_BACKUP_DIR 優先於這裡（不同機器的路徑不同時用）。
+    保留：定時備份按「每天最後一份留 keep_daily 天、每周最後一份留 keep_weekly 周、
+    每月最後一份留 keep_monthly 月」清理。
+    手動備份和恢復前自動做的備份不會被自動刪除。
+    """
+    directory: str = "backups"
+    keep_daily: int = Field(default=14, ge=1, le=366)
+    keep_weekly: int = Field(default=8, ge=0, le=520)
+    keep_monthly: int = Field(default=12, ge=0, le=240)
+    include_raw: bool = True                 # 是否包含導入時保存的原始文件（data/raw）。它們是追溯的依據，建議保留
+    max_age_hours: int = Field(default=36, ge=1, le=24 * 31)   # 最近一次成功備份超過這個時間，後台顯示警告
 
 
 # ------------------------------ 公允價值 ------------------------------

@@ -8,3 +8,5 @@
   llm         大模型抽象接口（預留）
   api / web   後台接口與頁面
 """
+
+__version__ = "0.15.0"       # 和 pyproject.toml 保持一致（tests/test_backup.py 會檢查）

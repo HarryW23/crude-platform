@@ -19,6 +19,7 @@ config/ 的結構：
     freshness.yaml             數據斷更的判斷規則
     backtest.yaml              回測設定
     fair_value.yaml            基本面公允價值模型
+    backup.yaml                備份位置與保留策略
 
 校驗一次做完並一次報全：結構（字段名、類型）、引用（單位、地區、品種、公式裡的名字）、
 唯一性（代碼、別名）、公式語法、循環引用、量綱。任何一項不過，整份配置都不生效。
@@ -41,6 +42,7 @@ from .schema import (
     FREQUENCY_ORDER,
     AtomDef,
     BacktestSettings,
+    BackupSettings,
     BalanceDef,
     CommodityDef,
     CurveDef,
@@ -97,6 +99,7 @@ class Config:
     notifications: NotificationsDef = field(default_factory=NotificationsDef)
     freshness: FreshnessDef = field(default_factory=FreshnessDef)
     backtest: BacktestSettings = field(default_factory=BacktestSettings)
+    backup: BackupSettings = field(default_factory=BackupSettings)
     fair_values: dict[str, FairValueModel] = field(default_factory=dict)
     curves: dict[str, CurveDef] = field(default_factory=dict)          # 期貨曲線：代碼 → 模板
 
@@ -254,6 +257,9 @@ def load_config(config_dir: Path) -> Config:
     backtest_path = config_dir / "backtest.yaml"
     if backtest_path.exists():
         cfg.backtest = ld.build(BacktestSettings, ld.read(backtest_path) or {}, backtest_path) or BacktestSettings()
+    backup_path = config_dir / "backup.yaml"
+    if backup_path.exists():
+        cfg.backup = ld.build(BackupSettings, ld.read(backup_path) or {}, backup_path) or BackupSettings()
     fresh_path = config_dir / "freshness.yaml"
     if fresh_path.exists():
         cfg.freshness = ld.build(FreshnessDef, ld.read(fresh_path) or {}, fresh_path) or FreshnessDef()

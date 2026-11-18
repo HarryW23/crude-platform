@@ -1,4 +1,4 @@
-"""定時任務的執行：三種動作，以及「認領 → 執行 → 記結果」的流程。什麼時候執行由 scheduler.py 決定。
+"""定時任務的執行：各種動作，以及「認領 → 執行 → 記結果」的流程。什麼時候執行由 scheduler.py 決定。
 
 每次執行都記一條 job_run，結果有四種：
   ok        做完了
@@ -137,7 +137,24 @@ def _check_freshness(session: Session, cfg: Config, settings: Settings, job: Job
     return "failed", f"{len(problems)} 條序列超過期限沒有更新：\n" + "\n".join(lines) + more, detail
 
 
-ACTIONS = {"pull": _pull, "import_folder": _import_folder, "report": _report, "check_freshness": _check_freshness}
+def _backup(session: Session, cfg: Config, settings: Settings, job: JobDef) -> Result:
+    """做一份定時備份並校驗，再按保留策略清理舊的定時備份。"""
+    from . import backup
+    try:
+        made = backup.create(settings, cfg, "scheduled")
+        removed = backup.prune(settings, cfg)
+    except backup.BackupError as exc:
+        raise JobError(str(exc)) from None
+    message = f"已備份並校驗：{made['name']}（{made['size'] / 1e6:.1f} MB）"
+    if removed:
+        message += f"；按保留策略清理了 {len(removed)} 份舊備份"
+    if backup.same_disk(settings, cfg):
+        message += "。注意：備份和數據在同一塊磁盤上，防不了硬盤損壞（見 backup.yaml）"
+    return "ok", message, {"backup": made["name"], "size": made["size"], "removed": removed}
+
+
+ACTIONS = {"pull": _pull, "import_folder": _import_folder, "report": _report, "check_freshness": _check_freshness,
+           "backup": _backup}
 
 
 # ------------------------------ 認領與執行 ------------------------------

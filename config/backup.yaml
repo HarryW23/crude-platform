@@ -1,0 +1,21 @@
+# 備份：數據庫、配置文件、導入時保存的原始文件，打包成一個 .tar.gz，附每個文件的校驗碼。
+# 密鑰不在備份裡（它們在 ~/.crudelab/secrets.env，不在數據目錄）：換機器恢復後要用 crudelab secret set 重新錄入。
+#
+#   directory      備份放哪。相對路徑在 data/ 下；絕對路徑可以指向另一塊硬盤、NAS、雲同步文件夾（推薦）
+#                  放在和數據同一塊磁盤上只防誤刪、防改壞，防不了硬盤壞掉。後台「備份」頁會提示
+#                  不同機器路徑不同時，用環境變量 CRUDELAB_BACKUP_DIR 覆蓋這裡
+#   keep_daily     定時備份：最近幾天每天保留最後一份
+#   keep_weekly    再往前幾周每周保留最後一份
+#   keep_monthly   再往前幾個月每月保留最後一份。手動備份和恢復前的自動備份不會被清理
+#   include_raw    是否包含 data/raw（導入時原樣保存的文件，數字追溯的依據）
+#   max_age_hours  最近一次成功備份超過這麼久，後台顯示警告
+#
+# 什麼時候備份：schedule.yaml 裡的 BACKUP_DAILY 任務（預設每天 02:30），也可以在後台「備份」頁或用 crudelab backup 手動備份。
+# 怎麼恢復：只能用命令行（crudelab restore 備份文件 --yes），見 README「備份與恢復」。
+
+directory: backups
+keep_daily: 14
+keep_weekly: 8
+keep_monthly: 12
+include_raw: true
+max_age_hours: 36
