@@ -6,13 +6,13 @@ import pytest
 from pydantic import ValidationError
 from sqlalchemy import select
 
-from crudelab.llm import LLMError, get_provider, limits, status
+from crudelab.llm import LLMError, LLMNotConfigured, get_provider, limits, status
 from crudelab.llm.limits import LLMLimitError
 from crudelab.models import LLMCall, LLMPause, utcnow
 from crudelab.schema import LLMSettings
 
 KEY = "deepseek-fake-key-7d21c9"              # 測試用的假密鑰  # secret-scan: ok
-FAST = dict(provider="deepseek", min_interval_seconds=0)
+FAST = dict(provider="deepseek", model="test-model", min_interval_seconds=0)
 
 
 class FakeServer:
@@ -145,20 +145,82 @@ def test_repeated_rejections_and_outages_pause(deepseek, monkeypatch):
     assert "連續 3 次" in deepseek.get(LLMPause, "deepseek").reason
 
 
-def test_provider_comes_from_config_and_env_overrides(deepseek, monkeypatch):
+def test_choice_priority_admin_over_env_over_yaml(deepseek, monkeypatch):
+    from crudelab.llm.registry import save_choice
     assert status(LLMSettings())["configured"] is False
-    assert status(LLMSettings(provider="deepseek"))["model"] == "deepseek-chat"
-    assert status(LLMSettings(provider="deepseek", model="deepseek-reasoner"))["model"] == "deepseek-reasoner"
-    monkeypatch.setenv("CRUDELAB_LLM_MODEL", "from-env")
-    assert status(LLMSettings(provider="deepseek", model="x"))["model"] == "from-env"
+    no_model = status(LLMSettings(provider="deepseek"))
+    assert not no_model["configured"] and "還沒有選擇" in no_model["message"]      # 不再替使用者猜型號
+    assert status(LLMSettings(provider="deepseek", model="m-yaml"))["source"] == "config/llm.yaml"
+    monkeypatch.setenv("CRUDELAB_LLM_PROVIDER", "deepseek")
+    monkeypatch.setenv("CRUDELAB_LLM_MODEL", "m-env")
+    st = status(LLMSettings(provider="deepseek", model="m-yaml"))
+    assert (st["model"], st["source"]) == ("m-env", "環境變量")
+    save_choice(deepseek, "deepseek", "m-admin", True, "tester")
+    deepseek.commit()
+    st = status(LLMSettings(provider="deepseek", model="m-yaml"))
+    assert (st["model"], st["source"], st["thinking"], st["configured"]) == ("m-admin", "後台", True, True)
     with pytest.raises(ValidationError):
         LLMSettings(provider="compatible", base_url="http://plain-text.example")     # 密鑰不走明文
+    for bad in ("", "has space", "x" * 200):
+        with pytest.raises(LLMNotConfigured):
+            save_choice(deepseek, "deepseek", bad, False, "tester")
+    with pytest.raises(LLMNotConfigured):
+        save_choice(deepseek, "compatible", "m", False, "tester", base_url="http://plain")
+    assert save_choice(deepseek, "openai", "gpt-x", True, "tester")["thinking"] is False   # 只有 DeepSeek 有思考模式
     assert KEY not in str(status(LLMSettings(provider="deepseek")))
+
+
+def test_thinking_parameter_is_always_explicit(deepseek, monkeypatch):
+    from crudelab.llm.registry import save_choice
+    sent = []
+    server = FakeServer(monkeypatch)
+    original = server.post
+
+    def capture(url, json=None, **kwargs):
+        sent.append(json)
+        return original(url, json=json, **kwargs)
+    monkeypatch.setattr(httpx, "post", capture)
+    for thinking in (False, True):
+        save_choice(deepseek, "deepseek", "m", thinking, "tester")
+        deepseek.commit()
+        get_provider("chat", LLMSettings(min_interval_seconds=0)).complete("s", "u", max_tokens=1000)
+    assert sent[0]["thinking"] == {"type": "disabled"} and sent[0]["max_tokens"] == 1000
+    assert sent[1]["thinking"] == {"type": "enabled"} and sent[1]["max_tokens"] > 1000   # 給思考留出長度
+    assert [c.model for c in calls(deepseek)] == ["m", "m（思考）"]
+    save_choice(deepseek, "openai", "gpt-x", False, "tester")
+    deepseek.commit()
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-fake-key-1234")              # secret-scan: ok
+    get_provider("chat", LLMSettings(min_interval_seconds=0)).complete("s", "u")
+    assert "thinking" not in sent[2]                                          # 不支持的供應商不發這個參數
+
+
+def test_model_list_from_provider(deepseek, monkeypatch):
+    from crudelab.llm.registry import model_lister
+
+    def get(url, **kwargs):
+        assert url.endswith("/models") and kwargs["headers"]["Authorization"].endswith(KEY)
+        return httpx.Response(200, request=httpx.Request("GET", url),
+                              json={"object": "list", "data": [{"id": "b-model"}, {"id": "a-model"}]})
+    monkeypatch.setattr(httpx, "get", get)
+    lister = model_lister(LLMSettings(**FAST))
+    assert lister.list_models() == ["a-model", "b-model"]
+    [call] = calls(deepseek)
+    assert call.purpose == "models" and call.status == "ok" and call.prompt_tokens is None
+
+    def denied(url, **kwargs):
+        return httpx.Response(401, text=f"bad key {KEY}", request=httpx.Request("GET", url))
+    monkeypatch.setattr(httpx, "get", denied)
+    with pytest.raises(LLMError) as err:
+        model_lister(LLMSettings(**FAST)).list_models()
+    assert "401" in str(err.value) and KEY not in str(err.value)
+    deepseek.expire_all()
+    assert deepseek.get(LLMPause, "deepseek") is not None                    # 查列表時密鑰無效也會暫停
 
 
 def test_admin_llm_page(sites, deepseek, monkeypatch):
     FakeServer(monkeypatch, 200, 401)
     monkeypatch.setenv("CRUDELAB_LLM_PROVIDER", "deepseek")
+    monkeypatch.setenv("CRUDELAB_LLM_MODEL", "test-model")
     admin, front = sites["admin"], sites["front"]
     assert front.get("/api/llm/usage").status_code == 404
     r = admin.post("/api/llm/test")
@@ -169,3 +231,9 @@ def test_admin_llm_page(sites, deepseek, monkeypatch):
     assert [c["status"] for c in body["recent"]] == ["failed", "ok"] and body["usage"]["day"] == 2
     assert KEY not in admin.get("/api/llm/usage").text
     assert admin.post("/api/llm/reset").json()["cleared"] == 1
+    r = admin.put("/api/llm/choice", json={"provider": "deepseek", "model": "picked", "thinking": True})
+    assert r.status_code == 200 and r.json()["thinking"] is True
+    st = admin.get("/api/llm/usage").json()["status"]
+    assert (st["model"], st["thinking"], st["source"]) == ("picked", True, "後台")
+    assert admin.put("/api/llm/choice", json={"provider": "deepseek", "model": ""}).status_code == 400
+    assert front.put("/api/llm/choice", json={"provider": "none"}).status_code in (404, 405)

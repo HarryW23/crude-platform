@@ -81,7 +81,8 @@ Mac 第一次雙擊如果被系統攔住，在文件上按右鍵選「打開」�
 |---|---|
 | 數據、導入的原始文件、備份 | 項目裡的 `data/`（不在 git 裡） |
 | 密鑰（API key 等） | `~/.crudelab/secrets.env`（在項目文件夾之外） |
-| 這台機器自己的設定（用哪家大模型、備份放哪等） | `~/.crudelab/local.env`（在項目文件夾之外），用 `crudelab local set` 管理 |
+| 這台機器自己的設定（備份放哪、登錄開關等） | `~/.crudelab/local.env`（在項目文件夾之外），用 `crudelab local set` 管理 |
+| 大模型選哪個型號、思考模式、各種開關 | 數據庫（`data/` 裡），在後台頁面上改 |
 
 所以這台機器自己的設定不要直接改倉庫裡的 `config/` 文件，改用 `crudelab local set`：倉庫裡的文件被改過時，更新腳本會停下來提示，
 避免覆蓋你的修改或卡在衝突裡。`crudelab local list` 列出所有可以這樣設的項目。
@@ -131,7 +132,7 @@ Windows 把 `.venv/bin/` 換成 `.venv\Scripts\`。
 | `crudelab backtest` | 回測信號和推演區間 |
 | `crudelab backup` / `backup list` / `backup verify 文件` | 立即備份 / 列出備份 / 校驗一份備份 |
 | `crudelab restore 文件 --yes` | 從備份恢復（先自動備份現在的數據） |
-| `crudelab llm use deepseek` | 這台機器改用某家大模型（存在本機設定裡） |
+| `crudelab llm models` / `llm use deepseek --model 型號 --thinking on` | 查能用的模型 / 選擇型號和思考模式（和後台同一個設定） |
 | `crudelab llm status` / `llm test` / `llm reset` | 大模型的配置和用量 / 連通測試 / 解除自動暫停 |
 | `crudelab local list` / `local set 名字 值` / `local unset 名字` | 這台機器自己的設定（不含密鑰），更新代碼不受影響 |
 | `pytest` / `ruff check src tests` | 測試 / 代碼檢查 |
@@ -311,8 +312,11 @@ Windows 把 `.venv/bin/` 換成 `.venv\Scripts\`。
 
 不配置也能用：事件手動錄入，報告只有系統排版的正文。配置後多三項功能：從文字抽取事件草稿、為報告寫解讀、問答。
 
-**選哪一家**：`crudelab llm use deepseek`（存在本機設定 `~/.crudelab/local.env`）。也可以寫在 `config/llm.yaml` 的
-`provider` / `model`，但那是倉庫裡的文件，適合寫所有機器共用的預設。優先順序：環境變量 > 本機設定 > `config/llm.yaml`。
+**選哪一家、哪個型號、開不開思考模式**：後台「大模型」頁（或 `crudelab llm use`），存在數據庫裡。
+後台沒選過時，才看環境變量 `CRUDELAB_LLM_PROVIDER` / `CRUDELAB_LLM_MODEL` 和 `config/llm.yaml`。
+
+**思考模式**（只有 DeepSeek 支持）：模型先推理再回答。回覆更慢、輸出 token 多得多，費用相應增加；抽取事件和寫解讀一般不需要，
+複雜的問答可以試試。開關作為請求參數明確發送（關的時候也明確發「關」，不依賴 DeepSeek 的預設值）；開啟時系統自動給回覆多留長度、延長等待時間。
 
 **密鑰**（`DEEPSEEK_API_KEY` / `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `CRUDELAB_LLM_API_KEY`）**不要寫在任何文件、命令行或聊天裡**，
 只用 `crudelab secret set` 保存，見下面「密鑰」一節。
@@ -326,20 +330,13 @@ Windows 把 `.venv/bin/` 換成 `.venv\Scripts\`。
    .venv/bin/crudelab secret set DEEPSEEK_API_KEY
    ```
 
-3. 選用 DeepSeek（存在這台機器的本機設定裡，以後更新代碼不用重設）：
+3. 打開後台「大模型」頁的「模型設定」：供應商選 DeepSeek，點「查可用的模型」（用你的密鑰向 DeepSeek 查這個密鑰能用哪些模型，
+   不耗 token），從列表裡選一個，決定開不開思考模式，點「保存」。立即生效，存在數據庫裡，以後更新代碼不用重設。
+   型號名以 DeepSeek 返回的列表為準：舊名字 `deepseek-chat` / `deepseek-reasoner` 已經停用，系統不再內置任何預設型號。
+4. 點同一頁的「連通測試」（只發一次很短的請求），看到「連通正常」就好了。
 
-   ```bash
-   .venv/bin/crudelab llm use deepseek
-   ```
-
-   不給型號就用 `deepseek-chat`；想用別的型號加 `--model 型號`，名字以官網模型列表為準。
-4. 連通測試（只發一次很短的請求，幾十個 token）：
-
-   ```bash
-   .venv/bin/crudelab llm test
-   ```
-
-   看到「連通正常」就好了。也可以在後台「大模型」頁點「連通測試」。
+   命令行也可以做同樣的事：`crudelab llm models` 列出能用的模型，`crudelab llm use deepseek --model 型號名 --thinking on`
+   選擇（和後台是同一個設定），`crudelab llm test` 連通測試。
 5. 第一次正式用時先拿一段短新聞試「抽取事件」，再試問答。
 
 **保護措施**（`config/llm.yaml`，詳細在 `src/crudelab/llm/limits.py` 開頭）：
@@ -385,7 +382,7 @@ config/                 所有可調的東西
   fair_value.yaml       公允價值模型
   backtest.yaml         回測設定（發佈延遲等）
   backup.yaml           備份位置與保留策略
-  llm.yaml              用哪家大模型、調用上限
+  llm.yaml              大模型的調用上限（選型號在後台）
 src/crudelab/
   schema.py config.py   配置的結構與校驗
   units.py formula.py   單位代數、公式語言

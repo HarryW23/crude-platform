@@ -131,7 +131,7 @@ def test_llm_errors_never_carry_key_or_upstream_text(monkeypatch):
         return httpx.Response(401, text=f"Incorrect API key provided: {KEY}", request=request)
 
     monkeypatch.setattr(httpx, "post", post)
-    provider = OpenAICompatibleProvider("deepseek", "https://api.deepseek.com", KEY, "deepseek-chat")
+    provider = OpenAICompatibleProvider("deepseek", "https://api.deepseek.com", KEY, "test-model")
     with pytest.raises(LLMError, match="401：密鑰無效") as exc:
         provider.complete("s", "u")
     assert KEY not in str(exc.value) and exc.value.__cause__ is None
@@ -148,6 +148,7 @@ def test_llm_errors_never_carry_key_or_upstream_text(monkeypatch):
 def test_http_errors_are_redacted_on_the_way_out(client, monkeypatch):
     monkeypatch.setenv("DEEPSEEK_API_KEY", KEY)
     monkeypatch.setenv("CRUDELAB_LLM_PROVIDER", "deepseek")
+    monkeypatch.setenv("CRUDELAB_LLM_MODEL", "test-model")
     from crudelab.llm import chat
 
     def leaky(*args, **kwargs):

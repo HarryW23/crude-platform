@@ -1,12 +1,10 @@
-# 大模型：用哪一家、哪個模型，以及調用限制。見 README「大模型」。
+# 大模型：調用限制，以及「後台沒有選擇時」用哪一家。見 README「大模型」。
 # 密鑰不寫在這裡：用 crudelab secret set DEEPSEEK_API_KEY 保存（輸入不顯示），只存在你自己電腦的 ~/.crudelab/secrets.env。
 #
-#   provider   none（不用大模型）/ deepseek / openai / anthropic / compatible
-#   model      不寫就用預設：deepseek → deepseek-chat。型號以官網的模型列表為準，名字錯了會報「模型名或接口地址不對」
-#   base_url   只有 compatible 要填，必須是 https
-#   這裡是所有機器共用的預設。只想讓自己這台機器用 DeepSeek，運行 crudelab llm use deepseek 就好：
-#   它存在 ~/.crudelab/local.env，更新代碼不受影響，也不用改這個文件。
-#   優先順序：環境變量 > 本機設定（local.env）> 這裡
+# 用哪一家、哪個型號、開不開思考模式：在後台「大模型」頁選（或 crudelab llm use），存在數據庫裡，更新代碼不受影響。
+# 下面的 provider / model / base_url 只是後台沒選過時的後備（例如部署時預先寫好）。
+#   優先順序：後台的選擇 > 環境變量 CRUDELAB_LLM_PROVIDER / _MODEL / _BASE_URL > 這裡
+#   model 沒有預設值：供應商會改名、停用舊名字，型號以它返回的模型列表為準（後台「查可用的模型」）
 #
 # 調用限制：保護帳號（不要短時間大量請求、不要拿著錯誤的密鑰反覆請求），也保護錢包。
 #

@@ -419,31 +419,45 @@ def cmd_llm(args) -> int:
 
     from .config import load_config
     from .llm import LLMError, LLMNotConfigured, get_provider, limits, status
+    from .llm.registry import model_lister
+
+    def limits_lister(cfg, provider):
+        return model_lister(cfg.llm, provider)
     settings = get_settings()
     db.init_engine(settings)
     cfg = load_config(settings.config_dir)
     st = status(cfg.llm)
     if args.action == "use":
-        from .settings import LocalSettingsError, set_local_setting
+        from .llm.registry import save_choice
         if not args.provider:
-            print("請給出供應商，例如：crudelab llm use deepseek", file=sys.stderr)
+            print("請給出供應商，例如：crudelab llm use deepseek --model 型號名", file=sys.stderr)
             return 1
         try:
-            set_local_setting("CRUDELAB_LLM_PROVIDER", args.provider)
-            if args.model:
-                set_local_setting("CRUDELAB_LLM_MODEL", args.model)
-        except LocalSettingsError as exc:
-            print(exc, file=sys.stderr)
+            with db.session_scope() as session:
+                value = save_choice(session, args.provider, args.model or "", args.thinking == "on", "local")
+        except LLMNotConfigured as exc:
+            print(f"{exc}。可以先用 crudelab llm models 查看能用的模型名", file=sys.stderr)
             return 1
-        print(f"這台機器改用 {args.provider}" + (f" / {args.model}" if args.model else "")
-              + "（存在本機設定裡，更新代碼不受影響）。重新啟動後生效；先用 crudelab llm test 試一下")
+        print(f"已改用 {value['provider']} / {value['model'] or '—'}，思考模式{'開' if value['thinking'] else '關'}"
+              "（和後台「大模型」頁是同一個設定，立即生效）。用 crudelab llm test 試一下")
+        return 0
+    if args.action == "models":
+        try:
+            names = limits_lister(cfg, args.provider).list_models()
+        except LLMError as exc:
+            print(f"查模型列表失敗：{exc}", file=sys.stderr)
+            return 1
+        print("這個密鑰能用的模型：" if names else "供應商沒有返回模型列表")
+        for name in names:
+            print(f"  {name}")
         return 0
     if args.action == "reset":
         n = limits.reset()
         print(f"已解除 {n} 個自動暫停" if n else "目前沒有自動暫停")
         return 0
     if args.action == "status":
-        print(f"供應商：{st['provider']}　模型：{st['model'] or '—'}　{st['message']}")
+        print(f"供應商：{st['provider_name']}　模型：{st['model'] or '—'}　思考模式：{'開' if st['thinking'] else '關'}"
+              f"　（設定來自{st['source']}）\n{st['message']}")
         k = cfg.llm
         print(f"限制：每分鐘 {k.max_requests_per_minute} 次，24 小時 {k.max_requests_per_day} 次 / "
               f"{k.max_tokens_per_day:,} token，同時 {k.max_concurrent} 個，間隔 ≥ {k.min_interval_seconds} 秒")
@@ -618,11 +632,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--with-config", action="store_true", help="連配置文件一起恢復（預設不動配置文件）")
     p.add_argument("--force", action="store_true", help="跳過「服務還開著」和「恢復前備份失敗」的檢查")
     p.set_defaults(func=cmd_restore)
-    p = sub.add_parser("llm", help="大模型：status 查看配置和用量 / test 連通測試（發一次很短的請求）/ reset 解除自動暫停")
-    p.add_argument("action", choices=["status", "test", "reset", "use"])
+    p = sub.add_parser("llm", help="大模型：status 配置和用量 / models 查能用的模型 / use 選擇 / test 連通測試 / reset 解除暫停")
+    p.add_argument("action", choices=["status", "test", "reset", "use", "models"])
     p.add_argument("provider", nargs="?", choices=["none", "deepseek", "openai", "anthropic", "compatible"],
-                   help="use 時：這台機器用哪一家")
-    p.add_argument("--model", help="use 時：型號（不給就用預設）")
+                   help="use 時：用哪一家；models 時：查哪一家（不給就查當前選的）")
+    p.add_argument("--model", help="use 時：型號名，以 crudelab llm models 列出的為準")
+    p.add_argument("--thinking", choices=["on", "off"], default="off", help="use 時：思考模式（只有 DeepSeek 支持）")
     p.set_defaults(func=cmd_llm)
     p = sub.add_parser("local", help="本機設定（不含密鑰）：list / set 名字 值 / unset 名字。存在項目文件夾之外")
     p.add_argument("action", choices=["list", "set", "unset"])

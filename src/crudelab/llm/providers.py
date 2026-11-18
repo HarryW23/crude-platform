@@ -17,16 +17,47 @@ _CLAUDE_WITH_FALLBACK = ("claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"
 class OpenAICompatibleProvider(LLMProvider):
     """DeepSeek、OpenAI，以及其他兼容 chat completions 格式的服務。"""
 
-    def __init__(self, name: str, base_url: str, api_key: str, model: str, timeout: float = 120.0):
+    # 思考模式下，思考過程也算在輸出長度裡：在調用方要求的長度上再留出這麼多給思考，免得回覆被截斷
+    THINKING_BUDGET = 16000
+
+    def __init__(self, name: str, base_url: str, api_key: str, model: str, timeout: float = 120.0,
+                 thinking: bool | None = None):
         self.name, self.model = name, model
-        self._url = base_url.rstrip("/") + "/chat/completions"
+        self._base = base_url.rstrip("/")
+        self._url = self._base + "/chat/completions"
         self._key, self._timeout = api_key, timeout
+        self.thinking = thinking          # None：不發這個參數（不支持思考模式的供應商）
+
+    def _fail(self, exc: httpx.HTTPStatusError):
+        # 錯誤訊息只用狀態碼和我們自己的說明：不轉述對方返回的原文，不帶請求內容（裡面有密鑰和發出去的數據）
+        code = exc.response.status_code
+        hint = {401: "密鑰無效", 403: "密鑰沒有權限", 402: "帳戶餘額不足", 404: "模型名或接口地址不對",
+                400: "請求被拒絕（可能是模型名不對、參數不支持或內容審核）", 422: "請求參數不對",
+                429: "觸發了頻率或額度限制"}.get(code, "服務端錯誤" if code >= 500 else "請求被拒絕")
+        return LLMError(f"{self.name} 回報錯誤 {code}：{hint}", status=code)
+
+    def list_models(self) -> list[str]:
+        try:
+            response = httpx.get(self._base + "/models", timeout=30.0,
+                                 headers={"Authorization": f"Bearer {self._key}"})
+            response.raise_for_status()
+            return sorted({str(m["id"]) for m in response.json()["data"]})
+        except httpx.HTTPStatusError as exc:
+            raise self._fail(exc) from None
+        except httpx.HTTPError as exc:
+            raise LLMError(f"連不上 {self.name}（{type(exc).__name__}）") from None
+        except (KeyError, TypeError, ValueError):
+            raise LLMError(f"{self.name} 的模型列表格式不符合預期") from None
 
     def complete(self, system: str, user: str, *, json: bool = False, max_tokens: int = 4000) -> str:
+        if self.thinking:
+            max_tokens += self.THINKING_BUDGET
         body: dict = {"model": self.model, "max_tokens": max_tokens,
                       "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
         if json:
             body["response_format"] = {"type": "json_object"}
+        if self.thinking is not None:           # 明確發送，不依賴對方的預設值
+            body["thinking"] = {"type": "enabled" if self.thinking else "disabled"}
         try:
             response = httpx.post(self._url, json=body, timeout=self._timeout,
                                   headers={"Authorization": f"Bearer {self._key}"})
@@ -35,13 +66,8 @@ class OpenAICompatibleProvider(LLMProvider):
             choice = payload["choices"][0]
             usage = payload.get("usage") or {}
             self.last_usage = (usage.get("prompt_tokens"), usage.get("completion_tokens"))
-        # 錯誤訊息只用狀態碼和我們自己的說明：不轉述對方返回的原文，不帶請求內容（裡面有密鑰和發出去的數據）
         except httpx.HTTPStatusError as exc:
-            code = exc.response.status_code
-            hint = {401: "密鑰無效", 403: "密鑰沒有權限", 402: "帳戶餘額不足", 404: "模型名或接口地址不對",
-                    400: "請求被拒絕（可能是內容審核或參數問題）", 422: "請求參數不對",
-                    429: "觸發了頻率或額度限制"}.get(code, "服務端錯誤" if code >= 500 else "請求被拒絕")
-            raise LLMError(f"{self.name} 回報錯誤 {code}：{hint}", status=code) from None
+            raise self._fail(exc) from None
         except httpx.HTTPError as exc:
             raise LLMError(f"連不上 {self.name}（{type(exc).__name__}）") from None
         except (KeyError, IndexError, ValueError):
@@ -68,6 +94,17 @@ class AnthropicProvider(LLMProvider):
         # 給了 key 就用它（來自密鑰文件）；沒給則交給 SDK 按自己的順序找（環境變量、ant auth login 的登錄檔）
         self._client = anthropic.Anthropic(api_key=api_key) if api_key else anthropic.Anthropic()
         self.model = model
+
+    def list_models(self) -> list[str]:
+        sdk = self._sdk
+        try:
+            return sorted(m.id for m in self._client.models.list(limit=100))
+        except sdk.AuthenticationError:
+            raise LLMError("Claude 的密鑰無效", status=401) from None
+        except sdk.APIStatusError as exc:
+            raise LLMError(f"Claude 回報錯誤 {exc.status_code}", status=exc.status_code) from None
+        except sdk.APIConnectionError:
+            raise LLMError("連不上 Claude") from None
 
     def complete(self, system: str, user: str, *, json: bool = False, max_tokens: int = 4000) -> str:
         sdk = self._sdk

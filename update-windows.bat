@@ -22,7 +22,7 @@ if defined CHANGED (
   echo 下面這些文件在本機被改過：
   git status --short --untracked-files=no
   echo.
-  echo 這台機器自己的設定（用哪家大模型、備份放哪）請用 crudelab local set 保存，不要直接改倉庫裡的文件。
+  echo 這台機器自己的設定（備份放哪等）請用 crudelab local set 保存，大模型在後台選，不要直接改倉庫裡的文件。
   echo 確定不需要這些修改的話，運行 git restore 文件名 還原後再更新。
   echo 為了不覆蓋你的修改，這次沒有更新。
   goto :failed

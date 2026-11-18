@@ -308,6 +308,15 @@ class JobRun(Base):
     detail: Mapped[dict | None] = mapped_column(JSON)
 
 
+class AppSetting(Base):
+    """後台頁面上改的設定（不是開關的那種），例如大模型用哪個型號、開不開思考模式。值是 JSON。不存密鑰。"""
+    __tablename__ = "app_setting"
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[dict] = mapped_column(JSON)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    updated_by: Mapped[str] = mapped_column(String(64))
+
+
 class LLMCall(Base):
     """一次大模型調用。用來做跨進程的頻率和用量限制，也讓人看得到花了多少。不存發出去的內容和回覆。"""
     __tablename__ = "llm_call"

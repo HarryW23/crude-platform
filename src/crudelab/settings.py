@@ -1,7 +1,7 @@
 """運行配置：全部來自環境變量，方便本機 / 雲端切換。
 
 本機設定文件（預設 ~/.crudelab/local.env，可用 CRUDELAB_LOCAL_FILE 改）：
-    放「這台機器自己的」非密鑰設定，例如用哪家大模型、備份放哪。它在項目文件夾之外，
+    放「這台機器自己的」非密鑰設定，例如備份放哪、登錄開關。它在項目文件夾之外，
     所以 git pull 更新代碼、甚至刪掉重新下載項目，都不會影響它；也不會和倉庫裡的配置文件衝突。
     每行 NAME=value，只接受 LOCAL_SETTINGS 裡列出的名字；真正的環境變量優先於它。
     密鑰不放這裡，放 secrets.env（crudelab secret set）。用 crudelab local set / unset / list 管理。
@@ -42,9 +42,6 @@ class Settings:
 
 
 LOCAL_SETTINGS = {
-    "CRUDELAB_LLM_PROVIDER": "大模型供應商：none / deepseek / openai / anthropic / compatible",
-    "CRUDELAB_LLM_MODEL": "大模型型號（不設就用預設）",
-    "CRUDELAB_LLM_BASE_URL": "compatible 的接口地址（https）",
     "CRUDELAB_BACKUP_DIR": "備份放哪（另一塊硬盤、NAS、雲同步文件夾）",
     "CRUDELAB_DATA_DIR": "數據目錄（預設是項目裡的 data/）",
     "CRUDELAB_AUTH": "登錄功能：on / off",

@@ -31,7 +31,8 @@ from ..schema import LLMSettings
 from .base import LLMError, LLMProvider
 
 RUNNING_STALE = timedelta(minutes=15)      # 「進行中」的記錄超過這麼久就不再算作進行中（進程被殺掉的情況）
-PURPOSES = {"chat": "問答", "extract": "抽取事件", "narrative": "報告解讀", "test": "連通測試", "other": "其他"}
+PURPOSES = {"chat": "問答", "extract": "抽取事件", "narrative": "報告解讀", "test": "連通測試", "models": "查模型列表",
+            "other": "其他"}
 
 
 class LLMLimitError(LLMError):
@@ -123,19 +124,30 @@ class LimitedProvider(LLMProvider):
         self.name, self.model = inner.name, inner.model
 
     def complete(self, system: str, user: str, *, json: bool = False, max_tokens: int = 4000) -> str:
+        return self._run(lambda: self.inner.complete(system, user, json=json, max_tokens=max_tokens))
+
+    def list_models(self) -> list[str]:
+        return self._run(self.inner.list_models)
+
+    @property
+    def thinking(self) -> bool:
+        return bool(getattr(self.inner, "thinking", False))
+
+    def _run(self, call_inner):
         with db.session_scope() as session:
             wait = _check(session, self.limits, self.name)
         if wait:
             time.sleep(wait)
         with db.session_scope() as session:
             _check(session, self.limits, self.name)          # 等待期間別的進程可能已經用掉了額度
-            call = LLMCall(provider=self.name, model=self.model[:128], purpose=self.purpose, status="running")
+            model = (self.model or "—") + ("（思考）" if self.thinking else "")
+            call = LLMCall(provider=self.name, model=model[:128], purpose=self.purpose, status="running")
             session.add(call)
             session.flush()
             call_id = call.id
         self.inner.last_usage = (None, None)
         try:
-            text = self.inner.complete(system, user, json=json, max_tokens=max_tokens)
+            result = call_inner()
         except LLMError as exc:
             self._finish(call_id, "failed", exc.status, credentials.redact(exc))
             raise
@@ -143,7 +155,7 @@ class LimitedProvider(LLMProvider):
             self._finish(call_id, "failed", None, f"未預期的錯誤（{type(exc).__name__}）")
             raise
         self._finish(call_id, "ok", 200, None)
-        return text
+        return result
 
     def _finish(self, call_id: int, status: str, http_status: int | None, message: str | None) -> None:
         with db.session_scope() as session:

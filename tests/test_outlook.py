@@ -246,17 +246,19 @@ def test_provider_selection_from_environment(monkeypatch):
     for key in ("CRUDELAB_LLM_PROVIDER", "CRUDELAB_LLM_MODEL", "DEEPSEEK_API_KEY", "OPENAI_API_KEY"):
         monkeypatch.delenv(key, raising=False)
     assert status()["configured"] is False
-    with pytest.raises(LLMNotConfigured, match="還沒有配置"):
+    with pytest.raises(LLMNotConfigured, match="還沒有選擇大模型"):
         get_provider()
     monkeypatch.setenv("CRUDELAB_LLM_PROVIDER", "deepseek")
+    with pytest.raises(LLMNotConfigured, match="還沒有選擇 DeepSeek 的模型"):
+        get_provider()                                           # 不替使用者猜型號：舊的預設名已經被停用過
+    monkeypatch.setenv("CRUDELAB_LLM_MODEL", "some-model")
     with pytest.raises(LLMNotConfigured, match="DEEPSEEK_API_KEY"):
         get_provider()
     monkeypatch.setenv("DEEPSEEK_API_KEY", "k")
-    assert (get_provider().name, get_provider().model) == ("deepseek", "deepseek-chat")
+    assert (get_provider().name, get_provider().model) == ("deepseek", "some-model")
     monkeypatch.setenv("CRUDELAB_LLM_PROVIDER", "openai")
     monkeypatch.setenv("OPENAI_API_KEY", "k")
-    with pytest.raises(LLMNotConfigured, match="model"):
-        get_provider()                                           # 不替使用者猜模型名
+    assert get_provider().model == "some-model"
     monkeypatch.setenv("CRUDELAB_LLM_PROVIDER", "nope")
     assert "不認識" in status()["message"]
 

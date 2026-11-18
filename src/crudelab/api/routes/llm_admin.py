@@ -4,14 +4,27 @@ from __future__ import annotations
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ...llm import LLMError, LLMNotConfigured, get_provider, limits, status
+from ...llm.registry import PROVIDERS, SUPPORTS_THINKING, model_lister, save_choice
 from ...models import AuditLog, LLMCall, iso_utc, utcnow
 from ..deps import AppState, get_actor, get_db, get_state
 
 admin_router = APIRouter(tags=["llm"])
+
+
+class ChoiceBody(BaseModel):
+    provider: str
+    model: str = Field(default="", max_length=128)
+    thinking: bool = False
+    base_url: str | None = Field(default=None, max_length=300)
+
+
+class ModelsBody(BaseModel):
+    provider: str | None = None
 
 
 @admin_router.get("/llm/usage")
@@ -25,6 +38,7 @@ def llm_usage(session: Session = Depends(get_db), state: AppState = Depends(get_
         .where(LLMCall.started_at >= since).group_by(LLMCall.purpose)).all()
     return {
         "status": st, "settings": state.cfg.llm.model_dump(), "timezone": state.cfg.schedule.timezone,
+        "providers": [{"code": k, "name": v, "thinking": k in SUPPORTS_THINKING} for k, v in PROVIDERS.items()],
         "usage": limits.usage(session),
         "pause": None if pause is None else {"until": iso_utc(pause.until), "reason": pause.reason},
         "by_purpose": [{"purpose": p, "name_zh": limits.PURPOSES.get(p, p), "calls": n, "prompt_tokens": int(a),
@@ -55,5 +69,26 @@ def llm_test(state: AppState = Depends(get_state)):
         raise HTTPException(409, str(exc)) from None
     except LLMError as exc:
         raise HTTPException(502, str(exc)) from None
-    return {"ok": True, "provider": provider.name, "model": provider.model, "reply": reply.strip()[:40],
+    return {"ok": True, "provider": provider.name, "model": provider.model, "thinking": provider.thinking,
+            "reply": reply.strip()[:40],
             "tokens": list(provider.inner.last_usage)}
+
+
+@admin_router.put("/llm/choice")
+def llm_choice(body: ChoiceBody, session: Session = Depends(get_db), actor: str = Depends(get_actor)):
+    """選擇用哪一家、哪個型號、開不開思考模式。立即生效（下一次調用就用新的設定）。"""
+    try:
+        return save_choice(session, body.provider, body.model, body.thinking, actor, body.base_url)
+    except LLMNotConfigured as exc:
+        raise HTTPException(400, str(exc)) from None
+
+
+@admin_router.post("/llm/models")
+def llm_models(body: ModelsBody, state: AppState = Depends(get_state)):
+    """向供應商查這個密鑰能用的模型名（發一次不耗 token 的請求，同樣受調用限制約束）。"""
+    try:
+        return {"models": model_lister(state.cfg.llm, body.provider).list_models()}
+    except LLMNotConfigured as exc:
+        raise HTTPException(409, str(exc)) from None
+    except LLMError as exc:
+        raise HTTPException(502, str(exc)) from None

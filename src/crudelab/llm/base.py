@@ -28,3 +28,7 @@ class LLMProvider(ABC):
 
         失敗時拋 LLMError，訊息要能直接給使用者看。
         """
+
+    def list_models(self) -> list[str]:
+        """向供應商查這個密鑰能用的模型名。不支持的供應商回傳空列表。"""
+        return []

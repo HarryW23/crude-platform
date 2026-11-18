@@ -151,12 +151,13 @@ def render(cfg: Config) -> str:
               "| 國內資訊商 API | `CN_VENDOR_API_KEY` | 國內現貨價、開工率、庫存 | 預留 |", ""]
 
     lines += ["## 大模型接口", "",
-              "三選一，由 `config/llm.yaml` 的 `provider` 決定（環境變量 `CRUDELAB_LLM_PROVIDER` 優先）；不配置時相關功能停用，其餘不受影響。"
+              "在後台「大模型」頁選擇用哪一家、哪個型號、開不開思考模式；不選時相關功能停用，其餘不受影響。"
               "每次調用都受 `config/llm.yaml` 的頻率和用量上限約束，出錯會自動暫停，不自動重試。", "",
-              "| 供應商 | 憑證 | 預設模型 | 狀態 |", "|---|---|---|---|",
-              "| DeepSeek | `DEEPSEEK_API_KEY` | `deepseek-chat` | 請求格式用本機模擬服務驗過；沒有用真實密鑰調用過 |",
-              "| OpenAI | `OPENAI_API_KEY` | 無，須在 `config/llm.yaml` 的 `model` 指定 | 與 DeepSeek 共用同一段接入代碼；沒有用真實密鑰調用過 |",
-              "| Claude | `ANTHROPIC_API_KEY` | `claude-opus-5-5` | 沒有調用過 |", "",
+              "型號不內置預設值，從供應商返回的模型列表裡選（供應商會改名、停用舊名字）。", "",
+              "| 供應商 | 憑證 | 思考模式 | 狀態 |", "|---|---|---|---|",
+              "| DeepSeek | `DEEPSEEK_API_KEY` | 支持（請求參數 `thinking`） | 請求格式用本機模擬服務驗過；沒有用真實密鑰調用過 |",
+              "| OpenAI | `OPENAI_API_KEY` | 不支持 | 與 DeepSeek 共用同一段接入代碼；沒有用真實密鑰調用過 |",
+              "| Claude | `ANTHROPIC_API_KEY` | 不支持 | 沒有調用過 |", "",
               "**用大模型時，數據會離開你的系統。** 發給供應商的內容：", "",
               "| 功能 | 發出去的內容 |", "|---|---|",
               "| 從文字抽取事件 | 你貼進去的那段文字，加上地區字典 |",
