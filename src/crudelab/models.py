@@ -225,6 +225,7 @@ class Projection(Base):
     __tablename__ = "projection"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name_zh: Mapped[str] = mapped_column(String(128))
+    drift_model: Mapped[str | None] = mapped_column(String(64))      # 用哪個公允價值模型給漂移；空 = 不加
     created_by: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     archived_at: Mapped[datetime | None] = mapped_column(DateTime)

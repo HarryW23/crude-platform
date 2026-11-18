@@ -38,7 +38,7 @@ import pandas as pd
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from . import credentials, db, projection, signals
+from . import credentials, db, fair_value, projection, signals
 from .config import Config
 from .indicators import IndicatorEngine
 from .models import BacktestRun, Observation, utcnow
@@ -134,7 +134,8 @@ def _observation_volatility(prices: pd.Series, cfg: Config, dates: pd.DatetimeIn
 
 # ------------------------------ 信號分數（按入庫時間） ------------------------------
 
-def _vintage(session: Session, cfg: Config, dates: pd.DatetimeIndex, anchor: str) -> tuple[pd.DataFrame, pd.Series]:
+def _vintage(session: Session, cfg: Config, dates: pd.DatetimeIndex,
+             anchor: str) -> tuple[pd.DataFrame, pd.Series, dict[str, dict]]:
     first_recorded = session.scalar(select(func.min(Observation.created_at)))
     if first_recorded is None or first_recorded.date() > dates[-1].date():
         raise BacktestError("按入庫時間回測需要系統已經持續收集了一段時間的數據。目前所選區間結束時還沒有任何數據入庫"
@@ -144,16 +145,19 @@ def _vintage(session: Session, cfg: Config, dates: pd.DatetimeIndex, anchor: str
         raise BacktestError(f"按入庫時間回測要在每個評估日重算一遍，所選區間有 {len(dates)} 個評估日，"
                             f"超過上限 {cfg.backtest.vintage_max_dates}。請縮短區間或加大間隔")
     rows, vols = {}, {}
+    fits: dict[str, dict] = {code: {} for code in cfg.fair_values}
     for t in dates:
         engine = IndicatorEngine(session, cfg, as_of=datetime.combine(t.date(), time(23, 59, 59)))
         rows[t] = {code: signals.data_signal(engine, code, t)["score"] for code in cfg.signals}
+        for code, model in cfg.fair_values.items():         # 按入庫時間：數據庫裡當時有的就是已知的，不再扣延遲
+            fits[code][t] = fair_value.fit_at(fair_value.aligned_frame(engine, cfg, model, until=t), t, model)
         prices = engine.series_values(anchor)
         prices = prices[prices.index <= t]
         settings = cfg.projection
         vols[t] = projection._volatility(prices, settings.volatility_lookback if settings else 250,
                                          settings.volatility_min_points if settings else 60) if len(prices) else None
     scores = pd.DataFrame.from_dict(rows, orient="index").reindex(dates).astype(float)
-    return scores, pd.Series(vols, dtype=float).reindex(dates)
+    return scores, pd.Series(vols, dtype=float).reindex(dates), fits
 
 
 # ------------------------------ 匯總：模組與綜合 ------------------------------
@@ -250,6 +254,59 @@ def _band(prices: pd.Series, vol: pd.Series, dates: pd.DatetimeIndex, horizons: 
     return out
 
 
+def evaluate_drift(predicted: pd.Series, realized: pd.Series, horizon_days: int, step: int,
+                   min_effective: int) -> dict:
+    """推演的漂移準不準：和「不加漂移」（預測變化為 0）比，對數收益的平均絕對誤差減少了多少。
+
+    改善的顯著性用兩種預測的誤差差（|實際| − |實際 − 漂移|）的均值除以標準誤，標準誤按有效樣本算。
+    """
+    data = pd.DataFrame({"d": predicted, "r": realized}).dropna()
+    n = len(data)
+    n_eff = n * min(1.0, step / horizon_days)
+    out = {"n": n, "n_eff": round(n_eff, 1), "hit_rate": None, "mae_drift": None, "mae_zero": None,
+           "improvement": None, "t": None, "significant": False,
+           "status": "no_data" if n == 0 else ("insufficient" if n_eff < min_effective else "ok")}
+    if n < 3:
+        return out
+    moving = data[(data["d"] != 0) & (data["r"] != 0)]
+    if len(moving):
+        out["hit_rate"] = float((np.sign(moving["d"]) == np.sign(moving["r"])).mean())
+    mae_drift, mae_zero = float((data["r"] - data["d"]).abs().mean()), float(data["r"].abs().mean())
+    out.update(mae_drift=mae_drift, mae_zero=mae_zero, improvement=1 - mae_drift / mae_zero if mae_zero else None)
+    gain = data["r"].abs() - (data["r"] - data["d"]).abs()
+    if gain.std() > 0 and n_eff > 1:
+        out["t"] = float(gain.mean() / (gain.std() / math.sqrt(n_eff)))
+    out["significant"] = bool(out["status"] == "ok" and out["t"] is not None and out["t"] > 2)
+    return out
+
+
+def _evaluate_fair_value(cfg: Config, model, fits: dict, dates: pd.DatetimeIndex, fwd: pd.DataFrame,
+                         horizons: list[HorizonDef], step: int, mode: str) -> tuple[dict, pd.Series]:
+    """兩件事：偏離作為信號（偏高看空）準不準；推演的漂移有沒有讓中樞更準。"""
+    settings = cfg.backtest
+    z = pd.Series({t: fits[t].z if fits.get(t) else None for t in dates}, dtype=float).reindex(dates)
+    score = (-z / 2).clip(-1, 1)
+    status = pd.Series({t: fits[t].status if fits.get(t) else "missing" for t in dates}).reindex(dates)
+    drift = {}
+    for h in horizons:
+        predicted = {}
+        for t in dates:
+            fit = fits.get(t)
+            effect = fair_value.drift_effect(fit, model, fit.price, h.trading_days) if fit and fit.price else None
+            predicted[t] = math.log((fit.price + effect) / fit.price) if effect is not None else None
+        drift[h.code] = evaluate_drift(pd.Series(predicted, dtype=float).reindex(dates), fwd[h.code], h.trading_days,
+                                       step, settings.min_effective_samples)
+    counts = status.value_counts()
+    return {"code": model.code, "name_zh": model.name_zh, "target": model.target,
+            "approx": mode == "observation" and any(cfg.frequency_of(f.input) in ("monthly", "quarterly")
+                                                    for f in model.factors),
+            "coverage": {"ok": int(counts.get("ok", 0)), "weak": int(counts.get("weak", 0)),
+                         "unavailable": int(len(dates) - counts.get("ok", 0) - counts.get("weak", 0))},
+            "by_horizon": {h.code: evaluate(score, fwd[h.code], h.trading_days, step, settings.neutral_band,
+                                            settings.min_effective_samples) for h in horizons},
+            "drift": drift}, score
+
+
 def _points(scores: pd.Series, returns: pd.Series) -> dict:
     data = pd.DataFrame({"s": scores, "r": returns}).dropna()
     if len(data) > MAX_POINTS:
@@ -300,8 +357,12 @@ def run(session: Session, cfg: Config, options: Options) -> dict:
     if options.mode == "observation":
         scores = _observation_scores(engine, cfg, dates)
         vol = _observation_volatility(prices, cfg, dates)
+        fits = {}
+        for code, model in cfg.fair_values.items():         # 同一個 fit_at：每個日期只用之前的數據擬合
+            frame = fair_value.aligned_frame(engine, cfg, model, lags=settings.publication_lag_days)
+            fits[code] = {t: fair_value.fit_at(frame, t, model) for t in dates}
     else:
-        scores, vol = _vintage(session, cfg, dates, anchor)
+        scores, vol, fits = _vintage(session, cfg, dates, anchor)
     modules, overall = aggregate(cfg, engine, scores)
     fwd = forward_returns(prices, dates, horizons)
 
@@ -322,6 +383,13 @@ def run(session: Session, cfg: Config, options: Options) -> dict:
 
     points = {code: {h.code: _points(scores[code], fwd[h.code]) for h in horizons} for code in cfg.signals}
     points["OVERALL"] = {h.code: _points(overall, fwd[h.code]) for h in horizons}
+    fair_rows = []
+    for code, model in cfg.fair_values.items():
+        target = engine.series_values(model.target).dropna()
+        target_fwd = forward_returns(target, dates, horizons) if len(target) > 1 else fwd * np.nan
+        row, score = _evaluate_fair_value(cfg, model, fits[code], dates, target_fwd, horizons, step, options.mode)
+        fair_rows.append(row)
+        points[f"FV:{code}"] = {h.code: _points(score, target_fwd[h.code]) for h in horizons}
     weekly = dates[:: max(1, 5 // step)]
     caveats = [
         f"{cfg.name_of(anchor)} 是連續合約，之後的收益裡含換月當天的跳動。",
@@ -329,6 +397,7 @@ def run(session: Session, cfg: Config, options: Options) -> dict:
         f"{settings.min_effective_samples} 的結果標為樣本不足，不要當結論用。",
         "地緣模組不參與回測：事件的方向判斷沒有歷史版本。綜合分數只由地域價差、供需、煉廠三個模組構成。",
         "價格區間只檢驗推演的基準分支；情境分支是人的假設，無法回測。",
+        "公允價值的漂移假設因子在期限內不變；它的回測檢驗的正是這個假設下，加漂移是否讓推演的中樞更準。",
     ]
     if options.mode == "observation":
         caveats.insert(0, "按數據日期回測：假設每個數據在「日期 + 發佈延遲」那天就已知道，用的是今天看到的數值。"
@@ -343,6 +412,7 @@ def run(session: Session, cfg: Config, options: Options) -> dict:
         "horizons": [h.model_dump() for h in horizons],
         "signals": signal_rows, "modules": module_rows,
         "overall": {"scored": int(overall.notna().sum()), "by_horizon": by_horizon(overall)},
+        "fair_values": fair_rows,
         "band": {"expected": EXPECTED_COVERAGE, "by_horizon": _band(prices, vol, dates, horizons)},
         "points": points,
         "series": {"dates": [d.date().isoformat() for d in weekly],

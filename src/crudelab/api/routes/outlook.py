@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ... import fair_value
 from ... import projection as service
 from ... import signals as signal_service
 from ...indicators import IndicatorEngine
@@ -19,6 +20,11 @@ router = APIRouter(tags=["outlook"])
 
 class NewProjection(BaseModel):
     name_zh: str
+    drift_model: str | None = None      # 用哪個公允價值模型給基準漂移；不給 = 不加
+
+
+class ProjectionPatch(BaseModel):
+    drift_model: str | None = None
 
 
 class NewCase(BaseModel):
@@ -44,17 +50,51 @@ def signals(session: Session = Depends(get_db), engine: IndicatorEngine = Depend
     return signal_service.compute(session, engine)
 
 
+@router.get("/fair-value")
+def fair_values(state: AppState = Depends(get_state), engine: IndicatorEngine = Depends(get_engine)):
+    """每個公允價值模型的最新結果：公允價值、偏離、因子拆解、偏離的回歸速度、各期限的漂移。"""
+    horizons = service.horizons_of(state.cfg)
+    return [fair_value.describe(state.cfg, fair_value.current(engine, state.cfg, code), horizons)
+            for code in state.cfg.fair_values]
+
+
+@router.get("/fair-value/{code}")
+def fair_value_detail(code: str, days: int = 500, state: AppState = Depends(get_state),
+                      engine: IndicatorEngine = Depends(get_engine)):
+    """加上歷史：每一天都只用當時之前的數據擬合。"""
+    if code not in state.cfg.fair_values:
+        raise HTTPException(404, f"沒有名為 {code} 的公允價值模型")
+    out = fair_value.describe(state.cfg, fair_value.current(engine, state.cfg, code), service.horizons_of(state.cfg))
+    out["history"] = fair_value.history(engine, state.cfg, code, max(20, min(days, 1500)))
+    return out
+
+
 @router.get("/projections")
 def list_projections(session: Session = Depends(get_db)):
     rows = session.scalars(select(Projection).where(Projection.archived_at.is_(None)).order_by(Projection.id))
-    return [{"id": p.id, "name_zh": p.name_zh, "created_at": p.created_at,
+    return [{"id": p.id, "name_zh": p.name_zh, "created_at": p.created_at, "drift_model": p.drift_model,
              "cases": len(service.cases(session, p.id))} for p in rows]
 
 
 @router.post("/projections")
-def create_projection(body: NewProjection, session: Session = Depends(get_db), actor: str = Depends(get_actor)):
-    row = service.create(session, body.name_zh, actor)
-    return {"id": row.id, "name_zh": row.name_zh}
+def create_projection(body: NewProjection, session: Session = Depends(get_db), state: AppState = Depends(get_state),
+                      actor: str = Depends(get_actor)):
+    try:
+        row = service.create(session, body.name_zh, actor, body.drift_model, state.cfg)
+    except service.ProjectionError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"id": row.id, "name_zh": row.name_zh, "drift_model": row.drift_model}
+
+
+@router.patch("/projections/{projection_id}")
+def update_projection(projection_id: int, body: ProjectionPatch, session: Session = Depends(get_db),
+                      state: AppState = Depends(get_state)):
+    """打開或關閉基本面回歸（drift_model 給模型代碼或 null）。"""
+    try:
+        row = service.set_drift_model(session, state.cfg, projection_id, body.drift_model)
+    except service.ProjectionError as exc:
+        raise _fail(exc) from exc
+    return {"id": row.id, "drift_model": row.drift_model}
 
 
 @router.get("/projections/{projection_id}")

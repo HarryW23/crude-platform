@@ -18,6 +18,7 @@ config/ 的結構：
     notifications.yaml         通知渠道與規則
     freshness.yaml             數據斷更的判斷規則
     backtest.yaml              回測設定
+    fair_value.yaml            基本面公允價值模型
 
 校驗一次做完並一次報全：結構（字段名、類型）、引用（單位、地區、品種、公式裡的名字）、
 唯一性（代碼、別名）、公式語法、循環引用、量綱。任何一項不過，整份配置都不生效。
@@ -42,6 +43,7 @@ from .schema import (
     BacktestSettings,
     BalanceDef,
     CommodityDef,
+    FairValueModel,
     FreshnessDef,
     IndicatorDef,
     LocationDef,
@@ -94,6 +96,7 @@ class Config:
     notifications: NotificationsDef = field(default_factory=NotificationsDef)
     freshness: FreshnessDef = field(default_factory=FreshnessDef)
     backtest: BacktestSettings = field(default_factory=BacktestSettings)
+    fair_values: dict[str, FairValueModel] = field(default_factory=dict)
 
     @property
     def market_series(self) -> list[str]:
@@ -240,6 +243,9 @@ def load_config(config_dir: Path) -> Config:
         cfg.notifications = (ld.build(NotificationsDef, ld.read(notify_path) or {}, notify_path)
                              or NotificationsDef())
         ld.keyed(cfg.notifications.channels, "通知渠道")
+    fv_path = config_dir / "fair_value.yaml"
+    if fv_path.exists():
+        cfg.fair_values = ld.keyed(ld.items(FairValueModel, fv_path), "公允價值模型")
     backtest_path = config_dir / "backtest.yaml"
     if backtest_path.exists():
         cfg.backtest = ld.build(BacktestSettings, ld.read(backtest_path) or {}, backtest_path) or BacktestSettings()
@@ -305,6 +311,11 @@ def _validate(cfg: Config) -> list[str]:
         errors += [f"事件預案 {pb.code}：{i.target} 既不是序列也不是指標" for i in pb.impacts if not cfg.has(i.target)]
     errors += _validate_projection(cfg)
     errors += _validate_schedule(cfg)
+    for m in cfg.fair_values.values():
+        if m.target not in cfg.series:
+            errors.append(f"公允價值模型 {m.code}：target {m.target} 不是序列")
+        errors += [f"公允價值模型 {m.code}：因子 {f.input} 既不是序列也不是指標"
+                   for f in m.factors if not cfg.has(f.input)]
     if cfg.backtest.anchor and cfg.backtest.anchor not in cfg.series:
         errors.append(f"backtest.yaml：anchor {cfg.backtest.anchor} 不是序列")
     fr = cfg.freshness

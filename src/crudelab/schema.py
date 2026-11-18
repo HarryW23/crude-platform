@@ -452,3 +452,32 @@ class BacktestSettings(Strict):
     neutral_band: float = Field(default=0.15, gt=0, lt=1)    # 分數絕對值小於它算「中性」，不計入命中率
     min_effective_samples: int = Field(default=30, ge=5)      # 有效樣本少於它就標為樣本不足
     vintage_max_dates: int = Field(default=400, ge=10)        # 按入庫時間回測最多評估多少個日期（每個日期都要重算一遍）
+
+
+# ------------------------------ 公允價值 ------------------------------
+
+class FairValueFactor(Strict):
+    input: str                          # 序列或指標代碼
+    name_zh: str | None = None          # 不寫就用序列或指標的名字
+
+
+class FairValueModel(Strict):
+    """基本面公允價值模型：在滾動窗口裡把價格回歸到幾個基本面因子上。算法見 fair_value.py。"""
+    code: str = Code
+    name_zh: str
+    target: str                                         # 價格序列
+    transform: Literal["log", "level"] = "log"          # log：回歸對數價格，偏離按百分比理解
+    factors: list[FairValueFactor] = Field(min_length=1, max_length=6)
+    window_days: int = Field(default=1095, ge=180)      # 只用最近這麼多天的數據擬合
+    min_points: int = Field(default=120, ge=30)         # 樣本少於它不擬合
+    min_r2: float = Field(default=0.3, ge=0, lt=1)      # 擬合優度低於它：只展示，不作為推演的漂移
+    notes: str | None = None
+
+    @model_validator(mode="after")
+    def _check(self):
+        inputs = [f.input for f in self.factors]
+        if len(inputs) != len(set(inputs)):
+            raise ValueError("因子不能重複")
+        if self.min_points < 10 * (len(self.factors) + 1):
+            raise ValueError("min_points 至少要是 10 ×（因子數 + 1），否則擬合不穩定")
+        return self

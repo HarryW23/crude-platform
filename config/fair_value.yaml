@@ -1,0 +1,21 @@
+# 基本面公允價值模型：在滾動窗口裡把價格回歸到基本面因子上，看價格現在偏離了多少、偏離通常多快消退。
+# 算法和局限見 src/crudelab/fair_value.py 開頭。結果在前台的「推演」頁；推演可以選擇用它給基準漂移。
+#   target       價格序列
+#   transform    log（預設）：回歸對數價格，偏離按百分比理解；level：直接回歸價格
+#   factors      因子：序列或指標代碼。初版刻意少而透明，加因子之前先用回測看它有沒有用
+#   window_days  只用最近這麼多天擬合（預設 3 年）
+#   min_points   樣本少於它不擬合
+#   min_r2       擬合優度低於它時只展示，不給推演漂移
+- code: BRENT_FV
+  name_zh: Brent 基本面公允價值
+  target: BRENT_M1
+  transform: log
+  window_days: 1095
+  min_points: 120
+  min_r2: 0.3
+  factors:
+    - {input: TS_BRENT_M1_M3, name_zh: Brent 月差（曲線結構）}
+    - {input: STK_US_CRUDE_VS_5Y, name_zh: 美國原油庫存偏離}
+  notes: >-
+    曲線結構反映現貨的鬆緊，庫存偏離反映基本面的累積。兩者都和價格同向變化是常態，
+    所以這個模型回答的是「按現在的曲線和庫存，價格大致應在哪」，而不是預測基本面本身會怎麼變。

@@ -93,6 +93,15 @@ function renderResults(view, r) {
           ${r.horizons.map((x) => `<tr><td>${esc(x.name_zh)}</td><td class="n"><b>${pct(band[x.code].coverage)}</b></td><td class="n">${pct(band[x.code].above)}</td>
             <td class="n">${pct(band[x.code].below)}</td><td class="n">${band[x.code].n}</td></tr>`).join("")}</table>
         <h3>綜合分數與價格</h3><div id="series"></div></div></div>
+    ${(r.fair_values ?? []).map((fv) => `<h3>${esc(fv.name_zh)}${fv.approx ? ' <span class="tag warn">近似</span>' : ""}</h3>
+      <p class="sub">回測期間：能給漂移的 ${fv.coverage.ok} 天，解釋力弱 ${fv.coverage.weak} 天，無法計算 ${fv.coverage.unavailable} 天。
+        「誤差減少」是加了漂移後推演中樞的平均誤差比不加時少了多少，負數表示加了反而更差。</p>
+      <div class="cols"><div><table>${head.replace("<th>信號</th>", "<th>偏離作為信號</th>")}
+        ${row(`FV:${fv.code}`, "價格高於公允價值 → 看空", "分數 = −偏離 ÷ 典型偏離 ÷ 2", fv.by_horizon[h.code])}</table></div>
+      <div><table><tr><th>加漂移後</th>${r.horizons.map((x) => `<th class="n">${esc(x.name_zh)}</th>`).join("")}</tr>
+        <tr><td>誤差減少</td>${r.horizons.map((x) => { const d = fv.drift[x.code]; return `<td class="n ${d.improvement > 0 ? "up" : d.improvement < 0 ? "down" : ""}"><b>${d.improvement == null ? "—" : signed(d.improvement * 100, 1) + "%"}</b>${d.significant ? '<div><span class="tag ok">顯著</span></div>' : ""}</td>`; }).join("")}</tr>
+        <tr><td>方向命中率</td>${r.horizons.map((x) => `<td class="n">${pct(fv.drift[x.code].hit_rate)}</td>`).join("")}</tr>
+        <tr><td>有效樣本</td>${r.horizons.map((x) => `<td class="n">${num(fv.drift[x.code].n_eff, 0)}${fv.drift[x.code].status === "insufficient" ? '<div><span class="tag warn">樣本不足</span></div>' : ""}</td>`).join("")}</tr></table></div></div>`).join("")}
     <h3>需要知道的局限</h3><ul class="ink2">${r.caveats.map((c) => `<li>${esc(c)}</li>`).join("")}</ul></div>`;
 
   view.querySelectorAll("[data-h]").forEach((b) => b.addEventListener("click", () => { state.horizon = b.dataset.h; renderResults(view, r); }));
@@ -100,7 +109,8 @@ function renderResults(view, r) {
 
   const focusKey = state.focus.startsWith("MODULE_") ? null : state.focus;
   const p = focusKey && r.points[focusKey] ? r.points[focusKey][h.code] : null;
-  const label = focusKey === "OVERALL" ? "綜合分數" : r.signals.find((s) => s.code === focusKey)?.name_zh;
+  const label = focusKey === "OVERALL" ? "綜合分數" : focusKey?.startsWith("FV:")
+    ? (r.fair_values ?? []).find((f) => `FV:${f.code}` === focusKey)?.name_zh + "的偏離" : r.signals.find((s) => s.code === focusKey)?.name_zh;
   view.querySelector("#focus-title").textContent = p ? `${label}：分數與之後 ${h.name_zh} 的收益` : "點左邊任一信號看散點圖";
   if (p && p.points.length >= 2) {
     view.querySelector("#focus").append(scatterChart({

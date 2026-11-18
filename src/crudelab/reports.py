@@ -59,6 +59,11 @@ def build_facts(session: Session, cfg: Config, kind: str, projection_id: int | N
                "started_on": str(e.started_on) if e.started_on else None, "summary": e.summary,
                "scenario_code": e.scenario_code} for e in signal_service.active_events(session)]
 
+    from . import fair_value
+    from .projection import horizons_of
+    fair_values = [fair_value.describe(cfg, fair_value.current(engine, cfg, code), horizons_of(cfg))
+                   for code in cfg.fair_values]
+
     if projection_id is None:
         projection_id = session.scalar(select(func.max(Projection.id)).where(Projection.archived_at.is_(None)))
     projection = None
@@ -76,7 +81,7 @@ def build_facts(session: Session, cfg: Config, kind: str, projection_id: int | N
                          "parameters_unverified": sum(not p.verified for p in params),
                          "parameters_total": len(params)},
             "signals": signal_service.compute(session, engine), "indicators": groups, "balances": balances,
-            "refineries": refineries, "events": events, "projection": projection}
+            "refineries": refineries, "events": events, "projection": projection, "fair_values": fair_values}
 
 
 # ------------------------------ 排版 ------------------------------
@@ -135,6 +140,23 @@ def render_markdown(facts: dict) -> str:
                      for m in sig["modules"]])
     lines += ["信號衡量的是各指標相對自身歷史的位置，不是預測。", ""]
 
+    lines += ["## 基本面公允價值", ""]
+    for fv in facts.get("fair_values", []):
+        if fv["fair"] is None:
+            lines += [f"{fv['name_zh']}：無法計算（{'；'.join(fv['reasons']) or '沒有數據'}）。", ""]
+            continue
+        lines += [f"{fv['name_zh']}（{fv['date']}）：{fv['target_name']} {_n(fv['price'])}，公允價值 {_n(fv['fair'])}，"
+                  f"偏離 {_s((fv['deviation_pct'] or 0) * 100, 1)}%"
+                  + (f"，偏離的半衰期約 {fv['half_life']:.0f} 個交易日" if fv["half_life"] else "")
+                  + f"，R² {_n(fv['r2'])}。", ""]
+        lines += _table(["因子", "當前值", "對公允價值的貢獻"],
+                        [[f["name_zh"], _n(f["value"]), f"{_s((f['contribution_pct'] or 0) * 100, 1)}%"]
+                         for f in fv["factors"]])
+        if fv["status"] != "ok":
+            lines += [f"不作為推演的漂移：{'；'.join(fv['reasons'])}。", ""]
+    if not facts.get("fair_values"):
+        lines += ["沒有定義公允價值模型。", ""]
+
     _indicator_section(lines, "地域價差", facts["indicators"].get("spread", {}))
 
     lines += ["## 供需平衡", ""]
@@ -192,7 +214,9 @@ def render_markdown(facts: dict) -> str:
             rows.append(["機率加權", "", *[_n(p["expected"][h["code"]]) for h in p["horizons"]]])
         lines += _table(header, rows)
         lines += ["括號內是按歷史波動給出的一倍標準差區間，不是置信保證。"
-                  "各分支的中樞 = 當前價格 + 供需效應 + 直接價格調整；機率和敏感度是人為設定。", ""]
+                  "各分支的中樞 = 當前價格 + 基本面回歸 + 供需效應 + 直接價格調整；機率和敏感度是人為設定。"
+                  + ("" if not p.get("drift") or not p["drift"].get("effects")
+                     else f"本推演使用 {p['drift']['name_zh']} 的基本面回歸。"), ""]
     return "\n".join(lines).rstrip() + "\n"
 
 

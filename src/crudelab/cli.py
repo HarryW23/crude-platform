@@ -265,6 +265,11 @@ def cmd_backtest(args) -> int:
     for name, by in rows:
         cells = "".join(f"  {pct(by[c]['hit_rate'])} {num(by[c]['ic'])}{'!' if by[c]['significant'] else ' '}" for c in codes)
         print(f"{name:<24}{cells}")
+    for fv in r.get("fair_values", []):
+        print(f"\n{fv['name_zh']}" + ("*" if fv["approx"] else "") +
+              f"（可給漂移的日子 {fv['coverage']['ok']}，解釋力弱 {fv['coverage']['weak']}，無法計算 {fv['coverage']['unavailable']}）")
+        print("  偏離作為信號：" + "　".join(f"{h['name_zh']} 命中 {pct(fv['by_horizon'][h['code']]['hit_rate'])} IC {num(fv['by_horizon'][h['code']]['ic'])}" for h in r["horizons"]))
+        print("  漂移減少的誤差：" + "　".join(f"{h['name_zh']} {pct(fv['drift'][h['code']]['improvement'])}{'!' if fv['drift'][h['code']]['significant'] else ''}" for h in r["horizons"]))
     band = r["band"]["by_horizon"]
     print("\n價格區間覆蓋率（理想約 68%）：" + "　".join(f"{h['name_zh']} {pct(band[h['code']]['coverage'])}" for h in r["horizons"]))
     print("\n* 近似：用到修訂後的月度數據。! IC 在有效樣本下顯著。完整結果在前台的「回測」頁。")

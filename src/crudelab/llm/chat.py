@@ -189,6 +189,14 @@ def tool_get_projection(ctx: _Ctx) -> dict:
         raise ToolError(str(exc)) from exc
 
 
+def tool_get_fair_value(ctx: _Ctx) -> dict:
+    from .. import fair_value
+    from ..projection import horizons_of
+    return {"models": [fair_value.describe(ctx.cfg, fair_value.current(ctx.engine, ctx.cfg, code), horizons_of(ctx.cfg))
+                       for code in ctx.cfg.fair_values],
+            "note": "deviation_pct 是價格高出公允價值的比例；drift.effect 是推演裡預計在期限內消退的偏離（價格單位）；status 不是 ok 時不給漂移"}
+
+
 def tool_get_parameter(ctx: _Ctx, key: str) -> dict:
     if key not in ctx.cfg.parameters:
         raise ToolError(f"沒有名為 {key} 的參數。先用 search 找正確的 key")
@@ -244,6 +252,7 @@ TOOLS: dict[str, tuple[Callable, str]] = {
     "list_events": (tool_list_events, 'list_events() — 事件庫裡已確認的地緣事件'),
     "list_scenarios": (tool_list_scenarios, 'list_scenarios() — 已保存的情境及其調整'),
     "get_projection": (tool_get_projection, 'get_projection() — 最新一個價格推演：各分支的機率、中樞、區間、機率加權價'),
+    "get_fair_value": (tool_get_fair_value, 'get_fair_value() — 基本面公允價值：價格按曲線結構和庫存「應該」在哪、偏離多少、各因子的貢獻、偏離的半衰期'),
     "get_parameter": (tool_get_parameter, 'get_parameter(key) — 一個參數的數值和生效日期'),
     "what_if": (tool_what_if, 'what_if(adjustments=[{target, delta, date_from, date_to}], parameters={key: value}, watch=[code], '
                               'price_adjustment=0) — 臨時假設後重算。adjustments 加在序列或指標上（常用平衡表的單項，如 '

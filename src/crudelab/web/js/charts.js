@@ -230,3 +230,42 @@ export function scatterChart(fit, { height = 300 } = {}) {
       </svg>`;
   });
 }
+
+// ------------------------------ 兩條線（價格與公允價值） ------------------------------
+// lines: [{name, color, points: [{date, value}]}]，各條線的日期相同或是子集。第一條畫實線，其餘虛線。
+export function pairChart(lines, { unit = "", height = 260 } = {}) {
+  const dates = [...new Set(lines.flatMap((l) => l.points.map((p) => p.date)))].sort();
+  if (dates.length < 2) return empty("數據點不足，無法畫圖。");
+  const at = Object.fromEntries(dates.map((d, i) => [d, i]));
+  return responsive((box, W) => {
+    const H = height, L = 66, R = 14, T = 14, B = 26;
+    const [lo, hi] = scale(lines.flatMap((l) => l.points.map((p) => p.value)));
+    const x = (i) => L + (W - L - R) * i / (dates.length - 1);
+    const y = (v) => T + (H - T - B) * (1 - (v - lo) / (hi - lo));
+    const path = (pts) => {
+      let out = "", gap = true;
+      for (const p of pts) { out += `${gap ? "M" : "L"}${x(at[p.date]).toFixed(1)},${y(p.value).toFixed(1)}`; gap = false; }
+      return out;
+    };
+    box.innerHTML = `<div class="legend">${lines.map((l, k) => `<span><i style="background:${l.color};${k ? "height:2px;vertical-align:3px" : ""}"></i>${esc(l.name)}</span>`).join("")}<span>${esc(unit)}</span></div>
+      <svg width="${W}" height="${H}" role="img" aria-label="${esc(lines.map((l) => l.name).join("與"))}">
+        ${ticks(lo, hi).map((v) => `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--hairline)"/>
+          <text x="${L - 8}" y="${y(v) + 4}" text-anchor="end">${num(v)}</text>`).join("")}
+        ${lines.map((l, k) => `<path d="${path(l.points)}" fill="none" stroke="${l.color}" stroke-width="2" ${k ? 'stroke-dasharray="6 4"' : ""}/>`).join("")}
+        <line class="cross" y1="${T}" y2="${H - B}" stroke="var(--axis)" visibility="hidden"/>
+        <text x="${L}" y="${H - 7}">${dates[0]}</text><text x="${W - R}" y="${H - 7}" text-anchor="end">${dates.at(-1)}</text>
+        <rect class="hit" x="${L}" y="${T}" width="${W - L - R}" height="${H - T - B}" fill="transparent"/>
+      </svg><div class="tip" hidden></div>`;
+    const cross = box.querySelector(".cross"), tip = box.querySelector(".tip"), hit = box.querySelector(".hit");
+    const svgTop = box.querySelector("svg").offsetTop;
+    const byDate = lines.map((l) => Object.fromEntries(l.points.map((p) => [p.date, p.value])));
+    hit.addEventListener("pointermove", (ev) => {
+      const px = ev.clientX - box.getBoundingClientRect().left;
+      const i = Math.max(0, Math.min(dates.length - 1, Math.round((px - L) / (W - L - R) * (dates.length - 1))));
+      cross.setAttribute("x1", x(i)); cross.setAttribute("x2", x(i)); cross.setAttribute("visibility", "visible");
+      tip.innerHTML = `${dates[i]}` + lines.map((l, k) => `　${esc(l.name)} <b>${num(byDate[k][dates[i]])}</b>`).join("");
+      placeTip(tip, box, x(i), svgTop + T + 20);
+    });
+    hit.addEventListener("pointerleave", () => { cross.setAttribute("visibility", "hidden"); tip.hidden = true; });
+  });
+}

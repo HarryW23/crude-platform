@@ -1,15 +1,16 @@
 """價格推演：把若干個情境分支各自折成一個價格區間，再按機率加權。
 
 對每個分支、每個期限（1 周 / 1 個月 / 3 個月）：
+    基本面回歸 = 推演選了公允價值模型時，預計在期限內消退的偏離（見 fair_value.py）；沒選則為 0。各分支相同
     平衡變化   = 期限內各期「情境下的平衡 − 基準平衡」的平均          （來自平衡表和情境調整）
     供需效應   = −敏感度 × 平衡變化                                    （敏感度是參數：每多 1 單位過剩，價格跌多少）
-    中樞       = 當前價格 + 供需效應 + 分支的直接價格調整              （直接調整 = 人給的判斷，如風險溢價）
+    中樞       = 當前價格 + 基本面回歸 + 供需效應 + 分支的直接價格調整（直接調整 = 人給的判斷，如風險溢價）
     區間       = 中樞 ± 當前價格 × 日波動率 × √期限交易日數            （一倍標準差，來自歷史已實現波動）
     機率加權價 = Σ 機率 × 中樞                                          （各分支機率之和必須等於 1）
 
 每一項都能指回來源：當前價格和波動率來自行情，平衡變化來自情境調整，敏感度和機率是人設的。
 這是把假設攤開來算的工具，不是黑盒預測：
-  - 沒有「基準漂移」，基準分支的中樞就是當前價格
+  - 不選公允價值模型時沒有「基準漂移」，基準分支的中樞就是當前價格
   - 敏感度是線性的、不隨期限變化，這是一個粗略的經驗設定，必須由使用者自己給
   - 區間只反映歷史波動的大小，不是置信區間的保證
 缺任何一項輸入，對應的結果就留空並說明原因。
@@ -25,7 +26,7 @@ import pandas as pd
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from . import scenarios
+from . import fair_value, scenarios
 from .config import Config
 from .indicators import IndicatorEngine, Scenario
 from .models import Projection, ProjectionCase, utcnow
@@ -38,10 +39,22 @@ class ProjectionError(ValueError):
     pass
 
 
+def horizons_of(cfg: Config) -> list:
+    from .backtest import DEFAULT_HORIZONS
+    return list(cfg.projection.horizons) if cfg.projection else DEFAULT_HORIZONS
+
+
 # ------------------------------ 設定的增刪 ------------------------------
 
-def create(session: Session, name_zh: str, actor: str = "local") -> Projection:
-    row = Projection(name_zh=name_zh.strip() or "未命名推演", created_by=actor)
+def _check_drift_model(cfg: Config | None, drift_model: str | None) -> None:
+    if drift_model and (cfg is None or drift_model not in cfg.fair_values):
+        raise ProjectionError(f"沒有名為 {drift_model} 的公允價值模型")
+
+
+def create(session: Session, name_zh: str, actor: str = "local", drift_model: str | None = None,
+           cfg: Config | None = None) -> Projection:
+    _check_drift_model(cfg, drift_model)
+    row = Projection(name_zh=name_zh.strip() or "未命名推演", created_by=actor, drift_model=drift_model or None)
     session.add(row)
     session.flush()
     session.add(ProjectionCase(projection_id=row.id, label="基準", scenario_code=None, probability=1.0,
@@ -54,6 +67,13 @@ def require(session: Session, projection_id: int) -> Projection:
     row = session.get(Projection, projection_id)
     if row is None or row.archived_at is not None:
         raise ProjectionError(f"沒有編號為 {projection_id} 的推演")
+    return row
+
+
+def set_drift_model(session: Session, cfg: Config, projection_id: int, drift_model: str | None) -> Projection:
+    row = require(session, projection_id)
+    _check_drift_model(cfg, drift_model)
+    row.drift_model = drift_model or None
     return row
 
 
@@ -156,13 +176,18 @@ def _context(session: Session, cfg: Config, as_of: datetime | None) -> tuple[_Co
                      PERIOD_DAYS[cfg.frequency_of(settings.balance_indicator)]), base, prices)
 
 
-def _case_cells(ctx: _Context, scenario_balance: pd.Series | None, price_adjustment: float) -> dict:
-    """一個分支在各期限的結果。scenario_balance 為 None = 基準分支（平衡不變）。"""
+def _case_cells(ctx: _Context, scenario_balance: pd.Series | None, price_adjustment: float,
+                drift: dict[str, float] | None = None) -> dict:
+    """一個分支在各期限的結果。
+
+    scenario_balance 為 None = 基準分支（平衡不變）。drift：各期限的基本面回歸（價格單位），各分支相同。
+    """
     horizons = {}
     for h in ctx.settings.horizons:
         end = ctx.today + pd.Timedelta(days=h.calendar_days)
-        cell = {"balance_change": 0.0, "periods": 0, "balance_effect": 0.0, "central": None, "low": None,
-                "high": None, "reason": None}
+        drift_effect = (drift or {}).get(h.code) or 0.0
+        cell = {"balance_change": 0.0, "periods": 0, "balance_effect": 0.0, "drift_effect": drift_effect,
+                "central": None, "low": None, "high": None, "reason": None}
         if scenario_balance is not None:
             change, n = _balance_change(ctx.base_balance, scenario_balance, ctx.today, end, ctx.period_days)
             cell["balance_change"], cell["periods"] = change, n
@@ -176,7 +201,7 @@ def _case_cells(ctx: _Context, scenario_balance: pd.Series | None, price_adjustm
             else:
                 cell["balance_effect"] = -ctx.sensitivity * change
         if ctx.price is not None and cell["balance_effect"] is not None:
-            cell["central"] = ctx.price + cell["balance_effect"] + price_adjustment
+            cell["central"] = ctx.price + drift_effect + cell["balance_effect"] + price_adjustment
             if ctx.volatility is not None:
                 band = ctx.price * ctx.volatility * math.sqrt(h.trading_days)
                 cell["low"], cell["high"], cell["band"] = cell["central"] - band, cell["central"] + band, band
@@ -197,9 +222,33 @@ def adhoc(session: Session, cfg: Config, scenario: Scenario, price_adjustment: f
                                             _case_cells(ctx, balance, price_adjustment).values(), strict=True)}}
 
 
+def _drift(cfg: Config, engine: IndicatorEngine, code: str | None, ctx: _Context,
+           problems: list[str]) -> tuple[dict[str, float] | None, dict | None]:
+    """推演選了公允價值模型時，各期限的基本面回歸（價格單位）。模型不可用時不加，並在 problems 裡說明。"""
+    if not code:
+        return None, None
+    if code not in cfg.fair_values:
+        problems.append(f"這個推演選的公允價值模型 {code} 已不存在，沒有加基本面回歸")
+        return None, {"model": code, "status": "missing", "reasons": ["模型已不存在"]}
+    fit = fair_value.current(engine, cfg, code, ctx.today.date())
+    model = cfg.fair_values[code]
+    info = {"model": code, "name_zh": model.name_zh, "status": fit.status, "reasons": fit.reasons,
+            "fair": fit.fair, "deviation_pct": fit.deviation_pct, "half_life": fit.half_life, "date": fit.date,
+            "effects": {}}
+    if fit.status != "ok" or ctx.price is None:
+        problems.append(f"公允價值模型目前不給漂移（{'；'.join(fit.reasons) or '沒有結果'}），所以沒有加基本面回歸")
+        return None, info
+    effects = {}
+    for h in ctx.settings.horizons:
+        move = fair_value.drift_log(fit, h.trading_days)
+        effects[h.code] = ctx.price * (math.exp(move) - 1) if model.transform == "log" else move
+    info["effects"] = effects
+    return effects, info
+
+
 def compute(session: Session, cfg: Config, projection_id: int, as_of: datetime | None = None) -> dict:
     row = require(session, projection_id)
-    ctx, _, prices = _context(session, cfg, as_of)
+    ctx, base, prices = _context(session, cfg, as_of)
     settings, price, volatility, sensitivity = ctx.settings, ctx.price, ctx.volatility, ctx.sensitivity
     unit = cfg.series[settings.anchor].unit
     balance_unit = cfg.indicators[settings.balance_indicator].unit
@@ -215,6 +264,7 @@ def compute(session: Session, cfg: Config, projection_id: int, as_of: datetime |
     if not probabilities_ok:
         problems.append(f"各分支機率之和是 {total_probability:.0%}，不等於 100%，所以不計算機率加權價")
 
+    drift, drift_info = _drift(cfg, base, row.drift_model, ctx, problems)
     out_cases = []
     for c in case_rows:
         scenario_balance = (IndicatorEngine(session, cfg, as_of=as_of,
@@ -222,7 +272,7 @@ def compute(session: Session, cfg: Config, projection_id: int, as_of: datetime |
                             .compute(settings.balance_indicator) if c.scenario_code else None)
         out_cases.append({"id": c.id, "label": c.label, "scenario_code": c.scenario_code,
                           "probability": c.probability, "price_adjustment": c.price_adjustment, "note": c.note,
-                          "horizons": _case_cells(ctx, scenario_balance, c.price_adjustment)})
+                          "horizons": _case_cells(ctx, scenario_balance, c.price_adjustment, drift)})
 
     expected = {}
     for h in settings.horizons:
@@ -230,7 +280,7 @@ def compute(session: Session, cfg: Config, projection_id: int, as_of: datetime |
         expected[h.code] = (sum(c["probability"] * v for c, v in zip(out_cases, centrals, strict=True))
                             if probabilities_ok and out_cases and all(v is not None for v in centrals) else None)
 
-    return {"id": row.id, "name_zh": row.name_zh,
+    return {"id": row.id, "name_zh": row.name_zh, "drift_model": row.drift_model,
             "anchor": {"code": settings.anchor, "name_zh": cfg.series[settings.anchor].name_zh, "unit": unit,
                        "price": price, "date": prices.index[-1].date().isoformat() if len(prices) else None},
             "volatility": {"daily": volatility, "annualized": volatility * math.sqrt(252) if volatility else None,
@@ -238,5 +288,5 @@ def compute(session: Session, cfg: Config, projection_id: int, as_of: datetime |
             "sensitivity": {"parameter": settings.sensitivity_parameter, "value": sensitivity,
                             "unit": cfg.parameters[settings.sensitivity_parameter].unit},
             "balance": {"indicator": settings.balance_indicator, "unit": balance_unit},
-            "horizons": [h.model_dump() for h in settings.horizons],
+            "horizons": [h.model_dump() for h in settings.horizons], "drift": drift_info,
             "total_probability": total_probability, "cases": out_cases, "expected": expected, "problems": problems}

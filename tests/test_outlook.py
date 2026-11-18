@@ -414,7 +414,8 @@ def test_chat_handles_bad_tool_calls_and_gives_up_cleanly(loaded, cfg):
     assert "參數不對" in errors[2] and "module 必須是" in errors[3]
     assert result["answer"] == "這不是 JSON，直接作答。"
     assert set(chat.TOOLS) == {"search", "get_values", "list_indicators", "get_balance", "get_refinery", "get_signals",
-                               "list_events", "list_scenarios", "get_projection", "get_parameter", "what_if"}
+                               "list_events", "list_scenarios", "get_projection", "get_fair_value", "get_parameter",
+                               "what_if"}
 
     looping = ScriptedProvider(*[step("get_signals")] * (chat.MAX_STEPS + 1))
     with pytest.raises(LLMError, match="仍沒有得出回答"):
@@ -446,6 +447,6 @@ def test_every_chat_tool_runs_on_real_data(loaded, cfg):
 
 def test_chat_api(client, monkeypatch):
     monkeypatch.delenv("CRUDELAB_LLM_PROVIDER", raising=False)
-    assert len(client.get("/api/chat/tools").json()) == 11
+    assert len(client.get("/api/chat/tools").json()) == 12
     assert client.post("/api/chat", json={"question": "Brent 多少？"}).status_code == 409      # 沒配大模型
     assert client.post("/api/chat", json={"question": ""}).status_code == 422
