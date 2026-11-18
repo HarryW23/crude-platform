@@ -3,7 +3,7 @@
 #
 #   directory      備份放哪。相對路徑在 data/ 下；絕對路徑可以指向另一塊硬盤、NAS、雲同步文件夾（推薦）
 #                  放在和數據同一塊磁盤上只防誤刪、防改壞，防不了硬盤壞掉。後台「備份」頁會提示
-#                  不同機器路徑不同時，用環境變量 CRUDELAB_BACKUP_DIR 覆蓋這裡
+#                  只對這台機器設：crudelab local set CRUDELAB_BACKUP_DIR 路徑（存在本機設定裡，更新代碼不受影響）
 #   keep_daily     定時備份：最近幾天每天保留最後一份
 #   keep_weekly    再往前幾周每周保留最後一份
 #   keep_monthly   再往前幾個月每月保留最後一份。手動備份和恢復前的自動備份不會被清理

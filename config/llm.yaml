@@ -4,7 +4,9 @@
 #   provider   none（不用大模型）/ deepseek / openai / anthropic / compatible
 #   model      不寫就用預設：deepseek → deepseek-chat。型號以官網的模型列表為準，名字錯了會報「模型名或接口地址不對」
 #   base_url   只有 compatible 要填，必須是 https
-#   同名環境變量（CRUDELAB_LLM_PROVIDER / CRUDELAB_LLM_MODEL / CRUDELAB_LLM_BASE_URL）優先於這裡
+#   這裡是所有機器共用的預設。只想讓自己這台機器用 DeepSeek，運行 crudelab llm use deepseek 就好：
+#   它存在 ~/.crudelab/local.env，更新代碼不受影響，也不用改這個文件。
+#   優先順序：環境變量 > 本機設定（local.env）> 這裡
 #
 # 調用限制：保護帳號（不要短時間大量請求、不要拿著錯誤的密鑰反覆請求），也保護錢包。
 #

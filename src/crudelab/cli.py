@@ -375,6 +375,44 @@ def cmd_restore(args) -> int:
     return 0
 
 
+def cmd_local(args) -> int:
+    """本機設定：存在 ~/.crudelab/local.env，在項目文件夾之外，更新代碼不受影響。"""
+    from . import credentials
+    from .settings import (
+        LOCAL_SETTINGS,
+        LocalSettingsError,
+        local_settings_path,
+        read_local_settings,
+        set_local_setting,
+    )
+    if args.action == "list":
+        values = read_local_settings()
+        print(f"本機設定文件：{local_settings_path()}（{'存在' if local_settings_path().exists() else '尚未建立'}）")
+        for name, description in LOCAL_SETTINGS.items():
+            value = values.get(name)
+            env = os.environ.get(name)
+            shown = f"{value}" + ("（被同名環境變量蓋過）" if env and env != value else "") if value else "—"
+            print(f"  {name:<24} {shown:<24} {description}")
+        return 0
+    if args.name in credentials.KNOWN:
+        print(f"{args.name} 是密鑰，請用 crudelab secret set {args.name} 保存", file=sys.stderr)
+        return 1
+    try:
+        if args.action == "set":
+            if args.value is None:
+                print("請給出要設定的值，例如：crudelab local set CRUDELAB_LLM_PROVIDER deepseek", file=sys.stderr)
+                return 1
+            set_local_setting(args.name, args.value)
+            print(f"已設定 {args.name}={args.value}（{local_settings_path()}）。重新啟動後生效。")
+        else:
+            set_local_setting(args.name, None)
+            print(f"已刪除 {args.name}")
+    except LocalSettingsError as exc:
+        print(exc, file=sys.stderr)
+        return 1
+    return 0
+
+
 def cmd_llm(args) -> int:
     """大模型：查看配置和用量、做一次最小的連通測試、解除自動暫停。"""
     import time as _time
@@ -385,6 +423,21 @@ def cmd_llm(args) -> int:
     db.init_engine(settings)
     cfg = load_config(settings.config_dir)
     st = status(cfg.llm)
+    if args.action == "use":
+        from .settings import LocalSettingsError, set_local_setting
+        if not args.provider:
+            print("請給出供應商，例如：crudelab llm use deepseek", file=sys.stderr)
+            return 1
+        try:
+            set_local_setting("CRUDELAB_LLM_PROVIDER", args.provider)
+            if args.model:
+                set_local_setting("CRUDELAB_LLM_MODEL", args.model)
+        except LocalSettingsError as exc:
+            print(exc, file=sys.stderr)
+            return 1
+        print(f"這台機器改用 {args.provider}" + (f" / {args.model}" if args.model else "")
+              + "（存在本機設定裡，更新代碼不受影響）。重新啟動後生效；先用 crudelab llm test 試一下")
+        return 0
     if args.action == "reset":
         n = limits.reset()
         print(f"已解除 {n} 個自動暫停" if n else "目前沒有自動暫停")
@@ -566,8 +619,16 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--force", action="store_true", help="跳過「服務還開著」和「恢復前備份失敗」的檢查")
     p.set_defaults(func=cmd_restore)
     p = sub.add_parser("llm", help="大模型：status 查看配置和用量 / test 連通測試（發一次很短的請求）/ reset 解除自動暫停")
-    p.add_argument("action", choices=["status", "test", "reset"])
+    p.add_argument("action", choices=["status", "test", "reset", "use"])
+    p.add_argument("provider", nargs="?", choices=["none", "deepseek", "openai", "anthropic", "compatible"],
+                   help="use 時：這台機器用哪一家")
+    p.add_argument("--model", help="use 時：型號（不給就用預設）")
     p.set_defaults(func=cmd_llm)
+    p = sub.add_parser("local", help="本機設定（不含密鑰）：list / set 名字 值 / unset 名字。存在項目文件夾之外")
+    p.add_argument("action", choices=["list", "set", "unset"])
+    p.add_argument("name", nargs="?")
+    p.add_argument("value", nargs="?")
+    p.set_defaults(func=cmd_local)
     p = sub.add_parser("data-needs", help="生成數據與接口需求清單")
     p.add_argument("--output", help="寫入這個文件；不給就打印")
     p.set_defaults(func=cmd_data_needs)
@@ -588,8 +649,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--yes", action="store_true")
     p.set_defaults(func=cmd_purge)
     args = parser.parse_args(argv)
+    from .settings import apply_local_settings
+    apply_local_settings()             # ~/.crudelab/local.env：這台機器自己的設定，git pull 不會動到它
     if args.command == "user" and args.action != "list" and not args.username:
         parser.error("這個操作需要給用戶名")
+    if args.command == "local" and args.action != "list" and not args.name:
+        parser.error("這個操作需要給設定名")
     if args.command == "secret" and args.action != "list" and not args.name:
         parser.error("這個操作需要給密鑰名")
     from . import credentials

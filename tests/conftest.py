@@ -17,6 +17,7 @@ def isolated_credentials(tmp_path, monkeypatch):
     """測試不讀、不寫使用者真正的密鑰文件，也不受外面環境變量裡的密鑰影響。"""
     from crudelab import credentials
     monkeypatch.setenv("CRUDELAB_SECRETS_FILE", str(tmp_path / "home" / "secrets.env"))
+    monkeypatch.setenv("CRUDELAB_LOCAL_FILE", str(tmp_path / "home" / "local.env"))     # 也不讀使用者的本機設定
     for name in credentials.KNOWN:
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(credentials, "_cache", None)

@@ -17,8 +17,16 @@ done
 if [ ! -x .venv/bin/crudelab ]; then
   echo "第一次運行：正在安裝，需要聯網，請稍候…"
   "$PY" -m venv .venv || fail "建立 Python 環境失敗。"
+fi
+
+# 依賴清單（pyproject.toml）變了就重新安裝一次：更新代碼後新加的依賴會自動裝上
+STAMP=.venv/.crudelab-installed
+WANT=$(.venv/bin/python -c 'import hashlib; print(hashlib.sha256(open("pyproject.toml", "rb").read()).hexdigest())')
+if [ ! -x .venv/bin/crudelab ] || [ "$(cat "$STAMP" 2>/dev/null)" != "$WANT" ]; then
+  [ -f "$STAMP" ] && echo "依賴有變化，正在更新，需要聯網，請稍候…"
   .venv/bin/pip install --quiet --disable-pip-version-check -e . ||
     fail "安裝依賴失敗。請檢查網絡後再試；把上面的錯誤訊息保存下來。"
+  echo "$WANT" > "$STAMP"
   echo "安裝完成。"
 fi
 

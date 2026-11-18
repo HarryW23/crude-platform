@@ -69,6 +69,20 @@
 
 Mac 第一次雙擊如果被系統攔住，在文件上按右鍵選「打開」，再確認一次即可。
 
+**更新到最新版本**：雙擊 `update-mac.command`（Windows 是 `update-windows.bat`）。它從 GitHub 拉最新代碼、列出這次更新了什麼，
+依賴有變化時自動重新安裝，然後啟動。需要項目是用 `git clone` 下載的。
+
+更新**不會**動到這些，不用重新設定：
+
+| 內容 | 位置 |
+|---|---|
+| 數據、導入的原始文件、備份 | 項目裡的 `data/`（不在 git 裡） |
+| 密鑰（API key 等） | `~/.crudelab/secrets.env`（在項目文件夾之外） |
+| 這台機器自己的設定（用哪家大模型、備份放哪等） | `~/.crudelab/local.env`（在項目文件夾之外），用 `crudelab local set` 管理 |
+
+所以這台機器自己的設定不要直接改倉庫裡的 `config/` 文件，改用 `crudelab local set`：倉庫裡的文件被改過時，更新腳本會停下來提示，
+避免覆蓋你的修改或卡在衝突裡。`crudelab local list` 列出所有可以這樣設的項目。
+
 **手動啟動**（雙擊不成功時，或在 Linux 上）
 
 ```bash
@@ -114,7 +128,9 @@ Windows 把 `.venv/bin/` 換成 `.venv\Scripts\`。
 | `crudelab backtest` | 回測信號和推演區間 |
 | `crudelab backup` / `backup list` / `backup verify 文件` | 立即備份 / 列出備份 / 校驗一份備份 |
 | `crudelab restore 文件 --yes` | 從備份恢復（先自動備份現在的數據） |
+| `crudelab llm use deepseek` | 這台機器改用某家大模型（存在本機設定裡） |
 | `crudelab llm status` / `llm test` / `llm reset` | 大模型的配置和用量 / 連通測試 / 解除自動暫停 |
+| `crudelab local list` / `local set 名字 值` / `local unset 名字` | 這台機器自己的設定（不含密鑰），更新代碼不受影響 |
 | `pytest` / `ruff check src tests` | 測試 / 代碼檢查 |
 
 ## 回測
@@ -225,6 +241,7 @@ Windows 把 `.venv/bin/` 換成 `.venv\Scripts\`。
 ```
 
 會提示你輸入，輸入時不顯示。密鑰存在 `~/.crudelab/secrets.env`：在項目文件夾之外，只有你本人能讀。
+**每台機器只需要設一次**：更新代碼（`update-mac.command` 或 `git pull`）、甚至刪掉項目重新下載，都不會動到它。
 
 ```bash
 .venv/bin/crudelab secret list
@@ -291,8 +308,8 @@ Windows 把 `.venv/bin/` 換成 `.venv\Scripts\`。
 
 不配置也能用：事件手動錄入，報告只有系統排版的正文。配置後多三項功能：從文字抽取事件草稿、為報告寫解讀、問答。
 
-**選哪一家**：`config/llm.yaml` 的 `provider`（`none` / `deepseek` / `openai` / `anthropic` / `compatible`）和 `model`。
-同名環境變量 `CRUDELAB_LLM_PROVIDER` / `CRUDELAB_LLM_MODEL` / `CRUDELAB_LLM_BASE_URL` 優先。
+**選哪一家**：`crudelab llm use deepseek`（存在本機設定 `~/.crudelab/local.env`）。也可以寫在 `config/llm.yaml` 的
+`provider` / `model`，但那是倉庫裡的文件，適合寫所有機器共用的預設。優先順序：環境變量 > 本機設定 > `config/llm.yaml`。
 
 **密鑰**（`DEEPSEEK_API_KEY` / `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `CRUDELAB_LLM_API_KEY`）**不要寫在任何文件、命令行或聊天裡**，
 只用 `crudelab secret set` 保存，見下面「密鑰」一節。
@@ -306,8 +323,13 @@ Windows 把 `.venv/bin/` 換成 `.venv\Scripts\`。
    .venv/bin/crudelab secret set DEEPSEEK_API_KEY
    ```
 
-3. 打開 `config/llm.yaml`，把 `provider: none` 改成 `provider: deepseek`。`model` 留空就用 `deepseek-chat`；
-   想用別的型號，填官網模型列表裡的名字。
+3. 選用 DeepSeek（存在這台機器的本機設定裡，以後更新代碼不用重設）：
+
+   ```bash
+   .venv/bin/crudelab llm use deepseek
+   ```
+
+   不給型號就用 `deepseek-chat`；想用別的型號加 `--model 型號`，名字以官網模型列表為準。
 4. 連通測試（只發一次很短的請求，幾十個 token）：
 
    ```bash
@@ -420,7 +442,7 @@ SQLite 用在線快照，服務開著也能備份；PostgreSQL 用 `pg_dump`（�
 
 **放在哪**：`config/backup.yaml` 的 `directory`，預設 `data/backups/`。**這只防誤刪、防改壞，防不了硬盤壞掉。**
 正式使用前，把它指到另一塊硬盤、NAS 或雲同步文件夾（例如 `directory: /Volumes/NAS/crudelab-backups`）；
-不同機器路徑不同時用環境變量 `CRUDELAB_BACKUP_DIR`。後台「備份」頁會提示備份是不是和數據在同一塊磁盤上。
+也可以只對這台機器設：`crudelab local set CRUDELAB_BACKUP_DIR /Volumes/NAS/crudelab-backups`。後台「備份」頁會提示備份是不是和數據在同一塊磁盤上。
 
 **保留多久**：定時備份保留最近 14 天每天一份、再往前 8 周每周一份、12 個月每月一份（可在 `backup.yaml` 改）。
 手動備份和恢復前的自動備份不會被自動刪除。
