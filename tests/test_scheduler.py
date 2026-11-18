@@ -130,7 +130,9 @@ def test_tick_runs_due_jobs_once(ready, cfg, session):
     status = scheduler.status(cfg, now + timedelta(minutes=10))
     daily = next(j for j in status["jobs"] if j["code"] == "REPORT_DAILY")
     assert status["running"] and daily["next_run"] == "2026-11-18 18:30" and daily["last"]["status"] == "ok"
-    assert daily["last"]["at"] == "2026-11-17 " + daily["last"]["at"][11:] and daily["schedule"] == "周一至周五 18:30"
+    # 「最近一次」記的是實際執行的時刻（真實時鐘），只檢查它是今天（按上海時區），不寫死日期
+    today = datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
+    assert daily["last"]["at"].startswith(today) and daily["schedule"] == "周一至周五 18:30"
     assert next(j for j in status["jobs"] if j["code"] == "REPORT_MONTHLY")["next_run"] is None
     assert not scheduler.status(cfg, now + timedelta(hours=1))["running"]    # 心跳過期 → 顯示未運行
 
