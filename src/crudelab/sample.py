@@ -1,5 +1,6 @@
 """生成演示用的假數據 Excel。數字是隨機遊走，不是真實行情，只用來試導入流程。
 
+期貨按具體合約生成再排成連續合約，所以換月日的跳動和真實行情一樣存在。
 故意做得不規整（多行表頭、RIC 代碼、空行、橫排版式、一列認不出來的列），
 用來模擬「專人整理但不完全按模板」的實際情況。
 """
@@ -11,6 +12,9 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from openpyxl import Workbook
+
+from .contracts import front_ordinal, last_trading_day
+from .schema import RollRule
 
 
 def _walk(rng: random.Random, start: float, step: float, n: int) -> list[float]:
@@ -39,14 +43,15 @@ def write_sample_workbook(path: Path, days: int = 60, seed: int = 7) -> None:
     dates = _weekdays_ending(END, days)
 
     brent = _walk(rng, 70, 0.9, days)
+    curves = _curves(dates, brent, random.Random(seed + 1))
     cols = {  # 表頭兩行：名稱 / RIC
-        ("Brent M1", "LCOc1"): brent,
-        ("Brent M2", "LCOc2"): [round(v - 0.45 + rng.gauss(0, 0.05), 2) for v in brent],
-        ("Brent M3", "LCOc3"): [round(v - 0.85 + rng.gauss(0, 0.08), 2) for v in brent],
-        ("WTI M1", "CLc1"): [round(v - 3.6 + rng.gauss(0, 0.3), 2) for v in brent],
-        ("WTI M3", "CLc3"): [round(v - 4.3 + rng.gauss(0, 0.3), 2) for v in brent],
-        ("迪拜掉期M1", ""): [round(v - 1.8 + rng.gauss(0, 0.25), 2) for v in brent],
-        ("迪拜掉期M3", ""): [round(v - 2.5 + rng.gauss(0, 0.25), 2) for v in brent],
+        ("Brent M1", "LCOc1"): curves["Brent"][1],
+        ("Brent M2", "LCOc2"): curves["Brent"][2],
+        ("Brent M3", "LCOc3"): curves["Brent"][3],
+        ("WTI M1", "CLc1"): curves["WTI"][1],
+        ("WTI M3", "CLc3"): curves["WTI"][3],
+        ("迪拜掉期M1", ""): curves["Dubai"][1],
+        ("迪拜掉期M3", ""): curves["Dubai"][3],
         ("RBOB M1", "RBc1"): [round((v + 14 + rng.gauss(0, 1)) / 42, 4) for v in brent],
         ("Heating Oil M1", "HOc1"): [round((v + 24 + rng.gauss(0, 1)) / 42, 4) for v in brent],
         ("ICE Gasoil M1", "LGOc1"): [round((v + 22 + rng.gauss(0, 1)) * 7.45, 2) for v in brent],
@@ -86,7 +91,7 @@ def write_sample_workbook(path: Path, days: int = 60, seed: int = 7) -> None:
                     round(4800 + rng.gauss(0, 60)), round(2400 + rng.gauss(0, 50))])
 
     _balance_sheets(wb, rng)
-    _back_months(wb, dates, cols, random.Random(seed + 1))
+    _back_months(wb, dates, curves)
     ws4 = wb.create_sheet("說明")
     ws4.append(["這一頁只有文字，系統會標記為無法識別並跳過。"])
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -135,28 +140,47 @@ def _balance_sheets(wb: Workbook, rng: random.Random) -> None:
                     round(nonoecd, 2), round(stocks, 1)])
 
 
-def _back_months(wb: Workbook, dates: list[date], cols: dict, rng: random.Random) -> None:
-    """遠月合約：在「期貨」表的 M1、M3 之外補齊到 M12，讓曲線圖有東西可畫。
+# 和 config/master/series/crude.yaml 裡的 roll 規則一致
+_ROLLS = {"Brent": RollRule(months_before=2), "WTI": RollRule(months_before=1, day=25, business_days_before=3),
+          "Dubai": RollRule(months_before=1)}
+_OFFSETS = {"Brent": 0.0, "WTI": -3.6, "Dubai": -1.8}
 
-    用獨立的隨機數，不影響其他表的數值。曲線的斜率隨時間慢慢擺動：有時近強遠弱，有時近弱遠強。
+
+def _curves(dates: list[date], level: list[float], rng: random.Random) -> dict[str, dict[int, list[float]]]:
+    """按具體合約生成 M1–M12：每個合約有自己的價格，連續合約 Mn 是當天第 n 個未到期的合約。
+
+    合約價格 = 品種水平 − 斜率 × f(距到期月數) + 合約自己的小噪聲。所以同一個合約每天的變化是連續的，
+    而 M1 在換月那天會從「快到期的合約」換成「下一個合約」，價格跳一下——和真實的連續合約一樣。
+    斜率隨時間慢慢擺動：有時近強遠弱，有時近弱遠強。
     """
-    by_name = {name: values for (name, _), values in cols.items()}
-    curves = {"Brent": ("Brent M1", "Brent M3", "LCOc{n}", "Brent M{n}", [4]),
-              "WTI": ("WTI M1", "WTI M3", "CLc{n}", "WTI M{n}", [2, 4]),
-              "Dubai": ("迪拜掉期M1", "迪拜掉期M3", "", "迪拜掉期M{n}", [2, 4])}
+    common = {name: [rng.gauss(0, 0.2) for _ in dates] for name in _ROLLS}
+    out: dict[str, dict[int, list[float]]] = {}
+    for name, rule in _ROLLS.items():
+        out[name] = {n: [] for n in range(1, 13)}
+        shock = 0.0
+        for i, day in enumerate(dates):
+            shock = 0.9 * shock + common[name][i]                  # 品種自己的價差慢慢漂移
+            slope = 0.25 + 0.35 * math.sin(2 * math.pi * i / 180)   # 每多一個月，價格低多少
+            front = front_ordinal(rule, day)
+            for n in range(1, 13):
+                o = front + n - 1
+                tenor = (last_trading_day(rule, o) - day).days / 30.4
+                price = level[i] + _OFFSETS[name] + shock - slope * tenor * 0.95 ** tenor + rng.gauss(0, 0.03)
+                out[name][n].append(round(price, 2))
+    return out
+
+
+def _back_months(wb: Workbook, dates: list[date], curves: dict[str, dict[int, list[float]]]) -> None:
+    """遠月合約：「期貨」表只有 M1、M3（WTI、迪拜還缺 M2），這張表補齊到 M12，讓曲線圖有東西可畫。"""
+    layout = {"Brent": ("LCOc{n}", "Brent M{n}", range(4, 13)),
+              "WTI": ("CLc{n}", "WTI M{n}", [2, *range(4, 13)]),
+              "Dubai": ("", "迪拜掉期M{n}", [2, *range(4, 13)])}
     header_names, header_rics, columns = ["日期"], [""], []
-    for _, (m1_name, m3_name, ric, label, first) in curves.items():
-        m1, m3 = by_name[m1_name], by_name[m3_name]
-        wanted = [first[0]] + list(range(4, 13)) if first[0] == 2 else list(range(4, 13))
+    for name, (ric, label, wanted) in layout.items():
         for n in wanted:
             header_names.append(label.replace("{n}", str(n)))
             header_rics.append(ric.replace("{n}", str(n)) if ric else "")
-            values = []
-            for i in range(len(dates)):
-                slope = 0.25 + 0.35 * math.sin(2 * math.pi * i / 180)       # 每多一個月，價格低多少
-                base = (m1[i] + m3[i]) / 2 if n == 2 else m3[i] - slope * (n - 3) * (0.93 ** (n - 3))
-                values.append(round(base + rng.gauss(0, 0.04), 2))
-            columns.append(values)
+            columns.append(curves[name][n])
     ws = wb.create_sheet("遠月合約")
     ws.append(header_names)
     ws.append(header_rics)

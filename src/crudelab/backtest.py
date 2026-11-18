@@ -20,9 +20,11 @@
   vintage      按入庫時間。每個評估日都用 as_of 重建一次引擎，只看當時已經入庫的數據，完全沒有偷看。
                但只有系統持續收集了一段時間之後才有意義：事後一次性導入的歷史，在這個模式下當時什麼都還沒有。
   兩種模式的信號算法和 signals.py 完全一致（有測試保證）；之後的收益一律用今天的價格數據。
+  anchor 和公允價值的目標若是期貨曲線上的連續合約，收益和波動率都用換月調整後的價格（contracts.py），
+  換月當天兩個合約之間的價差不算作漲跌。
 
 三、其他已知的局限
-  - anchor 是連續合約，前向收益裡含換月當天的跳動。
+  - 換月日按規則推算（只認周一到周五），和數據商實際換月日不一致的那幾天仍可能有小的跳動。
   - 參數（模組權重等）按生效日期取值，但不按錄入時間還原。
 """
 from __future__ import annotations
@@ -151,7 +153,7 @@ def _vintage(session: Session, cfg: Config, dates: pd.DatetimeIndex,
         rows[t] = {code: signals.data_signal(engine, code, t)["score"] for code in cfg.signals}
         for code, model in cfg.fair_values.items():         # 按入庫時間：數據庫裡當時有的就是已知的，不再扣延遲
             fits[code][t] = fair_value.fit_at(fair_value.aligned_frame(engine, cfg, model, until=t), t, model)
-        prices = engine.series_values(anchor)
+        prices = engine.adjusted_series(anchor)[0]
         prices = prices[prices.index <= t]
         settings = cfg.projection
         vols[t] = projection._volatility(prices, settings.volatility_lookback if settings else 250,
@@ -340,7 +342,7 @@ def run(session: Session, cfg: Config, options: Options) -> dict:
         raise BacktestError("還沒有定義任何信號")
     anchor, horizons, settings = anchor_of(cfg), horizons_of(cfg), cfg.backtest
     engine = IndicatorEngine(session, cfg)
-    prices = engine.series_values(anchor).dropna()
+    prices, unadjusted = engine.adjusted_series(anchor)
     if len(prices) < 2:
         raise BacktestError(f"{cfg.name_of(anchor)}（{anchor}）沒有足夠的價格數據，無法回測")
     days = prices.index
@@ -385,14 +387,17 @@ def run(session: Session, cfg: Config, options: Options) -> dict:
     points["OVERALL"] = {h.code: _points(overall, fwd[h.code]) for h in horizons}
     fair_rows = []
     for code, model in cfg.fair_values.items():
-        target = engine.series_values(model.target).dropna()
+        target = (engine.adjusted_series(model.target)[0] if model.target in cfg.series
+                  else engine.values(model.target).dropna())
         target_fwd = forward_returns(target, dates, horizons) if len(target) > 1 else fwd * np.nan
         row, score = _evaluate_fair_value(cfg, model, fits[code], dates, target_fwd, horizons, step, options.mode)
         fair_rows.append(row)
         points[f"FV:{code}"] = {h.code: _points(score, target_fwd[h.code]) for h in horizons}
     weekly = dates[:: max(1, 5 // step)]
     caveats = [
-        f"{cfg.name_of(anchor)} 是連續合約，之後的收益裡含換月當天的跳動。",
+        (f"{cfg.name_of(anchor)} 的收益已按換月調整；有 {unadjusted} 次換月因缺遠月數據沒能調整，那幾天含跳動。"
+         if unadjusted else f"{cfg.name_of(anchor)} 的收益已按換月調整（同一合約對比）。")
+        if engine.rolled_curves(anchor) else f"{cfg.name_of(anchor)} 不是期貨曲線上的合約，收益按原始價格計算。",
         "評估日之間的收益窗口互相重疊，統計按「有效樣本」計算；有效樣本少於 "
         f"{settings.min_effective_samples} 的結果標為樣本不足，不要當結論用。",
         "地緣模組不參與回測：事件的方向判斷沒有歷史版本。綜合分數只由地域價差、供需、煉廠三個模組構成。",

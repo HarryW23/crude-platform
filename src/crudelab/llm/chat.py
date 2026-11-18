@@ -107,7 +107,10 @@ def tool_get_values(ctx: _Ctx, code: str, last: int = 10, scenario: str | None =
         s = engine.summary(code)
         out.update({k: s[k] for k in ("formula", "status", "last_date", "last_value", "chg_1d", "chg_5d", "chg_20d",
                                       "percentile_1y", "forecast_until", "missing_series", "missing_parameters",
-                                      "unverified_parameters")})
+                                      "unverified_parameters", "roll_adjusted", "chg_unadjusted")})
+        if s["roll_adjusted"]:
+            out["note"] = ("chg_* 按同一組期貨合約對比，換月跳動已剔除；chg_unadjusted 裡列出的沒能剔除。"
+                           "points 是連續合約的原始值，換月日會跳。")
         out["points"] = [p for p in out["points"] if s["last_date"] is None or p["date"] <= s["last_date"]] or out["points"]
     elif values.empty:
         out["status"] = "missing_data"

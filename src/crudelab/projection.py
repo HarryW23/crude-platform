@@ -168,8 +168,10 @@ def _context(session: Session, cfg: Config, as_of: datetime | None) -> tuple[_Co
     today = pd.Timestamp(as_of.date() if as_of else date.today())
     prices = base.series_values(settings.anchor)
     prices = prices[prices.index <= today]
-    volatility = (_volatility(prices, settings.volatility_lookback, settings.volatility_min_points)
-                  if len(prices) else None)
+    adjusted = base.adjusted_series(settings.anchor)[0]        # 波動率用換月調整後的價格，換月跳動不算波動
+    adjusted = adjusted[adjusted.index <= today]
+    volatility = (_volatility(adjusted, settings.volatility_lookback, settings.volatility_min_points)
+                  if len(adjusted) else None)
     return (_Context(settings, today, float(prices.iloc[-1]) if len(prices) else None, volatility,
                      base.value_at(settings.sensitivity_parameter, today.date()),
                      base.compute(settings.balance_indicator),

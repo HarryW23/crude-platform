@@ -149,7 +149,7 @@ def test_guards(session, cfg):
             backtest.run(session, cfg, options)
     result = backtest.run(session, cfg, backtest.Options(step=5))
     assert result["step"] == 5 and result["dates"] == 60
-    assert any("連續合約" in c for c in result["caveats"]) and any("地緣模組不參與" in c for c in result["caveats"])
+    assert any("換月" in c for c in result["caveats"]) and any("地緣模組不參與" in c for c in result["caveats"])
     approx = {s["code"]: s["approx"] for s in result["signals"]}
     assert approx["SIG_GLOBAL_BALANCE"] and approx["SIG_OECD_STOCKS"] and not approx["SIG_BRENT_STRUCTURE"]
 

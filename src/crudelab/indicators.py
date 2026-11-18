@@ -14,6 +14,7 @@
 """
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass, field
 from datetime import date, datetime
 
@@ -22,6 +23,7 @@ import pandas as pd
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from . import contracts
 from . import formula as fx
 from .config import Config
 from .ingest import load_points, to_series
@@ -77,6 +79,7 @@ class IndicatorEngine:
         self._deps: dict[str, tuple[list[str], list[str]]] = {}
         self._verified = {p.key: p.verified for p in session.scalars(select(Parameter))}
         self._versions = self._load_versions()
+        self._pin: pd.Timestamp | None = None               # 見 pinned()
 
     # ------------------------------ 輸入 ------------------------------
     def _load_versions(self) -> dict[str, pd.DataFrame]:
@@ -108,8 +111,32 @@ class IndicatorEngine:
         return out
 
     def series_values(self, code: str) -> pd.Series:
-        """一條原始序列的值（已套用情境）。"""
-        return self._shifted(code, to_series(self._all_points(), code))
+        """一條原始序列的值（已套用情境）。固定合約視圖（pinned）下，曲線序列換成錨定日那組合約的價格。"""
+        if self._pin is not None:
+            return self._shifted(code, contracts.pinned_series(self.cfg, code, self._pin, self._raw))
+        return self._shifted(code, self._raw(code))
+
+    def _raw(self, code: str) -> pd.Series:
+        return to_series(self._all_points(), code)
+
+    def pinned(self, anchor: pd.Timestamp) -> IndicatorEngine:
+        """固定合約視圖：每條曲線的 Mn 都換成 anchor 那天的 Mn 合約在各天的價格（見 contracts.py）。
+
+        共用已載入的數據，不重新查庫。用來算「同一組合約」的變化，換月不會造成跳動。
+        """
+        view = copy.copy(self)
+        view._pin, view._computed, view._step = anchor, {}, set(self._step)
+        return view
+
+    def adjusted_series(self, code: str) -> tuple[pd.Series, int]:
+        """換月調整後的價格（比例調整，最新值等於原始值）和沒能調整的換月次數。非曲線序列原樣返回。"""
+        return contracts.adjusted_prices(self.cfg, code, self.series_values)
+
+    def rolled_curves(self, code: str) -> list[str]:
+        """名字（序列或指標）依賴的、有換月規則的曲線。"""
+        names = self.dependencies(code)[0] if code in self.cfg.indicators else [code]
+        found = [m.curve.code for m in (contracts.member(self.cfg, n) for n in names) if m is not None]
+        return list(dict.fromkeys(found))
 
     def values(self, name: str) -> pd.Series:
         """一個序列或指標的值。"""
@@ -221,16 +248,42 @@ class IndicatorEngine:
                "unverified_parameters": self.unverified_parameters(code), "n": int(len(every)),
                "forecast_until": every.index[-1].date().isoformat() if len(every) > len(values) else None,
                "last_date": None, "last_value": None, "chg_1d": None, "chg_5d": None, "chg_20d": None,
+               "roll_adjusted": bool(self.rolled_curves(code)), "chg_unadjusted": [],
                "percentile_1y": None}
         if len(values):
             last = float(values.iloc[-1])
             out["last_date"], out["last_value"] = values.index[-1].date().isoformat(), last
-            for key, back in (("chg_1d", 1), ("chg_5d", 5), ("chg_20d", 20)):
-                if len(values) > back:
-                    out[key] = last - float(values.iloc[-1 - back])
+            out.update(self._changes(code, values))
             window = values[values.index >= values.index[-1] - pd.Timedelta(days=365)]
             if len(window) >= MIN_OBS_FOR_PERCENTILE:
                 out["percentile_1y"] = float((window <= last).mean() * 100)
+        return out
+
+    def _changes(self, code: str, values: pd.Series) -> dict:
+        """日 / 5 日 / 20 日變化。依賴期貨曲線的指標按「同一組合約」對比，換月不算進變化。
+
+        同一組合約取不到（例如 M12 往回 20 天要 M13）時退回直接相減，並在 chg_unadjusted 裡標出是哪幾個。
+        """
+        last, end = float(values.iloc[-1]), values.index[-1]
+        curves = self.rolled_curves(code)
+        out: dict = {"roll_adjusted": bool(curves), "chg_unadjusted": []}
+        pinned = None
+        for key, back in (("chg_1d", 1), ("chg_5d", 5), ("chg_20d", 20)):
+            if len(values) <= back:
+                continue
+            start = values.index[-1 - back]
+            out[key] = last - float(values.iloc[-1 - back])
+            rolled = [c for c in curves
+                      if contracts.rolls_between(self.cfg.curves[c].roll, start.date(), end.date())]
+            if not rolled:
+                continue
+            if pinned is None:
+                view = self.pinned(end)
+                pinned = view.compute(code) if code in self.cfg.indicators else view.series_values(code)
+            if start in pinned.index and end in pinned.index:
+                out[key] = float(pinned[end]) - float(pinned[start])
+            else:
+                out["chg_unadjusted"].append(key)
         return out
 
     # ------------------------------ 追溯 ------------------------------

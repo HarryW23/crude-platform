@@ -4,7 +4,8 @@
 對比的「1 周前」「1 個月前」按 M1 自己的交易日往回數（5、21 個交易日），不按日曆天，避開周末和假期。
 某個月份在某天沒有數據時，那一點留空，不插值。
 
-已知局限（見待辦「期貨換月處理」）：存的是連續合約，M1 在換月當天會換成下一個合約，曲線在換月日會跳一下。
+每個點標出它當天是哪個具體合約（按 roll 規則推算，見 contracts.py）。對比日以來換過月的話，
+同一個位置（例如 M1）在兩天對應的是不同合約，snapshot 裡的 rolls_since 標出換了幾次。
 """
 from __future__ import annotations
 
@@ -12,6 +13,7 @@ from datetime import date
 
 import pandas as pd
 
+from . import contracts
 from .config import Config
 from .indicators import IndicatorEngine
 
@@ -57,7 +59,8 @@ def snapshot(engine: IndicatorEngine, cfg: Config, code: str) -> dict:
     front = values[columns[0][1]]
     front = front[front.index <= today]
     out = {"code": code, "name_zh": curve.name_zh, "unit": curve.unit, "months": [n for n, _ in columns],
-           "snapshots": [], "status": "ok"}
+           "snapshots": [], "status": "ok", "roll_rule": curve.roll.note if curve.roll else None,
+           "roll_verified": bool(curve.roll and curve.roll.verified)}
     if front.empty:
         out["status"] = "missing_data"
         return out
@@ -65,9 +68,13 @@ def snapshot(engine: IndicatorEngine, cfg: Config, code: str) -> dict:
         if len(front) <= back:
             continue
         day = front.index[-1 - back]
-        points = [{"month": n, "series": series, "value": _value_on(values[series], day)} for n, series in columns]
+        labels = {c["month"]: c["contract"] for c in contracts.contracts_on(cfg, code, day.date())}
+        points = [{"month": n, "series": series, "contract": labels[n], "value": _value_on(values[series], day)}
+                  for n, series in columns]
+        rolls = (contracts.rolls_between(curve.roll, day.date(), front.index[-1].date())
+                 if curve.roll is not None else None)
         out["snapshots"].append({"label": label, "date": day.date().isoformat(), "points": points,
-                                 "shape": shape(points)})
+                                 "shape": shape(points), "rolls_since": rolls})
     latest = out["snapshots"][0]["points"]
     out["months_with_data"] = sum(p["value"] is not None for p in latest)
     return out

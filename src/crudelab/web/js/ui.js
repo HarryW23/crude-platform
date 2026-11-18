@@ -9,8 +9,9 @@ export const num = (v, digits = 2) => v == null || Number.isNaN(v) ? "—"
 
 export const signed = (v, digits = 2) => v == null ? "" : (v > 0 ? "+" : v < 0 ? "−" : "") + num(Math.abs(v), digits);
 
-export const deltaCell = (v, digits = 2) =>
-  `<td class="n ${v > 0 ? "up" : v < 0 ? "down" : ""}">${signed(v, digits)}</td>`;
+// note：給這個變化量加一個標記和說明（例如「含換月跳動」）
+export const deltaCell = (v, digits = 2, note = "") =>
+  `<td class="n ${v > 0 ? "up" : v < 0 ? "down" : ""}"${note ? ` title="${esc(note)}"` : ""}>${signed(v, digits)}${note ? '<sup class="muted">†</sup>' : ""}</td>`;
 
 export const time = (iso) => String(iso ?? "").slice(0, 16).replace("T", " ");
 

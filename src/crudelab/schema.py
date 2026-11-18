@@ -78,8 +78,38 @@ class SeriesDef(Strict):
         return DEFAULT_VALID_DAYS[self.frequency] if self.valid_days is None else self.valid_days
 
 
+class RollRule(Strict):
+    """合約的最後交易日規則（只按周一到周五算工作日，交易所假期用 overrides 修正）。
+
+    最後交易日 = 交割月往前 months_before 個月的那個月裡：
+      day = "last_business"  → 該月最後一個工作日，再往前 business_days_before 個工作日
+      day = 整數 d           → 該月第 d 日（不是工作日就取它之前最近的工作日），再往前 business_days_before 個工作日
+    例：Brent 是交割月前第二個月的最後一個工作日（months_before 2）；
+        WTI 是交割月前一個月 25 日之前 3 個工作日（months_before 1, day 25, business_days_before 3）。
+    """
+    months_before: int = Field(ge=0, le=3)
+    day: Literal["last_business"] | int = "last_business"
+    business_days_before: int = Field(default=0, ge=0, le=10)
+    verified: bool = False                        # 規則是否已經和交易所 / 數據商的實際換月日核對過
+    note: str | None = None
+    overrides: dict[str, date] = {}               # 合約月份 "YYYY-MM" → 實際最後交易日（假期等例外）
+
+    @model_validator(mode="after")
+    def _check(self) -> RollRule:
+        if isinstance(self.day, int) and not 1 <= self.day <= 28:
+            raise ValueError("day 必須在 1–28 之間，或寫 last_business")
+        for key in self.overrides:
+            if len(key) != 7 or key[4] != "-" or not key[:4].isdigit() or not 1 <= int(key[5:] or 0) <= 12:
+                raise ValueError(f"overrides 的鍵必須寫成 YYYY-MM：{key}")
+        return self
+
+
 class CurveDef(Strict):
-    """期貨曲線模板，展開成 {code}_M{n} 多條連續合約序列。aliases 裡的 {n} 換成月序。"""
+    """期貨曲線模板，展開成 {code}_M{n} 多條連續合約序列。aliases 裡的 {n} 換成月序。
+
+    roll 是合約的換月規則：有了它，系統才知道每天的 Mn 是哪個具體合約，換月日的跳動才能剔除。
+    月序必須從 M1 開始連續（每個月都有合約），否則「換月後 M1 是之前的 M2」不成立。
+    """
     code: str = Code
     name_zh: str
     commodity: str
@@ -89,6 +119,13 @@ class CurveDef(Strict):
     months: list[int] = Field(min_length=1)
     module: Module = "common"
     aliases: list[str] = []
+    roll: RollRule | None = None
+
+    @model_validator(mode="after")
+    def _months(self) -> CurveDef:
+        if sorted(self.months) != list(range(1, len(self.months) + 1)):
+            raise ValueError(f"曲線 {self.code} 的月序必須是從 1 開始的連續整數")
+        return self
 
     def expand(self) -> list[SeriesDef]:
         return [SeriesDef(code=f"{self.code}_M{n}", name_zh=f"{self.name_zh} M{n}", commodity=self.commodity,

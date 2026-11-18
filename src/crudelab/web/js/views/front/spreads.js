@@ -19,7 +19,7 @@ function mountCurves(panel, curves) {
   const draw = () => {
     const c = curves.find((x) => x.code === current);
     panel.innerHTML = `<h2>期貨曲線</h2>
-      <p class="sub">各合約月份的價格，對比 1 周前、1 個月前（按 M1 的交易日往回數）。連續合約在換月日會跳一下，看形態時留意。</p>
+      <p class="sub">各合約月份的價格，對比 1 周前、1 個月前（按 M1 的交易日往回數）。滑鼠移到某個月份可以看到它當天對應的具體合約。</p>
       <div class="tabs">${curves.map((x) => `<button data-code="${x.code}" class="${x.code === current ? "on" : ""}">${esc(x.name_zh)}</button>`).join("")}</div>
       <div id="curve-body"></div>`;
     panel.querySelectorAll(".tabs button").forEach((b) => b.addEventListener("click", () => { current = b.dataset.code; draw(); }));
@@ -35,6 +35,11 @@ function mountCurves(panel, curves) {
         <div>有數據的月份<b>${c.months_with_data} / ${c.months.length}</b></div>
       </div>`;
     body.append(curveChart(c.snapshots, c.months, { unit: c.unit }));
+    const front = c.snapshots[0].points[0]?.contract;
+    const rolled = c.snapshots.filter((s) => s.rolls_since > 0);
+    body.insertAdjacentHTML("beforeend", `<p class="muted">${front ? `今天的 M1 是 ${front} 合約。` : "這條曲線沒有換月規則，不知道 M1 對應哪個合約。"}
+      ${rolled.length ? `${esc(rolled[0].label)}以來換過 ${rolled[0].rolls_since} 次月：同一個位置（例如 M1）兩天對應的是不同合約。` : ""}
+      ${c.roll_rule ? `換月規則：${esc(c.roll_rule)}${c.roll_verified ? "" : '<span class="tag warn">待核對</span>'}` : ""}</p>`);
     if (c.months_with_data < c.months.length) {
       body.insertAdjacentHTML("beforeend", `<p class="muted">缺的月份：${c.snapshots[0].points.filter((p) => p.value === null).map((p) => "M" + p.month).join("、")}。在後台導入對應合約即可補上。</p>`);
     }

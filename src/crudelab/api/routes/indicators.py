@@ -29,6 +29,19 @@ def indicator_data(code: str, engine: IndicatorEngine = Depends(get_engine)):
     return [{"date": ts.date(), "value": float(v)} for ts, v in engine.compute(code).items()]
 
 
+@router.get("/indicators/{code}/rolls")
+def indicator_rolls(code: str, engine: IndicatorEngine = Depends(get_engine)):
+    """指標依賴的期貨曲線在它的數據區間裡的換月日。走勢圖用來標出換月。"""
+    _require(engine, code)
+    from ...contracts import roll_dates
+    values = engine.compute(code)
+    if values.empty:
+        return []
+    start, end = values.index[0].date(), values.index[-1].date()
+    return [{"date": d, "curve": c, "curve_name": engine.cfg.curves[c].name_zh}
+            for c in engine.rolled_curves(code) for d in roll_dates(engine.cfg.curves[c].roll, start, end)]
+
+
 @router.get("/indicators/{code}/trace")
 def indicator_trace(code: str, on: date | None = None, engine: IndicatorEngine = Depends(get_engine)):
     _require(engine, code)

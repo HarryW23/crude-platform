@@ -48,8 +48,8 @@ function placeTip(tip, box, x, y) {
 }
 
 // ------------------------------ 走勢線 ------------------------------
-// points: [{date, value}]
-export function lineChart(points, { unit = "", height = 240 } = {}) {
+// points: [{date, value}]；markers: [{date, label}] 畫成豎虛線（例如換月日），提示框裡也會寫出來
+export function lineChart(points, { unit = "", height = 240, markers = [] } = {}) {
   if (points.length < 2) return empty("數據點不足，無法畫圖。");
   return responsive((box, W) => {
     const H = height, L = 66, R = 14, T = 14, B = 26;
@@ -57,7 +57,14 @@ export function lineChart(points, { unit = "", height = 240 } = {}) {
     const x = (i) => L + (W - L - R) * i / (points.length - 1);
     const y = (v) => T + (H - T - B) * (1 - (v - lo) / (hi - lo));
     const path = points.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p.value).toFixed(1)}`).join("");
+    const at = Object.fromEntries(points.map((p, i) => [p.date, i]));
+    const marks = {};
+    for (const m of markers) {                 // 標記日當天沒有數據點時，標在之後的第一個數據點上
+      const hit = points.find((p) => p.date >= m.date);
+      if (hit && (hit.date === m.date || at[hit.date] > 0)) (marks[hit.date] ??= []).push(m.label);
+    }
     box.innerHTML = `<svg width="${W}" height="${H}" role="img" aria-label="走勢圖，${points[0].date} 至 ${points.at(-1).date}">
+        ${Object.keys(marks).map((d) => `<line x1="${x(at[d])}" x2="${x(at[d])}" y1="${T}" y2="${H - B}" stroke="var(--neutral-bar)" stroke-dasharray="2 3" opacity="0.6"/>`).join("")}
         ${ticks(lo, hi).map((v) => `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--hairline)"/>
           <text x="${L - 8}" y="${y(v) + 4}" text-anchor="end">${num(v, d)}</text>`).join("")}
         ${lo < 0 && hi > 0 ? `<line x1="${L}" x2="${W - R}" y1="${y(0)}" y2="${y(0)}" stroke="var(--axis)"/>` : ""}
@@ -77,7 +84,8 @@ export function lineChart(points, { unit = "", height = 240 } = {}) {
       const p = points[i];
       cross.setAttribute("x1", x(i)); cross.setAttribute("x2", x(i)); cross.setAttribute("visibility", "visible");
       dot.setAttribute("cx", x(i)); dot.setAttribute("cy", y(p.value)); dot.setAttribute("visibility", "visible");
-      tip.innerHTML = `${p.date}　<b>${num(p.value)}</b> ${esc(unit)}`;
+      tip.innerHTML = `${p.date}　<b>${num(p.value)}</b> ${esc(unit)}` +
+        (marks[p.date] ? `<br><span class="muted">${esc(marks[p.date].join("、"))}</span>` : "");
       placeTip(tip, box, x(i), y(p.value));
     });
     hit.addEventListener("pointerleave", () => {
@@ -311,8 +319,9 @@ export function curveChart(snapshots, months, { unit = "", height = 280 } = {}) 
       const i = Math.max(0, Math.min(months.length - 1, Math.round((px - L) / (W - L - R) * (months.length - 1))));
       cross.setAttribute("x1", x(i)); cross.setAttribute("x2", x(i)); cross.setAttribute("visibility", "visible");
       tip.innerHTML = `<b>M${months[i]}</b>` + snapshots.map((s) => {
-        const v = s.points.find((p) => p.month === months[i])?.value ?? null;
-        return `<br>${esc(s.label)}　${v === null ? '<span class="muted">無數據</span>' : `<b>${num(v)}</b>`}`;
+        const pt = s.points.find((p) => p.month === months[i]), v = pt?.value ?? null;
+        const contract = pt?.contract ? ` <span class="muted">${pt.contract}</span>` : "";
+        return `<br>${esc(s.label)}${contract}　${v === null ? '<span class="muted">無數據</span>' : `<b>${num(v)}</b>`}`;
       }).join("");
       const anchor = snapshots[0].points.find((p) => p.month === months[i])?.value ?? null;
       placeTip(tip, box, x(i), svgTop() + (anchor === null ? (H - B) / 2 : y(anchor)));
