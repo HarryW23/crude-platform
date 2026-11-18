@@ -43,7 +43,7 @@ def _clip(value: float) -> float:
     return max(-1.0, min(1.0, value))
 
 
-def _data_signal(engine: IndicatorEngine, code: str, today: pd.Timestamp) -> dict:
+def data_signal(engine: IndicatorEngine, code: str, today: pd.Timestamp) -> dict:
     s = engine.cfg.signals[code]
     out = {"code": s.code, "name_zh": s.name_zh, "module": s.module, "input": s.input,
            "input_name": engine.cfg.name_of(s.input), "unit": engine.cfg.unit_of(s.input),
@@ -76,7 +76,7 @@ def compute(session: Session, engine: IndicatorEngine) -> dict:
     weights = cfg.projection.module_weights if cfg.projection else {}
     modules = []
     for module in ("spread", "balance", "refinery"):
-        items = [_data_signal(engine, code, today) for code, s in cfg.signals.items() if s.module == module]
+        items = [data_signal(engine, code, today) for code, s in cfg.signals.items() if s.module == module]
         ok = [i for i in items if i["status"] == "ok"]
         total = sum(i["weight"] for i in ok)
         score = sum(i["score"] * i["weight"] for i in ok) / total if total else None

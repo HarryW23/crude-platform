@@ -7,6 +7,7 @@
   crudelab pull eia                   從拉取型數據源取數
   crudelab make-sample 輸出.xlsx      生成一個演示用的假數據 Excel
   crudelab run-job [任務代碼]          立即運行一個定時任務（不給代碼則列出全部）
+  crudelab backtest [--mode …]        回測方向信號和推演區間
   crudelab scheduler                  單獨運行調度器（serve 預設已包含）
   crudelab data-needs [--output 文件] 生成數據與接口需求清單
   crudelab secret set 名稱            保存一個 API key（輸入不回顯；另有 list / unset）
@@ -227,6 +228,49 @@ def cmd_user(args) -> int:
     return 0
 
 
+def cmd_backtest(args) -> int:
+    from datetime import date as _date
+
+    from . import backtest
+    from .config import ConfigError, load_config
+    settings = get_settings()
+    db.init_engine(settings)
+    try:
+        cfg = load_config(settings.config_dir)
+        options = backtest.Options(args.mode, _date.fromisoformat(args.start) if args.start else None,
+                                   _date.fromisoformat(args.end) if args.end else None, args.step)
+        _init()
+        with db.session_scope() as session:
+            run_id = backtest.create(session, options, "cli").id
+    except (ConfigError, backtest.BacktestError, ValueError) as exc:
+        print(exc, file=sys.stderr)
+        return 1
+    print(f"回測 #{run_id} 執行中（{backtest.MODES[args.mode]}）…", flush=True)
+    status = backtest.execute(cfg, run_id)
+    from .models import BacktestRun
+    with db.session_scope() as session:
+        row = session.get(BacktestRun, run_id)
+        if status != "done":
+            print(f"失敗：{row.message}", file=sys.stderr)
+            return 1
+        r = row.results
+    pct = lambda v: "   —  " if v is None else f"{v * 100:5.1f}%"  # noqa: E731
+    num = lambda v: "   —  " if v is None else f"{v:+.2f}"  # noqa: E731
+    print(f"{r['anchor_name']}，{r['start']} 至 {r['end']}，{r['dates']} 個評估日，每 {r['step']} 個交易日一次")
+    codes = [h["code"] for h in r["horizons"]]
+    print("\n" + f"{'':<26}" + "".join(f"{h['name_zh']:>18}" for h in r["horizons"]))
+    print(f"{'':<26}" + "      命中率    IC" * len(codes))
+    rows = [(s["name_zh"] + ("*" if s["approx"] else ""), s["by_horizon"]) for s in r["signals"]]
+    rows += [(f"［{m['name_zh']}模組］", m["by_horizon"]) for m in r["modules"]] + [("［綜合］", r["overall"]["by_horizon"])]
+    for name, by in rows:
+        cells = "".join(f"  {pct(by[c]['hit_rate'])} {num(by[c]['ic'])}{'!' if by[c]['significant'] else ' '}" for c in codes)
+        print(f"{name:<24}{cells}")
+    band = r["band"]["by_horizon"]
+    print("\n價格區間覆蓋率（理想約 68%）：" + "　".join(f"{h['name_zh']} {pct(band[h['code']]['coverage'])}" for h in r["horizons"]))
+    print("\n* 近似：用到修訂後的月度數據。! IC 在有效樣本下顯著。完整結果在前台的「回測」頁。")
+    return 0
+
+
 def cmd_scheduler(_args) -> int:
     """單獨運行調度器，不起網站。服務器上想把它和網站分成兩個進程時用。"""
     import time
@@ -374,6 +418,13 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("output")
     p.set_defaults(func=cmd_make_sample)
     sub.add_parser("scheduler", help="單獨運行定時任務調度器").set_defaults(func=cmd_scheduler)
+    p = sub.add_parser("backtest", help="回測方向信號和推演區間")
+    p.add_argument("--mode", choices=["observation", "vintage"], default="observation",
+                   help="observation 按數據日期（預設）/ vintage 按入庫時間（嚴格）")
+    p.add_argument("--start", help="開始日期 YYYY-MM-DD")
+    p.add_argument("--end", help="結束日期 YYYY-MM-DD")
+    p.add_argument("--step", type=int, help="每隔幾個交易日評估一次")
+    p.set_defaults(func=cmd_backtest)
     p = sub.add_parser("run-job", help="立即運行一個定時任務；不給名字則列出全部")
     p.add_argument("code", nargs="?")
     p.set_defaults(func=cmd_run_job)

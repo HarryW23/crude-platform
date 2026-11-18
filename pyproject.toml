@@ -1,6 +1,6 @@
 [project]
 name = "crudelab"
-version = "0.10.0"
+version = "0.11.0"
 description = "原油研究平台：數據 → 指標 → 模型 → 推演 → 報告"
 requires-python = ">=3.11"
 dependencies = [
@@ -48,4 +48,5 @@ ignore = ["B008", "B905"]
 
 [tool.ruff.lint.per-file-ignores]
 "src/crudelab/llm/chat.py" = ["E501"]   # 工具說明是給大模型看的整句話，拆行反而難讀
-"src/crudelab/data_needs.py" = ["E501"]   # 文檔的成段文字   # FastAPI 的 Depends(...) 寫在參數預設值裡是慣用法
+"src/crudelab/data_needs.py" = ["E501"]   # 文檔的成段文字
+"src/crudelab/cli.py" = ["E501"]          # 命令行輸出的排版行   # FastAPI 的 Depends(...) 寫在參數預設值裡是慣用法

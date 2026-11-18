@@ -439,3 +439,16 @@ class FreshnessDef(Strict):
     required: list[str] = []                            # 必須有數據的序列：從沒有過數據也報
     ignore: list[str] = []                              # 不檢查的序列
     overrides: list[FreshnessOverride] = []
+
+
+# ------------------------------ 回測 ------------------------------
+
+class BacktestSettings(Strict):
+    """回測的設定。算法見 backtest.py。"""
+    anchor: str | None = None                  # 用哪個價格算之後的收益；不填就用 projection.yaml 的 anchor
+    # 按數據日期回測時，每種頻率的數據在它的日期之後幾天才算「已知」（發佈延遲）
+    publication_lag_days: dict[Literal["daily", "weekly", "monthly", "quarterly"], int] = {
+        "daily": 0, "weekly": 5, "monthly": 40, "quarterly": 60}
+    neutral_band: float = Field(default=0.15, gt=0, lt=1)    # 分數絕對值小於它算「中性」，不計入命中率
+    min_effective_samples: int = Field(default=30, ge=5)      # 有效樣本少於它就標為樣本不足
+    vintage_max_dates: int = Field(default=400, ge=10)        # 按入庫時間回測最多評估多少個日期（每個日期都要重算一遍）

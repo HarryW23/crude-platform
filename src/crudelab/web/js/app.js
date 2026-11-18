@@ -5,7 +5,8 @@ import { errorBox, esc } from "./ui.js";
 
 const PAGES = {
   front: [["overview", "總覽"], ["spreads", "地域價差"], ["balance", "供需平衡"], ["refinery", "煉廠盈利"],
-          ["events", "地緣事件"], ["outlook", "推演"], ["reports", "報告"], ["chat", "問答"]],
+          ["events", "地緣事件"], ["outlook", "推演"], ["backtest", "回測"], ["reports", "報告"],
+          ["chat", "問答"]],
   admin: [["import", "數據導入"], ["series", "序列"], ["indicators", "指標"], ["params", "參數"],
           ["sources", "數據源"], ["schedule", "定時任務"], ["users", "帳號"], ["audit", "日誌"]],
 }[SITE.site];

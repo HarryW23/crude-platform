@@ -1,0 +1,13 @@
+# 回測設定。算法和局限見 src/crudelab/backtest.py 開頭。
+# anchor: BRENT_M1            # 用哪個價格算之後的收益；不寫就用 projection.yaml 的 anchor
+
+# 按數據日期回測時，數據在它的日期之後幾天才算「已知」。不扣發佈延遲，回測就會偷看未來
+publication_lag_days:
+  daily: 0          # 結算價當天收盤後就有
+  weekly: 5         # EIA 周報：數據日期是周五，下周三發佈
+  monthly: 40       # 月報：數據月份開始後約 40 天發佈
+  quarterly: 60
+
+neutral_band: 0.15             # 分數絕對值小於它算「中性」，不計入命中率（和信號頁的「中性」一致）
+min_effective_samples: 30      # 有效樣本少於它就標為樣本不足
+vintage_max_dates: 400         # 按入庫時間回測最多評估多少個日期

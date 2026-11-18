@@ -4,7 +4,7 @@
   主數據     unit / location / commodity / data_source / series / series_alias / parameter
   事實數據   import_batch / observation / parameter_version
   判斷       scenario / adjustment / event / projection / projection_case —— 人的判斷，和數據分開存
-  產出       report —— 生成時刻的快照
+  產出       report / backtest_run —— 生成時刻的快照
   帳號       user_account / user_session
   調度       job_run / scheduler_heartbeat / switch / notification
   修訂歷史   observation_revision
@@ -321,6 +321,22 @@ class Notification(Base):
     title: Mapped[str] = mapped_column(String(200))
     body: Mapped[str] = mapped_column(Text)
     results: Mapped[dict] = mapped_column(JSON)                      # {渠道代碼: "ok" 或失敗原因}
+
+
+class BacktestRun(Base):
+    """一次回測。結果是生成那一刻的快照，存成 JSON。"""
+    __tablename__ = "backtest_run"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    created_by: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime)
+    status: Mapped[str] = mapped_column(String(16))                  # running / done / failed
+    mode: Mapped[str] = mapped_column(String(16))                    # observation / vintage
+    start_date: Mapped[date | None] = mapped_column(Date)
+    end_date: Mapped[date | None] = mapped_column(Date)
+    step: Mapped[int] = mapped_column(Integer)
+    message: Mapped[str | None] = mapped_column(Text)
+    results: Mapped[dict | None] = mapped_column(JSON)
 
 
 class SchedulerHeartbeat(Base):
