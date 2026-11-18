@@ -50,6 +50,13 @@ def signals(session: Session = Depends(get_db), engine: IndicatorEngine = Depend
     return signal_service.compute(session, engine)
 
 
+@router.get("/signals/track-record")
+def track_record(session: Session = Depends(get_db), state: AppState = Depends(get_state)):
+    """最近一次完成的回測裡，各信號、模組、綜合分數在各期限的表現和結論（有效 / 方向相反 / 不顯著 / 樣本不足）。"""
+    from ... import backtest
+    return backtest.track_record(session, state.cfg)
+
+
 @router.get("/fair-value")
 def fair_values(state: AppState = Depends(get_state), engine: IndicatorEngine = Depends(get_engine)):
     """每個公允價值模型的最新結果：公允價值、偏離、因子拆解、偏離的回歸速度、各期限的漂移。"""

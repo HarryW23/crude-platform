@@ -43,7 +43,7 @@ from sqlalchemy.orm import Session
 from . import credentials, db, fair_value, projection, signals
 from .config import Config
 from .indicators import IndicatorEngine
-from .models import BacktestRun, Observation, utcnow
+from .models import BacktestRun, Observation, iso_utc, utcnow
 from .schema import HorizonDef
 
 EXPECTED_COVERAGE = math.erf(1 / math.sqrt(2))          # 正態分佈一倍標準差內的概率，約 68.3%
@@ -472,3 +472,70 @@ def mark_stale(session: Session) -> None:
     for row in session.scalars(select(BacktestRun).where(BacktestRun.status == "running",
                                                          BacktestRun.created_at < utcnow() - STALE_AFTER)):
         row.status, row.finished_at, row.message = "failed", utcnow(), "執行中斷：程序在回測完成前被關閉了"
+
+
+# ------------------------------ 信號的歷史表現（給推演頁） ------------------------------
+
+TRACK_RECORD_OLD_DAYS = 30
+VERDICTS = {
+    "effective": "有效",          # IC 顯著為正：信號高的時候，之後確實更常漲
+    "reversed": "方向相反",       # IC 顯著為負：信號和之後的走勢顯著反著來，方向可能設錯了
+    "weak": "不顯著",             # 樣本夠，但看不出關係
+    "insufficient": "樣本不足",   # 有效樣本太少，不能下結論
+    "none": "沒有結果",           # 這次回測沒有這個信號，或一次都沒打出分
+    "changed": "定義已改",        # 信號的輸入或方向在回測之後改過，結果不再對應現在的信號
+}
+
+
+def verdict(stats: dict | None) -> str:
+    """一個信號在某個期限上的回測結論。規則只寫在這裡，頁面只顯示。"""
+    if not stats or stats.get("status") == "no_data":
+        return "none"
+    if stats.get("status") == "insufficient":
+        return "insufficient"
+    if stats.get("significant") and stats.get("ic") is not None:
+        return "effective" if stats["ic"] > 0 else "reversed"
+    return "weak"
+
+
+def _compact(stats: dict | None, code: str) -> dict:
+    stats = stats or {}
+    keys = ("hit_rate", "up_share", "ic", "ic_t", "n_eff", "calls", "status")
+    return {**{k: stats.get(k) for k in keys}, "verdict": code, "verdict_name": VERDICTS[code]}
+
+
+def track_record(session: Session, cfg: Config, now: datetime | None = None) -> dict:
+    """最近一次完成的回測裡，每個信號、每個模組、綜合分數在各期限上的表現和結論。沒有回測時 run 為 None。"""
+    row = session.scalar(select(BacktestRun).where(BacktestRun.status == "done", BacktestRun.results.is_not(None))
+                         .order_by(BacktestRun.id.desc()).limit(1))
+    horizons = [{"code": h.code, "name_zh": h.name_zh} for h in horizons_of(cfg)]
+    out: dict = {"run": None, "horizons": horizons, "signals": {}, "modules": {}, "overall": {}, "notes": []}
+    if row is None:
+        return out
+    r = row.results
+    age = ((now or utcnow()) - (row.finished_at or row.created_at)).days
+    out["run"] = {"id": row.id, "mode": row.mode, "mode_name": MODES.get(row.mode, row.mode), "start": r["start"],
+                  "end": r["end"], "finished_at": iso_utc(row.finished_at or row.created_at), "age_days": age,
+                  "neutral_band": r.get("neutral_band")}
+    if age > TRACK_RECORD_OLD_DAYS:
+        out["notes"].append(f"這次回測是 {age} 天前做的，之後的數據沒有包括在內，可以到回測頁重新跑一次")
+    codes = [h["code"] for h in horizons]
+    past = {s["code"]: s for s in r.get("signals", [])}
+    changed = []
+    for code, s in cfg.signals.items():
+        old = past.get(code)
+        if old is not None and (old.get("input") != s.input or old.get("direction") != s.direction):
+            changed.append(s.name_zh)
+            out["signals"][code] = {h: _compact(None, "changed") for h in codes}
+            continue
+        by = (old or {}).get("by_horizon", {})
+        out["signals"][code] = {h: _compact(by.get(h), verdict(by.get(h))) for h in codes}
+    if changed:
+        out["notes"].append(f"{'、'.join(changed)} 的定義在回測之後改過，要重新回測才有結果")
+    for m in r.get("modules", []):
+        out["modules"][m["module"]] = {h: _compact(m["by_horizon"].get(h), verdict(m["by_horizon"].get(h)))
+                                       for h in codes}
+    overall = r.get("overall", {}).get("by_horizon", {})
+    out["overall"] = {h: _compact(overall.get(h), verdict(overall.get(h))) for h in codes}
+    out["notes"].append("地緣模組沒有回測：事件的方向判斷沒有歷史版本")
+    return out

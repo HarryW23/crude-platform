@@ -3,7 +3,19 @@ import { pairChart } from "../../charts.js";
 import { adminLink } from "../../site.js";
 import { errorBox, esc, num, signed } from "../../ui.js";
 
-const state = { projection: null };
+const state = { projection: null, horizon: "M1" };
+// 信號的歷史表現（最近一次回測）。結論由後端判定，這裡只負責顯示
+const VERDICT_TAG = { effective: "ok", reversed: "bad", weak: "", insufficient: "warn", none: "", changed: "warn" };
+
+function trackTag(t) {
+  if (!t) return '<span class="muted">—</span>';
+  const tip = t.hit_rate == null && t.ic == null ? t.verdict_name
+    : [t.hit_rate != null ? `命中率 ${num(t.hit_rate * 100, 0)}%（同期上漲佔比 ${num((t.up_share ?? 0) * 100, 0)}%）` : null,
+       t.ic != null ? `IC ${num(t.ic)}${t.ic_t != null ? `（t = ${num(t.ic_t, 1)}）` : ""}` : null,
+       t.n_eff != null ? `有效樣本 ${num(t.n_eff, 0)}` : null].filter(Boolean).join("，");
+  return `<span class="tag ${VERDICT_TAG[t.verdict] ?? ""}" title="${esc(tip)}">${esc(t.verdict_name)}</span>`
+    + (t.hit_rate != null && ["effective", "reversed", "weak"].includes(t.verdict) ? ` <span class="muted mono">${num(t.hit_rate * 100, 0)}%</span>` : "");
+}
 const pct = (v) => `${num(v * 100, 0)}%`;
 
 function scoreBar(score) {
@@ -14,20 +26,29 @@ function scoreBar(score) {
 }
 
 export async function render(main) {
-  const [sig, projections, scenarios, fvs] = await Promise.all([api("/signals"), api("/projections"), api("/scenarios"),
-                                                                api("/fair-value")]);
+  const [sig, projections, scenarios, fvs, track] = await Promise.all([api("/signals"), api("/projections"),
+    api("/scenarios"), api("/fair-value"), api("/signals/track-record")]);
+  if (!track.horizons.some((h) => h.code === state.horizon)) state.horizon = track.horizons[0]?.code;
+  const h = state.horizon, hName = track.horizons.find((x) => x.code === h)?.name_zh ?? "";
   if (!projections.some((p) => p.id === state.projection)) state.projection = projections.at(-1)?.id ?? null;
 
   main.innerHTML = `<h2>推演</h2>
     <p class="sub">兩個部分。方向信號回答「各模組現在處在歷史的什麼位置」；價格推演把你設定的幾個情境分支各自折成價格區間，再按機率加權。兩者都把依據攤開，不是黑盒預測。</p>
-    <div class="panel"><h2>方向信號</h2><div class="cols"><div>
+    <div class="panel"><div class="row"><h2 style="margin:0">方向信號</h2><span style="flex:1"></span>
+        ${track.run ? `<span class="ink2">歷史表現看之後</span><div class="tabs">${track.horizons.map((x) => `<button data-h="${x.code}" class="${x.code === h ? "on" : ""}">${esc(x.name_zh)}</button>`).join("")}</div>` : ""}</div>
+      ${track.run ? `<p class="muted" style="margin:6px 0 0">「歷史表現」來自第 ${track.run.id} 次回測（${esc(track.run.mode_name)}，${track.run.start} 至 ${track.run.end}，${track.run.age_days} 天前）：
+          信號偏多 / 偏空時，之後${esc(hName)}的走勢是否真的同向。滑鼠移到結論上看命中率和 IC。${track.notes.map(esc).join("；")}。</p>`
+        : `<p class="muted" style="margin:6px 0 0">還沒有回測結果，看不到信號過去準不準。到「回測」頁跑一次（幾十秒），這裡就會顯示每個信號的歷史表現。</p>`}
+      <div>
         <div class="row" style="margin:6px 0 12px"><span class="verdict">${esc(sig.overall.label)}</span>${scoreBar(sig.overall.score)}
-          <span class="ink2">有結果的模組 ${sig.overall.modules_ok} / ${sig.overall.modules_total}</span></div>
-        <table><tr><th>模組</th><th>判斷</th><th>分數（−1 利空 … +1 利多）</th><th class="n">權重</th><th class="n">有結果的信號</th></tr>
+          <span class="ink2">有結果的模組 ${sig.overall.modules_ok} / ${sig.overall.modules_total}</span>
+          ${track.run ? `<span class="ink2">綜合分數歷史表現</span>${trackTag(track.overall[h])}` : ""}</div>
+        <table><tr><th>模組</th><th>判斷</th><th>分數（−1 利空 … +1 利多）</th><th class="n">權重</th><th class="n">有結果的信號</th>${track.run ? "<th>歷史表現</th>" : ""}</tr>
           ${sig.modules.map((m) => `<tr class="click" data-module="${m.module}"><td><b>${esc(m.name_zh)}</b></td><td>${esc(m.label)}</td><td>${scoreBar(m.score)}</td>
-            <td class="n">${m.weight ?? "—"}</td><td class="n">${m.signals_ok} / ${m.signals_total}</td></tr>`).join("")}</table>
+            <td class="n">${m.weight ?? "—"}</td><td class="n">${m.signals_ok} / ${m.signals_total}</td>
+            ${track.run ? `<td>${m.module === "geo" ? '<span class="muted">不回測</span>' : trackTag(track.modules[m.module]?.[h])}</td>` : ""}</tr>`).join("")}</table>
         <p class="muted" style="margin-top:8px">數據類信號：最新值相對回看期均值偏離幾個標準差（z），z ÷ 2 封頂後乘以方向。地緣：已確認且持續中事件的方向判斷之和 ÷ 4。點一行看明細。權重在${adminLink("params", "參數")}的「推演」組裡改。</p></div>
-        <div id="signals"><p class="muted">點左邊任一模組，在這裡看它的信號明細。</p></div></div></div>
+        <div id="signals" style="margin-top:12px"><p class="muted">點上面任一模組，在這裡看它的信號明細。</p></div></div></div>
     <div id="fv"></div>
     <div class="panel"><h2>價格推演</h2>
         <div class="row" style="margin-bottom:10px">${projections.length ? `<select id="pick" aria-label="推演">${projections.map((p) => `<option value="${p.id}" ${p.id === state.projection ? "selected" : ""}>${esc(p.name_zh)}</option>`).join("")}</select>` : ""}
@@ -43,11 +64,13 @@ export async function render(main) {
     $("signals").innerHTML = `<h3>${esc(m.name_zh)}的信號</h3>` + (m.signals.length ? (m.module === "geo"
       ? `<table><tr><th>事件</th><th>開始</th><th class="n">方向判斷</th><th>分數</th></tr>${m.signals.map((s) =>
           `<tr><td>${esc(s.name_zh)}</td><td>${s.date}</td><td class="n">${signed(s.bias, 0)}</td><td>${scoreBar(s.score)}</td></tr>`).join("")}</table>`
-      : `<div class="scroll"><table><tr><th>信號</th><th>日期</th><th class="n">最新值</th><th class="n">回看期均值</th><th class="n">z</th><th>方向</th><th>分數</th><th class="n">樣本</th></tr>
+      : `<div class="scroll"><table><tr><th>信號</th><th>日期</th><th class="n">最新值</th><th class="n">回看期均值</th><th class="n">z</th><th>方向</th><th>分數</th><th class="n">樣本</th>${track.run ? `<th>歷史表現（${esc(hName)}）</th>` : ""}</tr>
           ${m.signals.map((s) => `<tr><td>${esc(s.name_zh)}<div class="mono muted">${s.input}</div></td><td class="nw">${s.date ?? ""}</td>
             <td class="n">${num(s.value)}</td><td class="n">${num(s.mean)}</td><td class="n">${s.z == null ? "" : signed(s.z)}</td>
             <td class="nw">${s.direction > 0 ? "高 = 利多" : "高 = 利空"}</td>
-            <td>${s.status === "ok" ? scoreBar(s.score) : `<span class="tag warn" title="${s.status === "stale" ? "最新值太舊（超過按頻率的期限），不計入分數" : ""}">${{ missing: "缺數據", stale: `數據太舊（${s.date}）`, insufficient: "樣本不足" }[s.status] ?? s.status}</span>`}</td><td class="n">${s.n}</td></tr>`).join("")}</table></div>`)
+            <td>${s.status === "ok" ? scoreBar(s.score) : `<span class="tag warn" title="${s.status === "stale" ? "最新值太舊（超過按頻率的期限），不計入分數" : ""}">${{ missing: "缺數據", stale: `數據太舊（${s.date}）`, insufficient: "樣本不足" }[s.status] ?? s.status}</span>`}</td><td class="n">${s.n}</td>
+            ${track.run ? `<td class="nw">${trackTag(track.signals[s.code]?.[h])}</td>` : ""}</tr>`).join("")}</table>
+          ${track.run && m.signals.some((s) => track.signals[s.code]?.[h]?.verdict === "reversed") ? '<p class="muted">「方向相反」：過去這個信號偏多時，之後反而更常跌（統計上顯著）。可能是方向設錯了，也可能是這段時期的特殊情況，值得檢查。</p>' : ""}</div>`)
       : '<p class="muted">目前沒有已確認且持續中的事件。</p>');
   }));
   $("new").addEventListener("click", async () => {
@@ -59,6 +82,7 @@ export async function render(main) {
     catch (e) { $("projection").innerHTML = errorBox(e); }
   });
   $("pick")?.addEventListener("change", (ev) => { state.projection = Number(ev.target.value); render(main); });
+  main.querySelectorAll("[data-h]").forEach((b) => b.addEventListener("click", () => { state.horizon = b.dataset.h; render(main); }));
   renderFairValues($("fv"), fvs).catch((e) => { $("fv").innerHTML = errorBox(e); });
   if (state.projection != null) {
     try { await renderProjection($("projection"), scenarios, main, fvs); } catch (e) { $("projection").innerHTML = errorBox(e); }
@@ -86,12 +110,12 @@ async function renderFairValues(box, fvs) {
       <h3>給推演的漂移</h3><table><tr><th>期限</th><th class="n">預計消退的偏離</th></tr>
         ${Object.values(f.drift).map((d) => `<tr><td>${esc(d.name_zh)}</td><td class="n">${d.effect == null ? '<span class="muted">不給</span>' : `${signed(d.effect)} ${esc(f.unit)}`}</td></tr>`).join("")}</table>
       <p class="muted">假設因子在期限內不變：回答的是「基本面不變的話，價格會往哪邊回」。新建推演時勾選「加上基本面回歸」才會計入。是否真的有用，看「回測」頁。</p>
-    </div><div><h3>價格與公允價值</h3><div class="fv-chart"></div></div></div>`}</div>`).join("");
+    </div><div><h3>價格與公允價值</h3><div class="fv-chart"><p class="muted">載入中…</p></div></div></div>`}</div>`).join("");
   for (const f of fvs) {
     if (f.fair == null) continue;
     const detail = await api(`/fair-value/${f.code}?days=500`);
     const rows = detail.history.filter((h) => h.price != null);
-    box.querySelector(`[data-fv="${f.code}"] .fv-chart`).append(pairChart([
+    box.querySelector(`[data-fv="${f.code}"] .fv-chart`).replaceChildren(pairChart([
       { name: f.target_name, color: "var(--series-1)", points: rows.map((h) => ({ date: h.date, value: h.price })) },
       { name: "公允價值", color: "var(--series-2)", points: rows.filter((h) => h.fair != null).map((h) => ({ date: h.date, value: h.fair })) },
     ], { unit: f.unit, height: 300 }));

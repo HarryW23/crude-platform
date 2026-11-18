@@ -202,3 +202,47 @@ def test_cli(settings, monkeypatch, capsys, sample_path):
     assert main(["backtest", "--step", "5"]) == 0
     out = capsys.readouterr().out
     assert "［綜合］" in out and "價格區間覆蓋率" in out and math.isfinite(len(out))
+
+
+# ------------------------------ 信號的歷史表現 ------------------------------
+
+def test_verdicts():
+    assert backtest.verdict(None) == "none"
+    assert backtest.verdict({"status": "no_data"}) == "none"
+    assert backtest.verdict({"status": "insufficient", "significant": False, "ic": 0.5}) == "insufficient"
+    assert backtest.verdict({"status": "ok", "significant": True, "ic": 0.2}) == "effective"
+    assert backtest.verdict({"status": "ok", "significant": True, "ic": -0.2}) == "reversed"
+    assert backtest.verdict({"status": "ok", "significant": False, "ic": 0.4}) == "weak"
+
+
+def test_track_record_from_latest_run(session, cfg):
+    from datetime import datetime as dt
+
+    from crudelab.models import BacktestRun
+    assert backtest.track_record(session, cfg)["run"] is None
+    good = {"status": "ok", "significant": True, "ic": 0.3, "ic_t": 2.5, "hit_rate": 0.6, "up_share": 0.5,
+            "n_eff": 60, "calls": 80}
+    by = {"W1": good, "M1": {**good, "ic": -0.3}, "M3": {"status": "insufficient"}}
+    sig = cfg.signals["SIG_BRENT_STRUCTURE"]
+    results = {"start": "2024-01-01", "end": "2026-10-01", "neutral_band": 0.15,
+               "signals": [{"code": sig.code, "input": sig.input, "direction": sig.direction, "by_horizon": by},
+                           {"code": "SIG_WTI_STRUCTURE", "input": "SOMETHING_ELSE", "direction": 1, "by_horizon": by}],
+               "modules": [{"module": "spread", "by_horizon": by}], "overall": {"by_horizon": by}}
+    session.add(BacktestRun(created_by="t", status="done", mode="observation", step=1, results=results,
+                            created_at=dt(2026, 9, 1), finished_at=dt(2026, 9, 1)))
+    session.add(BacktestRun(created_by="t", status="failed", mode="observation", step=1, results=None))   # 失敗的不算
+    session.commit()
+    t = backtest.track_record(session, cfg, now=dt(2026, 11, 18))
+    assert t["run"]["age_days"] == 78 and any("78 天前" in n for n in t["notes"])
+    brent = t["signals"]["SIG_BRENT_STRUCTURE"]
+    assert (brent["W1"]["verdict"], brent["M1"]["verdict"], brent["M3"]["verdict"]) == \
+        ("effective", "reversed", "insufficient")
+    assert brent["W1"]["hit_rate"] == 0.6 and brent["W1"]["verdict_name"] == "有效"
+    assert t["signals"]["SIG_WTI_STRUCTURE"]["M1"]["verdict"] == "changed"        # 回測之後改過輸入
+    assert t["signals"]["SIG_DUBAI_STRUCTURE"]["M1"]["verdict"] == "none"         # 回測裡沒有
+    assert t["modules"]["spread"]["W1"]["verdict"] == "effective" and t["overall"]["M1"]["verdict"] == "reversed"
+
+
+def test_track_record_api(client, loaded):
+    body = client.get("/api/signals/track-record").json()
+    assert body["run"] is None and [h["code"] for h in body["horizons"]] == ["W1", "M1", "M3"]
