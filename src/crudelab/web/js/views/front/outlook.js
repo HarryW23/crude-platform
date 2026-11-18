@@ -47,7 +47,7 @@ export async function render(main) {
           ${m.signals.map((s) => `<tr><td>${esc(s.name_zh)}<div class="mono muted">${s.input}</div></td><td class="nw">${s.date ?? ""}</td>
             <td class="n">${num(s.value)}</td><td class="n">${num(s.mean)}</td><td class="n">${s.z == null ? "" : signed(s.z)}</td>
             <td class="nw">${s.direction > 0 ? "高 = 利多" : "高 = 利空"}</td>
-            <td>${s.status === "ok" ? scoreBar(s.score) : `<span class="tag warn">${s.status === "missing" ? "缺數據" : "樣本不足"}</span>`}</td><td class="n">${s.n}</td></tr>`).join("")}</table></div>`)
+            <td>${s.status === "ok" ? scoreBar(s.score) : `<span class="tag warn" title="${s.status === "stale" ? "最新值太舊（超過按頻率的期限），不計入分數" : ""}">${{ missing: "缺數據", stale: `數據太舊（${s.date}）`, insufficient: "樣本不足" }[s.status] ?? s.status}</span>`}</td><td class="n">${s.n}</td></tr>`).join("")}</table></div>`)
       : '<p class="muted">目前沒有已確認且持續中的事件。</p>');
   }));
   $("new").addEventListener("click", async () => {

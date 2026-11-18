@@ -92,7 +92,7 @@ def parse_number(value) -> float | None:
     if isinstance(value, (int, float)):
         return float(value) if value == value and abs(value) != float("inf") else None
     if isinstance(value, str):
-        text = value.strip().replace(",", "")
+        text = value.strip().replace(",", "").replace("\u2212", "-")     # 排版用的負號 − 也認
         if text.endswith("%"):
             text = text[:-1]
         try:
@@ -140,7 +140,10 @@ def read_grids(path: Path) -> tuple[dict[str, list[list]], dict[str, str]]:
                 continue
         else:
             raise ValueError("無法識別 CSV 的文字編碼")
-        dialect = csv.Sniffer().sniff(text[:4096], delimiters=",;\t") if text.strip() else csv.excel
+        try:
+            dialect = csv.Sniffer().sniff(text[:4096], delimiters=",;\t") if text.strip() else csv.excel
+        except csv.Error:                     # 只有一列、或沒有分隔符：按普通逗號分隔讀
+            dialect = csv.excel
         rows = [[c if c != "" else None for c in row] for row in csv.reader(text.splitlines(), dialect)]
         if len(rows) > MAX_ROWS:
             truncated["CSV"] = f"文件有 {len(rows)} 行，超過讀取上限 {MAX_ROWS} 行，超出的部分沒有讀入"

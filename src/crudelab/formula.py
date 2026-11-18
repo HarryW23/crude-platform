@@ -24,6 +24,9 @@ FUNCTIONS: dict[str, Callable] = {
     "seasonal_avg": lambda x, n: analytics.seasonal_stats(x, int(n))["avg"],   # 前 n 年同期均值（n 年不齊則無值）
 }
 WINDOW_FUNCTIONS = {"lag", "ma", "diff", "yoy", "seasonal_avg"}    # 會用到更早日期的值
+# 每個函數的參數個數（最少, 最多），以及哪些位置必須是正整數常數（期數、年數）
+ARITY = {"lag": (2, 2), "ma": (2, 2), "diff": (1, 2), "abs": (1, 1), "yoy": (1, 1), "seasonal_avg": (2, 2)}
+COUNT_ARGS = {"lag": {1}, "ma": {1}, "diff": {1}, "seasonal_avg": {1}}
 _BINOPS = {ast.Add: lambda a, b: a + b, ast.Sub: lambda a, b: a - b, ast.Mult: lambda a, b: a * b,
            ast.Div: lambda a, b: a / b, ast.Pow: lambda a, b: a ** b}
 
@@ -46,11 +49,27 @@ def parse(formula: str) -> ast.Expression:
             ok = isinstance(node.value, (int, float)) and not isinstance(node.value, bool)
         elif isinstance(node, ast.Call):
             ok = isinstance(node.func, ast.Name) and node.func.id in FUNCTIONS and not node.keywords
+            if ok:
+                _check_call(node, formula)
         else:
             ok = False
         if not ok:
             raise FormulaError(f"公式裡有不允許的寫法：{formula}")
     return tree
+
+
+def _check_call(node: ast.Call, formula: str) -> None:
+    name = node.func.id
+    low, high = ARITY[name]
+    if not low <= len(node.args) <= high:
+        expected = str(low) if low == high else f"{low} 到 {high}"
+        raise FormulaError(f"{name}() 要 {expected} 個參數，寫了 {len(node.args)} 個：{formula}")
+    for i in COUNT_ARGS.get(name, ()):
+        if i < len(node.args):
+            arg = node.args[i]
+            if not (isinstance(arg, ast.Constant) and isinstance(arg.value, int) and not isinstance(arg.value, bool)
+                    and arg.value >= 1):
+                raise FormulaError(f"{name}() 的第 {i + 1} 個參數必須是正整數（期數或年數）：{formula}")
 
 
 def names(formula: str) -> list[str]:

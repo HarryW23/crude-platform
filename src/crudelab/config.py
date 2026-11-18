@@ -433,4 +433,17 @@ def _validate_indicators(cfg: Config) -> list[str]:
 
     for code in cfg.indicators:
         visit(code, [])
+    if any("循環引用" in e for e in errors):
+        return errors
+
+    # lag / ma / diff 等按「期」數的函數，是在公式各輸入對齊後的日期上數的：
+    # 混了不同頻率時，周度數據會被攤到每天，lag(周度, 1) 就變成錯開 1 天。乾脆不允許這樣寫。
+    for ind in cfg.indicators.values():
+        if ind.code not in deps or not fx.uses_window(ind.formula):
+            continue
+        dynamic = [n for n in deps[ind.code] if n in cfg.series or n in cfg.indicators]
+        freqs = {cfg.frequency_of(n) for n in dynamic}
+        if len(freqs) > 1:
+            errors.append(f"指標 {ind.code}：公式用了按期數計算的函數（lag / ma / diff 等），但輸入的頻率不同"
+                          f"（{'、'.join(sorted(freqs))}）。請先分別算成同一頻率的指標再組合")
     return errors

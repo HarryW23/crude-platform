@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import math
+import threading
 from dataclasses import dataclass
 from datetime import date, datetime
 
@@ -52,7 +53,7 @@ def write_observations(session: Session, observations: list[Obs], source_code: s
 
     latest: dict[tuple[str, date], Obs] = {}
     for o in observations:
-        if not isinstance(o.value, (int, float)) or not math.isfinite(o.value):
+        if isinstance(o.value, bool) or not isinstance(o.value, (int, float)) or not math.isfinite(o.value):
             raise IngestError(f"{o.series_code} {o.obs_date} 的值不是有效數字")
         latest[(o.series_code, o.obs_date)] = o          # 同一批裡重複時以後面的為準
 
@@ -111,9 +112,44 @@ def load_points(session: Session, codes: list[str], start: date | None = None, e
         df.loc[stale, "value"] = df.loc[stale, "old_value"]
         df.loc[stale, "batch_id"] = df.loc[stale, "old_batch_id"]
         df.loc[stale, "source_ref"] = df.loc[stale, "old_ref"]
-
+        df = df[df["value"].notna()]      # 找不到當時的舊值（不應發生）：寧可缺，也不讓空值佔掉優先級
     df = df.sort_values(["series_code", "obs_date", "priority", "source_code"])
     return df.drop_duplicates(["series_code", "obs_date"], keep="first")[POINT_COLUMNS].reset_index(drop=True)
+
+
+_cache_lock = threading.Lock()
+_load_lock = threading.Lock()
+_cache: tuple[tuple, pd.DataFrame] | None = None
+
+
+def _fingerprint(session: Session, codes: list[str]) -> tuple:
+    """數據有沒有變：任何寫入、修訂、刪除都會改變條數、最新修改時間或最大編號；數據源優先級變了也算。"""
+    count, last_update, last_id = session.execute(
+        select(func.count(), func.max(Observation.updated_at), func.max(Observation.id))).one()
+    revisions = session.scalar(select(func.count()).select_from(ObservationRevision))   # 每次改值都會多一條
+    priorities = tuple(session.execute(select(DataSource.code, DataSource.priority).order_by(DataSource.code)).all())
+    return (str(session.get_bind().url), tuple(codes), count, last_update, last_id, revisions, priorities)
+
+
+def load_points_cached(session: Session, codes: list[str]) -> pd.DataFrame:
+    """不帶 as_of 的 load_points，數據沒變時直接用上一次的結果（每個頁面請求都要讀全部數據點）。
+
+    回傳的表是共用的：調用方只能讀，不能改。
+    """
+    global _cache
+    key = _fingerprint(session, sorted(codes))
+    with _cache_lock:
+        if _cache is not None and _cache[0] == key:
+            return _cache[1]
+    # 同一時間只讓一個請求去讀：頁面一次發好幾個請求，緩存失效時它們會同時去讀全表，互相拖慢十幾倍
+    with _load_lock:
+        with _cache_lock:
+            if _cache is not None and _cache[0] == key:
+                return _cache[1]
+        points = load_points(session, codes)
+        with _cache_lock:
+            _cache = (key, points)
+    return points
 
 
 def to_series(points: pd.DataFrame, code: str) -> pd.Series:

@@ -25,6 +25,7 @@ TICK_SECONDS = 30
 HEARTBEAT_FRESH = timedelta(minutes=2)
 log = logging.getLogger("crudelab.scheduler")
 _EPOCH = datetime(2000, 1, 1)
+_last_prune: datetime | None = None
 
 
 def _utc(local: datetime) -> datetime:
@@ -98,6 +99,13 @@ def tick(cfg: Config, settings: Settings, now: datetime | None = None) -> list[d
         else:
             beat.at, beat.host = now, socket.gethostname()[:128]
         state = switches.load(session, cfg)
+    global _last_prune
+    if _last_prune is None or now - _last_prune >= timedelta(hours=6):    # 順便清理沒用的歷史記錄
+        _last_prune = now
+        try:
+            jobs.prune_history(now)
+        except Exception:
+            log.exception("清理任務歷史時出錯")
     if not state[switches.SCHEDULER]:                 # 總開關關著：只報心跳，什麼都不執行
         return []
     tz = ZoneInfo(cfg.schedule.timezone)

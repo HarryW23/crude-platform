@@ -26,7 +26,7 @@ from sqlalchemy.orm import Session
 from . import contracts
 from . import formula as fx
 from .config import Config
-from .ingest import load_points, to_series
+from .ingest import load_points, load_points_cached, to_series
 from .models import ImportBatch, Parameter, ParameterVersion
 from .schema import EPOCH
 
@@ -80,6 +80,8 @@ class IndicatorEngine:
         self._verified = {p.key: p.verified for p in session.scalars(select(Parameter))}
         self._versions = self._load_versions()
         self._pin: pd.Timestamp | None = None               # 見 pinned()
+        self._raw_cache: dict[str, pd.Series] = {}           # 序列代碼 → 原始值（和固定合約視圖共用）
+        self._views: dict[pd.Timestamp, IndicatorEngine] = {}
 
     # ------------------------------ 輸入 ------------------------------
     def _load_versions(self) -> dict[str, pd.DataFrame]:
@@ -117,16 +119,27 @@ class IndicatorEngine:
         return self._shifted(code, self._raw(code))
 
     def _raw(self, code: str) -> pd.Series:
-        return to_series(self._all_points(), code)
+        """一條序列的原始值。第一次調用時把所有數據點按序列分組一次，之後直接取（不再每次篩整張表）。"""
+        if not self._raw_cache:
+            points = self._all_points()
+            for name, part in points.groupby("series_code", sort=False):
+                self._raw_cache[str(name)] = to_series(part, str(name))
+            self._raw_cache.setdefault("", pd.Series(dtype=float))      # 標記：已經分組過（數據為空時也不重來）
+        cached = self._raw_cache.get(code)
+        return cached.copy() if cached is not None else pd.Series(dtype=float, index=pd.DatetimeIndex([]), name=code)
 
     def pinned(self, anchor: pd.Timestamp) -> IndicatorEngine:
         """固定合約視圖：每條曲線的 Mn 都換成 anchor 那天的 Mn 合約在各天的價格（見 contracts.py）。
 
         共用已載入的數據，不重新查庫。用來算「同一組合約」的變化，換月不會造成跳動。
         """
-        view = copy.copy(self)
-        view._pin, view._computed, view._step = anchor, {}, set(self._step)
-        return view
+        if self._pin is not None:
+            raise ValueError("固定合約視圖不能再固定一次")
+        if anchor not in self._views:
+            view = copy.copy(self)            # 共用已載入的數據和分組緩存
+            view._pin, view._computed, view._step, view._views = anchor, {}, set(self._step), {}
+            self._views[anchor] = view
+        return self._views[anchor]
 
     def adjusted_series(self, code: str) -> tuple[pd.Series, int]:
         """換月調整後的價格（比例調整，最新值等於原始值）和沒能調整的換月次數。非曲線序列原樣返回。"""
@@ -144,7 +157,9 @@ class IndicatorEngine:
 
     def _all_points(self) -> pd.DataFrame:
         if self._points is None:
-            self._points = load_points(self.session, sorted(self.cfg.series), as_of=self.as_of)
+            codes = sorted(self.cfg.series)
+            self._points = (load_points(self.session, codes, as_of=self.as_of) if self.as_of is not None
+                            else load_points_cached(self.session, codes))
         return self._points
 
     def dependencies(self, code: str) -> tuple[list[str], list[str]]:

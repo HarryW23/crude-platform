@@ -20,7 +20,9 @@ class ImportFlowError(ValueError):
 
 
 def make_resolver(session: Session):
-    table = {a.alias_norm: a.series_code for a in session.scalars(select(SeriesAlias))}
+    """表頭 → 序列。指向已停用序列的別名不算數（否則整個文件會因為一列而入不了庫）。"""
+    active = set(session.scalars(select(Series.code).where(Series.active)))
+    table = {a.alias_norm: a.series_code for a in session.scalars(select(SeriesAlias)) if a.series_code in active}
     return lambda label: table.get(normalize_alias(label))
 
 
@@ -87,8 +89,8 @@ def commit_batch(session: Session, batch_id: int, mapping: dict[str, str | None]
             for col in sheet.columns:
                 target = mapping.get(col.key)
                 norm = normalize_alias(col.label)
-                if not target or target == col.series_code or not col.candidates or not norm:
-                    continue
+                if not target or target == col.series_code or not col.candidates or not norm or len(norm) > 128:
+                    continue                                 # 太長的表頭不學（存不下），下次照樣手動指定
                 if norm in existing:
                     existing[norm].series_code, existing[norm].origin = target, "learned"
                 else:

@@ -168,8 +168,15 @@ def count_admins(session: Session) -> int:
 
 # ------------------------------ 登錄與會話 ------------------------------
 
+MAX_TRACKED_NAMES = 10_000      # 最多記多少個用戶名的失敗次數：防止有人用大量隨機用戶名把內存撐大
+
+
 def _recent_failures(key: str) -> deque[float]:
-    attempts, cutoff = _failures[key], time.monotonic() - FAILURE_WINDOW_SECONDS
+    cutoff = time.monotonic() - FAILURE_WINDOW_SECONDS
+    if len(_failures) > MAX_TRACKED_NAMES:                       # 清掉已經過了窗口的記錄
+        for name in [k for k, v in _failures.items() if not v or v[-1] < cutoff]:
+            del _failures[name]
+    attempts = _failures[key]
     while attempts and attempts[0] < cutoff:
         attempts.popleft()
     return attempts

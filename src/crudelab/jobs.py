@@ -14,7 +14,7 @@ import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -209,6 +209,21 @@ def recent_runs(session: Session, limit: int = 100, code: str | None = None) -> 
     if code:
         stmt = stmt.where(JobRun.job_code == code)
     return list(session.scalars(stmt))
+
+
+SKIPPED_KEEP_DAYS = 30
+
+
+def prune_history(now: datetime | None = None) -> int:
+    """刪掉 30 天前的「跳過」記錄：收件夾任務每 10 分鐘一條，一年五萬條，沒有保留價值。
+    完成、失敗的記錄全部保留（它們是執行歷史和通知的依據）。"""
+    from .models import UserSession
+    cutoff = (now or utcnow()) - timedelta(days=SKIPPED_KEEP_DAYS)
+    with db.session_scope() as session:
+        result = session.execute(delete(JobRun).where(JobRun.status == "skipped", JobRun.started_at < cutoff))
+        # 過期或登出超過 30 天的登錄記錄也沒用了（只存令牌的雜湊）
+        session.execute(delete(UserSession).where(UserSession.expires_at < cutoff))
+        return result.rowcount or 0
 
 
 def recover_stale(older_than: timedelta = timedelta(hours=1)) -> int:

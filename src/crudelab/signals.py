@@ -9,6 +9,8 @@
 總分 = 各模組分數按模組權重（參數）加權平均（只算有結果的模組）。
 
 這是把「現在處在歷史什麼位置」標準化的工具，不是預測。樣本不夠的信號不出分。
+數據太舊的信號也不出分（status = stale）：最新值的日期離今天超過 STALE_DAYS（按輸入的頻率），
+否則一條斷更了幾個月的序列會拿舊值繼續影響總分，頁面上卻看不出來。回測用同一條規則（backtest._observation_scores）。
 """
 from __future__ import annotations
 
@@ -22,6 +24,13 @@ from .indicators import IndicatorEngine
 from .models import Event
 
 MODULE_NAMES = {"spread": "地域價差", "balance": "供需", "refinery": "煉廠", "geo": "地緣"}
+# 最新值的日期離今天超過這麼多天就不出分。比正常的發佈間隔寬鬆：周度數據 21 天 = 錯過兩次發佈
+STALE_DAYS = {"daily": 10, "weekly": 21, "monthly": 70, "quarterly": 200}
+
+
+def stale_days(engine_or_cfg, name: str) -> int:
+    cfg = getattr(engine_or_cfg, "cfg", engine_or_cfg)
+    return STALE_DAYS[cfg.frequency_of(name)]
 ACTIVE_EVENT_STATUSES = ("confirmed", "ongoing")
 
 
@@ -56,6 +65,9 @@ def data_signal(engine: IndicatorEngine, code: str, today: pd.Timestamp) -> dict
         return out
     window = values[values.index >= values.index[-1] - pd.Timedelta(days=s.lookback_days)]
     out.update(n=len(window), date=values.index[-1].date().isoformat(), value=float(values.iloc[-1]))
+    if (today - values.index[-1]).days > stale_days(engine, s.input):
+        out["status"] = "stale"
+        return out
     std = float(window.std()) if len(window) > 1 else 0.0
     if len(window) < s.min_points or std == 0:
         out["status"] = "insufficient"

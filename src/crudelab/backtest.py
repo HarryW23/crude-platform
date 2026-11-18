@@ -120,7 +120,10 @@ def _observation_scores(engine: IndicatorEngine, cfg: Config, dates: pd.Datetime
     for code, s in cfg.signals.items():
         frame = rolling_scores(engine.values(s.input), s.lookback_days, s.min_points, s.direction)
         lag = cfg.backtest.publication_lag_days[cfg.frequency_of(s.input)]
-        out[code] = as_available(frame, dates, lag)["score"].astype(float)
+        known = as_available(frame, dates, lag)
+        age = (known.index - pd.to_datetime(known["data_date"])).dt.days        # 沒有數據時是 NaN，比較結果為 False
+        too_old = age > signals.stale_days(cfg, s.input)
+        out[code] = known["score"].astype(float).where(~too_old)          # 和 signals.data_signal 一樣：太舊不出分
     return pd.DataFrame(out, index=dates)
 
 

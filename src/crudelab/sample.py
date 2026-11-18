@@ -25,7 +25,15 @@ def _walk(rng: random.Random, start: float, step: float, n: int) -> list[float]:
     return out
 
 
-END = date(2026, 10, 23)          # 演示數據的最後一個交易日（固定，方便測試）
+END = date(2026, 10, 23)          # 測試用的演示數據的最後一個交易日（固定，結果可以重現）
+
+
+def last_weekday(today: date | None = None) -> date:
+    """crudelab make-sample 用：演示數據結束在最近一個工作日，否則一生成就是「數據太舊」。"""
+    d = today or date.today()
+    while d.weekday() >= 5:
+        d -= timedelta(days=1)
+    return d
 
 
 def _weekdays_ending(end: date, count: int) -> list[date]:
@@ -37,10 +45,10 @@ def _weekdays_ending(end: date, count: int) -> list[date]:
     return out[::-1]
 
 
-def write_sample_workbook(path: Path, days: int = 60, seed: int = 7) -> None:
+def write_sample_workbook(path: Path, days: int = 60, seed: int = 7, end: date = END) -> None:
     """days：日度行情的交易日數。供需的周度、月度數據固定給 6 年多，夠算五年同期。"""
     rng = random.Random(seed)
-    dates = _weekdays_ending(END, days)
+    dates = _weekdays_ending(end, days)
 
     brent = _walk(rng, 70, 0.9, days)
     curves = _curves(dates, brent, random.Random(seed + 1))
@@ -90,7 +98,7 @@ def write_sample_workbook(path: Path, days: int = 60, seed: int = 7) -> None:
                     round(brent[i] * 105 + 900 + rng.gauss(0, 40)), round(brent[i] * 95 + 500 + rng.gauss(0, 40)),
                     round(4800 + rng.gauss(0, 60)), round(2400 + rng.gauss(0, 50))])
 
-    _balance_sheets(wb, rng)
+    _balance_sheets(wb, rng, end)
     _back_months(wb, dates, curves)
     ws4 = wb.create_sheet("說明")
     ws4.append(["這一頁只有文字，系統會標記為無法識別並跳過。"])
@@ -98,9 +106,9 @@ def write_sample_workbook(path: Path, days: int = 60, seed: int = 7) -> None:
     wb.save(path)
 
 
-def _balance_sheets(wb: Workbook, rng: random.Random) -> None:
+def _balance_sheets(wb: Workbook, rng: random.Random, end: date = END) -> None:
     """供需演示數據：EIA 式的周度表（周五）和 STEO 式的月度表（含預測期，表頭用「2026-09」這種期間寫法）。"""
-    fridays, d = [], END
+    fridays, d = [], end - timedelta(days=(end.weekday() - 4) % 7)          # 不晚於 end 的最後一個周五
     while d >= date(2020, 1, 3):
         fridays.append(d)
         d -= timedelta(days=7)
@@ -128,7 +136,7 @@ def _balance_sheets(wb: Workbook, rng: random.Random) -> None:
     ws2 = wb.create_sheet("STEO月度")
     ws2.append(["Month", "OPEC液體產量", "非OPEC液體產量", "OPEC原油產量", "OECD需求", "非OECD需求", "OECD商業庫存"])
     stocks = 2_800.0
-    for n in range(96):                                        # 2020-01 … 2027-12
+    for n in range((end.year - 2020 + 2) * 12):              # 2020-01 … 明年 12 月（含預測期）
         year, month = 2020 + n // 12, n % 12 + 1
         season = math.cos(2 * math.pi * (month - 1) / 12)
         opec = 32.0 + 0.01 * n + rng.gauss(0, 0.25)

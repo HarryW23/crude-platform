@@ -5,7 +5,8 @@ config/ 是主數據的唯一來源，數據庫裡的主數據表只是它的鏡
   字典類（單位、地區、品種、數據源、序列、參數說明）  以配置為準覆蓋；配置裡刪掉的序列和參數置為 inactive，數據保留
   參數數值    配置只提供初始值：參數還沒有任何版本時寫入；之後一律以後台為準，不覆蓋
   參數核對狀態  只在新建時取配置值；之後以後台為準
-  別名        只新增，不動後台學到的別名
+  別名        配置來的別名（origin=config）以配置為準：新增、改指向、配置裡刪掉的也刪掉；
+              後台學到的別名（origin=learned）是人工確認過的，不動，同名時優先於配置
 """
 from __future__ import annotations
 
@@ -16,6 +17,7 @@ from .config import Config, normalize_alias
 from .models import Commodity, DataSource, Location, Parameter, ParameterVersion, Series, SeriesAlias, Unit
 
 SYSTEM_ACTOR = "config"
+ALIAS_MAX = 128               # series_alias 兩個字段的長度上限（PostgreSQL 會嚴格檢查）
 
 
 def _mirror(session: Session, model: type, pk: str, rows: list[dict]) -> None:
@@ -45,15 +47,25 @@ def sync_to_db(session: Session, cfg: Config) -> dict[str, int]:
     for row in session.scalars(select(Series).where(Series.code.not_in(list(cfg.series)))):
         row.active = False
 
-    known_aliases = set(session.scalars(select(SeriesAlias.alias_norm)))
-    new_aliases = 0
+    wanted: dict[str, tuple[str, str]] = {}               # 規範化別名 → (原文, 序列)
     for s in cfg.series.values():
         for alias in (s.code, s.name_zh, *s.aliases):
             norm = normalize_alias(alias)
-            if norm and norm not in known_aliases:
-                session.add(SeriesAlias(alias_norm=norm, alias=alias, series_code=s.code, origin="config"))
-                known_aliases.add(norm)
-                new_aliases += 1
+            if norm and len(norm) <= ALIAS_MAX:
+                wanted.setdefault(norm, (alias[:ALIAS_MAX], s.code))
+    current = {a.alias_norm: a for a in session.scalars(select(SeriesAlias))}
+    new_aliases = 0
+    for norm, row in current.items():
+        if row.origin != "config":
+            continue
+        if norm not in wanted:
+            session.delete(row)                           # 配置裡已經沒有這個別名
+        else:
+            row.alias, row.series_code = wanted[norm]     # 配置改了指向
+    for norm, (alias, code) in wanted.items():
+        if norm not in current:
+            session.add(SeriesAlias(alias_norm=norm, alias=alias, series_code=code, origin="config"))
+            new_aliases += 1
 
     existing = {p.key: p for p in session.scalars(select(Parameter))}
     has_versions = set(session.scalars(select(ParameterVersion.key).distinct()))

@@ -14,13 +14,13 @@ router = APIRouter(tags=["chat"])
 
 
 class Turn(BaseModel):
-    role: str
-    content: str
+    role: str = Field(max_length=16)
+    content: str = Field(max_length=8000)       # 限長：歷史由頁面帶上，不能讓它變成一次發出大量 token 的口子
 
 
 class ChatRequest(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
-    history: list[Turn] = []       # 之前的問答（只要文字），由頁面保存並帶上
+    history: list[Turn] = Field(default=[], max_length=40)    # 之前的問答（只要文字），由頁面保存並帶上
 
 
 @router.get("/chat/tools")

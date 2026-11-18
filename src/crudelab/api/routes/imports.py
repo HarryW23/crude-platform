@@ -11,6 +11,7 @@ from ...ingest import IngestError
 from ...models import ImportBatch
 from ..deps import AppState, get_actor, get_db, get_state
 
+MAX_UPLOAD = 50_000_000          # 上傳文件上限：整個文件會讀進內存
 admin_router = APIRouter(tags=["imports"])         # 只在後台
 
 
@@ -23,8 +24,11 @@ class CommitRequest(BaseModel):
 async def preview(file: UploadFile = File(...), source_code: str = Form("reuters_xls"),
                   session: Session = Depends(get_db), state: AppState = Depends(get_state),
                   actor: str = Depends(get_actor)):
+    content = await file.read(MAX_UPLOAD + 1)
+    if len(content) > MAX_UPLOAD:
+        raise HTTPException(413, f"文件超過 {MAX_UPLOAD // 1_000_000} MB，請拆開再導入")
     try:
-        return preview_file(session, state.settings, await file.read(), file.filename or "upload", source_code, actor)
+        return preview_file(session, state.settings, content, file.filename or "upload", source_code, actor)
     except ImportFlowError as exc:
         raise HTTPException(400, str(exc)) from exc
 

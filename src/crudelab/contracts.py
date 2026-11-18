@@ -144,7 +144,9 @@ def pinned_series(cfg: Config, code: str, anchor: pd.Timestamp, get) -> pd.Serie
     if m is None:
         return get(code)
     raw = {n: get(f"{m.curve.code}_M{n}") for n in m.curve.months}
-    index = pd.DatetimeIndex(sorted(set().union(*[s.index for s in raw.values()]))) if raw else pd.DatetimeIndex([])
+    index = pd.DatetimeIndex([])
+    for s in raw.values():
+        index = index.union(s.index)
     if len(index) == 0:
         return get(code)
     target = front_ordinal(m.curve.roll, anchor.date()) + m.n - 1

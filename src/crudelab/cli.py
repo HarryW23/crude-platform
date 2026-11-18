@@ -563,8 +563,8 @@ def cmd_secret(args) -> int:
 
 
 def cmd_make_sample(args) -> int:
-    from .sample import write_sample_workbook
-    write_sample_workbook(Path(args.output), days=780)       # 三年日度行情，夠關係模型擬合
+    from .sample import last_weekday, write_sample_workbook
+    write_sample_workbook(Path(args.output), days=780, end=last_weekday())    # 三年日度行情，結束在最近一個工作日
     print(f"已生成 {args.output}（全部是隨機生成的假數據，僅供試用；導入時數據源請選 demo）")
     return 0
 
