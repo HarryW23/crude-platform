@@ -16,7 +16,10 @@ from .models import AuditLog, Event, ScenarioRow, utcnow
 
 STATUSES = ("rumor", "confirmed", "ongoing", "resolved", "dismissed")
 CATEGORIES = ("conflict", "chokepoint", "sanction", "opec_policy", "outage", "policy", "demand", "other")
-EDITABLE = ("title", "category", "location_code", "status", "bias", "started_on", "ended_on", "summary", "source")
+EDITABLE = ("title", "category", "location_code", "status", "bias", "started_on", "ended_on", "summary", "source",
+            "probability", "price_premium")
+LIVE_STATUSES = ("rumor", "confirmed", "ongoing")     # 可以進推演的事件狀態（傳聞也可以，用機率表達不確定）
+MAX_PREMIUM = 50.0
 
 
 class EventError(ValueError):
@@ -36,14 +39,22 @@ def _validate(cfg: Config, fields: dict) -> None:
         raise EventError(f"地區 {fields['location_code']} 不在地區字典裡")
     if fields.get("started_on") and fields.get("ended_on") and fields["ended_on"] < fields["started_on"]:
         raise EventError("結束日期不能早於開始日期")
+    p = fields.get("probability")
+    if p is not None and not 0 <= p <= 1:
+        raise EventError("機率必須在 0 到 1 之間（頁面上是 0–100%）")
+    premium = fields.get("price_premium")
+    if premium is not None and not -MAX_PREMIUM <= premium <= MAX_PREMIUM:
+        raise EventError(f"風險溢價必須在 ±{MAX_PREMIUM:g} 之間")
 
 
 def create(session: Session, cfg: Config, *, title: str, category: str = "other", status: str = "confirmed",
            bias: int = 0, location_code: str | None = None, started_on: date | None = None,
            ended_on: date | None = None, summary: str | None = None, source: str | None = None,
+           probability: float | None = None, price_premium: float | None = None,
            origin: str = "manual", draft: bool = False, actor: str = "local") -> Event:
     fields = dict(title=title, category=category, status=status, bias=bias, location_code=location_code or None,
-                  started_on=started_on, ended_on=ended_on, summary=summary, source=source)
+                  started_on=started_on, ended_on=ended_on, summary=summary, source=source,
+                  probability=probability, price_premium=price_premium)
     _validate(cfg, fields)
     row = Event(**{**fields, "title": title.strip()[:200]}, origin=origin, draft=draft, created_by=actor)
     session.add(row)

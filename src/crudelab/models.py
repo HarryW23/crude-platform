@@ -221,6 +221,8 @@ class Event(Base):
     summary: Mapped[str | None] = mapped_column(Text)
     source: Mapped[str | None] = mapped_column(Text)                 # 出處：連結或原文摘錄
     scenario_code: Mapped[str | None] = mapped_column(ForeignKey("scenario.code"))   # 這個事件的量化影響
+    probability: Mapped[float | None] = mapped_column(Float)         # 推演期限內發生 / 持續的機率 0–1（人的判斷）
+    price_premium: Mapped[float | None] = mapped_column(Float)       # 發生時直接加在價格上的溢價（錨定價格的單位）
     origin: Mapped[str] = mapped_column(String(16))                  # manual / llm
     draft: Mapped[bool] = mapped_column(Boolean, default=False)
     created_by: Mapped[str] = mapped_column(String(64))
@@ -248,6 +250,8 @@ class ProjectionCase(Base):
     scenario_code: Mapped[str | None] = mapped_column(ForeignKey("scenario.code"))
     probability: Mapped[float] = mapped_column(Float)                # 0–1
     price_adjustment: Mapped[float] = mapped_column(Float, default=0.0)   # 直接加在價格上的判斷（如風險溢價）
+    event_id: Mapped[int | None] = mapped_column(ForeignKey("event.id"))     # 由地緣事件同步生成的分支
+    event_probability: Mapped[float | None] = mapped_column(Float)          # 同步時事件的機率（用來發現事件改過）
     note: Mapped[str | None] = mapped_column(Text)
     created_by: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

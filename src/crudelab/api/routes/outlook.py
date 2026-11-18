@@ -133,6 +133,16 @@ def update_case(case_id: int, body: CasePatch, session: Session = Depends(get_db
     return {"id": row.id, "probability": row.probability, "price_adjustment": row.price_adjustment}
 
 
+@router.post("/projections/{projection_id}/sync-events")
+def sync_events(projection_id: int, session: Session = Depends(get_db), state: AppState = Depends(get_state),
+                actor: str = Depends(get_actor)):
+    """把有機率的地緣事件同步成這個推演的分支（每個事件一個分支，剩下的機率歸基準）。可以反覆同步。"""
+    try:
+        return service.sync_events(session, state.cfg, projection_id, actor)
+    except service.ProjectionError as exc:
+        raise _fail(exc) from exc
+
+
 @router.delete("/projection-cases/{case_id}")
 def remove_case(case_id: int, session: Session = Depends(get_db)):
     try:

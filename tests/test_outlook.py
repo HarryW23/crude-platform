@@ -452,3 +452,61 @@ def test_chat_api(client, monkeypatch):
     assert len(client.get("/api/chat/tools").json()) == 12
     assert client.post("/api/chat", json={"question": "Brent 多少？"}).status_code == 409      # 沒配大模型
     assert client.post("/api/chat", json={"question": ""}).status_code == 422
+
+
+# ------------------------------ 地緣事件的機率與推演分支 ------------------------------
+
+def test_event_probability_validation(session, cfg):
+    with pytest.raises(events.EventError, match="機率"):
+        events.create(session, cfg, title="x", probability=1.5)
+    with pytest.raises(events.EventError, match="溢價"):
+        events.create(session, cfg, title="x", price_premium=500)
+
+
+def test_sync_events_into_projection(loaded, cfg):
+    session = loaded
+    a = events.create(session, cfg, title="航道風險", status="confirmed", probability=0.2, price_premium=5.0)
+    events.create(session, cfg, title="只有機率", status="rumor", probability=0.1)                  # 沒量化：跳過
+    events.create(session, cfg, title="草稿", status="confirmed", probability=0.3, price_premium=2, draft=True)
+    events.create(session, cfg, title="已結束", status="resolved", probability=0.3, price_premium=2)
+    p = projection.create(session, "地緣推演")
+    session.commit()
+
+    r = projection.sync_events(session, cfg, p.id)
+    session.commit()
+    assert r["events"] == 1 and r["baseline_probability"] == pytest.approx(0.8) and r["skipped"] == ["只有機率"]
+    result = projection.compute(session, cfg, p.id)
+    labels = {c["label"]: c for c in result["cases"]}
+    assert labels["基準"]["probability"] == pytest.approx(0.8)
+    event_case = labels["地緣：航道風險"]
+    assert event_case["probability"] == pytest.approx(0.2) and event_case["event_id"] == a.id
+    price = result["anchor"]["price"]
+    assert result["expected"]["M1"] == pytest.approx(price + 0.2 * 5.0)                            # 0.8·P + 0.2·(P + 5)
+
+    events.update(session, cfg, a.id, {"probability": 0.4})
+    session.commit()
+    assert any("請重新同步" in x for x in projection.compute(session, cfg, p.id)["problems"])
+    projection.sync_events(session, cfg, p.id)                                                    # 反覆同步不重複
+    session.commit()
+    again = projection.compute(session, cfg, p.id)
+    assert len(again["cases"]) == 2 and again["total_probability"] == pytest.approx(1.0)
+    assert not any("請重新同步" in x for x in again["problems"])
+
+    events.update(session, cfg, a.id, {"probability": 0.9})
+    projection.add_case(session, cfg, p.id, "手動情境", scenarios.create(session, "MANUAL_X", "手動").code, 0.3)
+    session.commit()
+    with pytest.raises(projection.ProjectionError, match="超過 100%"):
+        projection.sync_events(session, cfg, p.id)
+
+
+def test_event_expected_impact(loaded, cfg, client):
+    session = loaded
+    e = events.create(session, cfg, title="風險溢價", status="ongoing", probability=0.25, price_premium=4.0)
+    events.create(session, cfg, title="沒量化", status="ongoing", probability=0.5)
+    session.commit()
+    impacts = projection.event_impacts(session, cfg)
+    cell = impacts["events"][e.id]["M1"]
+    assert cell["if_happens"] == pytest.approx(4.0) and cell["expected"] == pytest.approx(1.0)
+    assert len(impacts["events"]) == 1
+    body = client.get("/api/events/impacts").json()
+    assert body["events"][str(e.id)]["W1"]["expected"] == pytest.approx(1.0)

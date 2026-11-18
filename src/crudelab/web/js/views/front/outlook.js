@@ -138,7 +138,7 @@ async function renderProjection(box, scenarios, main, fvs) {
     ${p.sensitivity.value == null ? `<div class="msg">平衡敏感度（${p.sensitivity.parameter}）還沒有設定：全球平衡每多過剩 1 ${esc(p.balance.unit)}，${esc(a.name_zh)} 下跌多少 ${esc(a.unit)}。這是推演的核心假設，請到${adminLink("params", "參數")}給出；在那之前，帶供需調整的分支算不出價格。</div>` : ""}
     <div class="scroll"><table><tr><th>分支</th><th class="n">機率</th><th class="n">直接價格調整</th><th class="n">平衡變化（1 個月）</th>
       ${p.horizons.map((h) => `<th class="n">${esc(h.name_zh)}</th>`).join("")}<th></th></tr>
-      ${p.cases.map((c) => `<tr><td style="min-width:220px"><b>${esc(c.label)}</b><div class="muted">${c.scenario_code ? "情境 " + c.scenario_code : "基準（不加調整）"}</div>${c.note ? `<div class="ink2">${esc(c.note)}</div>` : ""}</td>
+      ${p.cases.map((c) => `<tr><td style="min-width:220px"><b>${esc(c.label)}</b>${c.event_id ? ' <span class="tag" title="機率和溢價跟著事件走：在「地緣事件」頁改，再回來同步">事件同步</span>' : ""}<div class="muted">${c.scenario_code ? "情境 " + c.scenario_code : c.event_id ? "只有風險溢價" : "基準（不加調整）"}</div>${c.note ? `<div class="ink2">${esc(c.note)}</div>` : ""}</td>
         <td class="n"><input class="num" style="width:64px" data-prob="${c.id}" value="${num(c.probability * 100, 0)}" inputmode="decimal" aria-label="機率"> %</td>
         <td class="n"><input class="num" style="width:70px" data-adj="${c.id}" value="${c.price_adjustment}" inputmode="decimal" aria-label="直接價格調整"></td>
         <td class="n">${c.horizons.M1?.balance_change == null ? "—" : signed(c.horizons.M1.balance_change)}</td>
@@ -146,6 +146,11 @@ async function renderProjection(box, scenarios, main, fvs) {
         <td class="nw"><button class="btn" data-save="${c.id}">保存</button> <button class="btn" data-remove="${c.id}">刪除</button></td></tr>`).join("")}
       <tr class="total"><td>機率加權</td><td></td><td></td><td></td>${p.horizons.map((h) => `<td class="n">${num(p.expected[h.code])}</td>`).join("")}<td></td></tr></table></div>
     <p class="muted" style="margin:8px 0">每格上面是中樞，下面是一倍標準差區間（${esc(a.unit)}）。中樞 = 當前價格 + 基本面回歸 − 敏感度 × 平衡變化 + 直接價格調整；區間 = ± 當前價格 × 日波動率 × √交易日數。不加基本面回歸時，基準分支的中樞就是當前價格。區間只反映歷史波動的大小，不是保證。</p>
+    <h3>從地緣事件同步</h3>
+    <div class="row"><button class="btn" id="sync-events">同步地緣事件</button>
+      <span class="muted">把「地緣事件」頁裡填了機率、且量化過（套用了預案或填了風險溢價）的事件，各變成一個分支；剩下的機率歸基準。可以反覆同步。</span></div>
+    <p class="muted" style="margin-top:6px">這是「各事件互斥」的近似：不單獨列出幾個事件同時發生的組合，各事件機率都不大時誤差很小；機率加起來超過 100% 時不能這樣算，會提示你先調低。</p>
+    <div id="sync-msg"></div>
     <h3>加入分支</h3>
     <div class="row"><input id="c-label" placeholder="分支名稱" size="16">
       <select id="c-scenario" aria-label="情境"><option value="">基準（不加調整）</option>${scenarios.map((s) => `<option value="${s.code}">${esc(s.name_zh)}（${s.adjustments} 條調整）</option>`).join("")}</select>
@@ -157,6 +162,15 @@ async function renderProjection(box, scenarios, main, fvs) {
   box.querySelector("#drift")?.addEventListener("change", async (ev) => {
     try { await api(`/projections/${state.projection}`, { method: "PATCH", json: { drift_model: ev.target.checked ? fvs[0].code : null } }); await reload(); }
     catch (e) { fail(e); }
+  });
+  box.querySelector("#sync-events").addEventListener("click", async () => {
+    try {
+      const r = await api(`/projections/${state.projection}/sync-events`, { method: "POST" });
+      await reload();
+      const msg = main.querySelector("#sync-msg");
+      if (msg) msg.innerHTML = `<div class="msg ok">同步了 ${r.events} 個事件，基準分支的機率是 ${pct(r.baseline_probability)}。`
+        + (r.skipped.length ? `另有 ${r.skipped.length} 個事件填了機率但還沒量化（${r.skipped.map(esc).join("、")}），沒有加入。` : "") + "</div>";
+    } catch (e) { box.querySelector("#sync-msg").innerHTML = errorBox(e); }
   });
   box.querySelectorAll("[data-save]").forEach((b) => b.addEventListener("click", async () => {
     const id = b.dataset.save, prob = Number(box.querySelector(`[data-prob="${id}"]`).value), adj = Number(box.querySelector(`[data-adj="${id}"]`).value);

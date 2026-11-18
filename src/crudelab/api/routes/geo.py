@@ -26,6 +26,8 @@ class EventIn(BaseModel):
     ended_on: date | None = None
     summary: str | None = None
     source: str | None = None
+    probability: float | None = Field(default=None, ge=0, le=1)
+    price_premium: float | None = None
 
 
 class EventPatch(BaseModel):
@@ -38,6 +40,8 @@ class EventPatch(BaseModel):
     ended_on: date | None = None
     summary: str | None = None
     source: str | None = None
+    probability: float | None = Field(default=None, ge=0, le=1)
+    price_premium: float | None = None
     draft: bool | None = None      # 傳 false = 確認草稿
 
 
@@ -64,6 +68,7 @@ def _event(e, session: Session, state: AppState) -> dict:
             "location_code": e.location_code, "location_name": location.name_zh if location else None,
             "started_on": e.started_on, "ended_on": e.ended_on, "summary": e.summary, "source": e.source,
             "scenario_code": e.scenario_code, "origin": e.origin, "draft": e.draft,
+            "probability": e.probability, "price_premium": e.price_premium,
             "adjustments": len(scenarios.adjustments(session, e.scenario_code)) if e.scenario_code else 0,
             "created_at": e.created_at, "updated_at": e.updated_at}
 
@@ -91,6 +96,13 @@ def update_event(event_id: int, body: EventPatch, session: Session = Depends(get
     except service.EventError as exc:
         raise HTTPException(400, str(exc)) from exc
     return _event(row, session, state)
+
+
+@router.get("/events/impacts")
+def event_impacts(session: Session = Depends(get_db), state: AppState = Depends(get_state)):
+    """每個仍在進行或可能發生的事件：發生時各期限的價格中樞相對基準變多少，以及乘上機率後的期望影響。"""
+    from ... import projection
+    return projection.event_impacts(session, state.cfg)
 
 
 @router.get("/playbooks")

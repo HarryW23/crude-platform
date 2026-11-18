@@ -26,7 +26,7 @@ import pandas as pd
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from . import fair_value, scenarios
+from . import events, fair_value, scenarios
 from .config import Config
 from .indicators import IndicatorEngine, Scenario
 from .models import Projection, ProjectionCase, utcnow
@@ -129,6 +129,79 @@ def remove_case(session: Session, case_id: int) -> None:
     if row is None or row.removed_at is not None:
         raise ProjectionError(f"沒有編號為 {case_id} 的分支")
     row.removed_at = utcnow()
+
+
+# ------------------------------ 從地緣事件同步分支 ------------------------------
+
+def sync_events(session: Session, cfg: Config, projection_id: int, actor: str = "local") -> dict:
+    """把「有機率的、仍在進行或可能發生的」地緣事件變成推演分支。
+
+    每個事件一個分支：機率 = 事件的機率，情境 = 事件套用預案生成的情境，價格調整 = 事件的風險溢價。
+    剩下的機率歸基準分支（沒有情境、不是事件生成的那個；沒有就新建一個）。
+    這是「各事件互斥」的近似：事件之間同時發生的組合不單獨列出，機率都不大時誤差很小；
+    機率之和超過 100% 時說明這個近似不成立，拒絕同步，請先調低。
+    已有的事件分支先移除再按事件的現狀重建，所以可以反覆同步。手動建的情境分支不動，它們的機率也算在總和裡。
+    """
+    from .models import Event
+    require(session, projection_id)
+    live = list(session.scalars(select(Event).where(
+        Event.draft.is_(False), Event.status.in_(events.LIVE_STATUSES), Event.probability.is_not(None),
+        Event.probability > 0).order_by(Event.id)))
+    usable = [e for e in live if e.scenario_code or e.price_premium]
+    skipped = [e.title for e in live if e not in usable]
+    rows = cases(session, projection_id)
+    for c in rows:
+        if c.event_id is not None:
+            c.removed_at = utcnow()
+    manual = [c for c in rows if c.event_id is None and c.scenario_code is not None]
+    base = next((c for c in rows if c.event_id is None and c.scenario_code is None), None)
+    taken = sum(e.probability for e in usable) + sum(c.probability for c in manual)
+    if taken > 1 + 1e-9:
+        raise ProjectionError(f"事件和手動分支的機率加起來是 {taken:.0%}，超過 100%："
+                              "這種情況下不能把它們當作互斥的分支。請先調低事件的機率，或移除部分手動分支")
+    for e in usable:
+        session.add(ProjectionCase(projection_id=projection_id, label=f"地緣：{e.title}"[:128],
+                                   scenario_code=e.scenario_code, probability=float(e.probability),
+                                   price_adjustment=float(e.price_premium or 0.0), event_id=e.id,
+                                   event_probability=float(e.probability),
+                                   note=f"由事件 #{e.id} 同步", created_by=actor))
+    rest = max(0.0, 1.0 - taken)
+    if base is None:
+        session.add(ProjectionCase(projection_id=projection_id, label="基準", scenario_code=None, probability=rest,
+                                   price_adjustment=0.0, note="同步地緣事件時建立", created_by=actor))
+    else:
+        base.probability = rest
+    session.flush()
+    return {"events": len(usable), "baseline_probability": rest,
+            "skipped": skipped}
+
+
+def event_impacts(session: Session, cfg: Config, as_of: datetime | None = None) -> dict:
+    """每個仍在進行或可能發生的事件：如果發生，各期限的價格中樞比基準高 / 低多少；乘上機率就是期望影響。
+
+    「如果發生」= 事件的情境（平衡表調整）+ 風險溢價。沒有情境也沒有溢價的事件沒有量化影響。
+    """
+    from .models import Event
+    live = list(session.scalars(select(Event).where(Event.draft.is_(False),
+                                                    Event.status.in_(events.LIVE_STATUSES)).order_by(Event.id)))
+    out: dict = {"horizons": [h.model_dump() for h in horizons_of(cfg)], "events": {}}
+    if not live or cfg.projection is None:
+        return out
+    base = adhoc(session, cfg, Scenario(), 0.0, as_of)["horizons"]
+    for e in live:
+        if not (e.scenario_code or e.price_premium):
+            continue
+        scenario = scenarios.load(session, cfg, e.scenario_code, as_of) if e.scenario_code else Scenario()
+        hit = adhoc(session, cfg, scenario, float(e.price_premium or 0.0), as_of)["horizons"]
+        row = {}
+        for code, cell in hit.items():
+            b = base[code]["central"]
+            delta = None if cell["central"] is None or b is None else cell["central"] - b
+            row[code] = {"if_happens": delta,
+                         "expected": None if delta is None or e.probability is None else delta * e.probability,
+                         "reason": cell.get("reason")}
+        out["events"][e.id] = row
+    return out
 
 
 # ------------------------------ 計算 ------------------------------
@@ -266,6 +339,17 @@ def compute(session: Session, cfg: Config, projection_id: int, as_of: datetime |
     if not probabilities_ok:
         problems.append(f"各分支機率之和是 {total_probability:.0%}，不等於 100%，所以不計算機率加權價")
 
+    from .models import Event
+    for c in case_rows:                       # 事件在同步之後改過機率或結束了：提醒重新同步
+        if c.event_id is None:
+            continue
+        event = session.get(Event, c.event_id)
+        if event is None or event.status not in events.LIVE_STATUSES or event.draft:
+            problems.append(f"分支「{c.label}」對應的事件已經結束或不存在，請重新同步地緣事件")
+        elif event.probability != c.event_probability:
+            problems.append(f"事件「{event.title}」的機率改成了 {event.probability or 0:.0%}"
+                            f"（同步時是 {c.event_probability or 0:.0%}），請重新同步地緣事件")
+
     drift, drift_info = _drift(cfg, base, row.drift_model, ctx, problems)
     out_cases = []
     for c in case_rows:
@@ -274,6 +358,7 @@ def compute(session: Session, cfg: Config, projection_id: int, as_of: datetime |
                             .compute(settings.balance_indicator) if c.scenario_code else None)
         out_cases.append({"id": c.id, "label": c.label, "scenario_code": c.scenario_code,
                           "probability": c.probability, "price_adjustment": c.price_adjustment, "note": c.note,
+                          "event_id": c.event_id,
                           "horizons": _case_cells(ctx, scenario_balance, c.price_adjustment, drift)})
 
     expected = {}
