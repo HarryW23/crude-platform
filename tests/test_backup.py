@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import func, select
+from sqlalchemy.engine import URL
 
 import crudelab
 from crudelab import backup, db, jobs
@@ -209,8 +210,10 @@ def test_postgres_secrets_stay_out_of_arguments(settings, monkeypatch):
         return Done()
     monkeypatch.setattr(backup.shutil, "which", lambda name: f"/usr/bin/{name}")
     monkeypatch.setattr(backup.subprocess, "run", fake_run)
+    url = URL.create("postgresql+psycopg", username="secretuser", password="hunter2",     # 假密碼，只用於測試
+                     host="db.internal", port=5433, database="crude", query={"sslmode": "require"})
     pg = settings.__class__(config_dir=settings.config_dir, data_dir=settings.data_dir,
-                            database_url="postgresql+psycopg://secretuser:hunter2@db.internal:5433/crude?sslmode=require")
+                            database_url=url.render_as_string(hide_password=False))
     with pytest.raises(backup.BackupError) as err:
         backup._run_pg(["pg_dump", "--format=custom", "--file=/x"], pg)
     assert not any("hunter2" in a for a in seen["args"])
