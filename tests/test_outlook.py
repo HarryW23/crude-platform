@@ -52,7 +52,7 @@ def test_signal_scores_follow_the_documented_formula(session, cfg):
     assert spread["signals_ok"] == 1 and spread["score"] == 1.0 and spread["label"] == "強偏多"
     assert next(s for s in spread["signals"] if s["code"] == "SIG_WTI_STRUCTURE")["status"] == "missing"
     # 其餘模組沒有數據：不出分，也不拖累總分
-    assert [m["score"] for m in result["modules"] if m["module"] != "spread"] == [None, None, None]
+    assert [m["score"] for m in result["modules"] if m["module"] != "spread"] == [None, None, None, None]
     assert result["overall"]["score"] == 1.0 and result["overall"]["modules_ok"] == 1
 
 
@@ -78,7 +78,7 @@ def test_geo_signal_comes_from_confirmed_events_only(session, cfg):
     events.create(session, cfg, title="已結束", status="resolved", bias=-2)
     session.commit()
     result = signals.compute(session, IndicatorEngine(session, cfg))
-    geo = result["modules"][3]
+    geo = next(m for m in result["modules"] if m["module"] == "geo")
     assert geo["score"] == 0.5 and [s["name_zh"] for s in geo["signals"]] == ["航道受阻"]
     set_value(session, "SIG_WEIGHT_GEO", 0)                       # 權重設為 0 → 不計入總分
     session.commit()
@@ -295,7 +295,7 @@ def test_phase4_api(client, admin, sample_path, monkeypatch):
     admin.post(f"/api/imports/{batch['batch_id']}/commit", json={})
 
     sig = client.get("/api/signals").json()
-    assert [m["module"] for m in sig["modules"]] == ["spread", "balance", "refinery", "geo"]
+    assert [m["module"] for m in sig["modules"]] == ["spread", "balance", "refinery", "positioning", "geo"]
     assert sig["overall"]["label"] in ("強偏多", "偏多", "中性", "偏空", "強偏空")
 
     event = client.post("/api/events", json={"title": "海峽受阻", "category": "chokepoint", "status": "ongoing",

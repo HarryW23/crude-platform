@@ -12,8 +12,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 Code = Field(pattern=r"^[A-Z][A-Z0-9_]*$", max_length=64)
 EPOCH = date(1900, 1, 1)          # 「自始生效」的生效日期
 
-Module = Literal["spread", "balance", "geo", "refinery", "common"]
-SeriesKind = Literal["futures", "swap", "spot", "diff", "osp", "freight", "fx", "stock", "flow", "ratio"]
+Module = Literal["spread", "balance", "geo", "refinery", "positioning", "common"]
+SeriesKind = Literal["futures", "swap", "spot", "diff", "osp", "freight", "fx", "stock", "flow", "ratio", "position"]
 Frequency = Literal["daily", "weekly", "monthly", "quarterly"]      # 由細到粗
 FREQUENCY_ORDER: tuple[str, ...] = ("daily", "weekly", "monthly", "quarterly")
 DEFAULT_VALID_DAYS: dict[str, int] = {"daily": 0, "weekly": 7, "monthly": 35, "quarterly": 100}
@@ -57,6 +57,13 @@ class SourceDef(Strict):
     notes: str | None = None
 
 
+class CftcRef(Strict):
+    """CFTC 公開報告裡的一列：合約代碼（cftc_contract_market_code）和字段名。"""
+    market: str = Field(pattern=r"^[0-9A-Z]{6}$")
+    field: str = Field(pattern=r"^[a-z0-9_]+$")
+    report: Literal["disaggregated_futures"] = "disaggregated_futures"
+
+
 class SeriesDef(Strict):
     code: str = Code
     name_zh: str
@@ -71,6 +78,7 @@ class SeriesDef(Strict):
     module: Module = "common"
     aliases: list[str] = []
     eia_id: str | None = None
+    cftc: CftcRef | None = None                          # 由 CFTC 公開報告自動取數
     notes: str | None = None
 
     @property
@@ -300,7 +308,7 @@ class SignalDef(Strict):
     """
     code: str = Code
     name_zh: str
-    module: Literal["spread", "balance", "refinery"]     # 地緣模組的信號來自事件庫，不在這裡定義
+    module: Literal["spread", "balance", "refinery", "positioning"]     # 地緣模組的信號來自事件庫，不在這裡定義
     input: str
     direction: Literal[1, -1]
     lookback_days: int = Field(default=730, ge=30)
@@ -347,7 +355,7 @@ class ProjectionSettings(Strict):
     volatility_lookback: int = Field(default=250, ge=20)
     volatility_min_points: int = Field(default=60, ge=20)
     horizons: list[HorizonDef] = Field(min_length=1)
-    module_weights: dict[Literal["spread", "balance", "refinery", "geo"], str]     # 模組 → 權重參數 key
+    module_weights: dict[Literal["spread", "balance", "refinery", "positioning", "geo"], str]   # 模組 → 權重參數 key
 
 
 # ------------------------------ 定時任務 ------------------------------

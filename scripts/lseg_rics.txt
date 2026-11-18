@@ -48,7 +48,7 @@ RBOB_M2                  RBc2
 HO_M1                    HOc1
 HO_M2                    HOc2
 
-# 下面 56 條可能在路透上，但還不知道 RIC（現貨評估價通常要另外訂閱 Platts / Argus）：
+# 下面 62 條可能在路透上，但還不知道 RIC（現貨評估價通常要另外訂閱 Platts / Argus）：
 # DUBAI_SWAP_M1          ?    迪拜掉期 M1
 # DUBAI_SWAP_M2          ?    迪拜掉期 M2
 # DUBAI_SWAP_M3          ?    迪拜掉期 M3
@@ -82,6 +82,12 @@ HO_M2                    HOc2
 # TD15_WS                ?    TD15 西非→中國 VLCC
 # TD20_WS                ?    TD20 西非→歐洲 蘇伊士型
 # TD25_WS                ?    TD25 美灣→歐洲 阿芙拉型
+# CFTC_WTI_MM_LONG       ?    WTI 管理基金多頭
+# CFTC_WTI_MM_SHORT      ?    WTI 管理基金空頭
+# CFTC_WTI_OI            ?    WTI 總持倉量
+# ICE_BRENT_MM_LONG      ?    Brent 管理基金多頭
+# ICE_BRENT_MM_SHORT     ?    Brent 管理基金空頭
+# ICE_BRENT_OI           ?    Brent 總持倉量
 # SG_GASOLINE_92         ?    新加坡 92# 汽油
 # SG_GASOIL_10PPM        ?    新加坡 10ppm 柴油
 # SG_JET_KERO            ?    新加坡航煤

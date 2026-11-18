@@ -118,8 +118,9 @@ def tool_get_values(ctx: _Ctx, code: str, last: int = 10, scenario: str | None =
 
 
 def tool_list_indicators(ctx: _Ctx, module: str) -> dict:
-    if module not in ("spread", "balance", "refinery"):
-        raise ToolError("module 必須是 spread（地域價差）、balance（供需）或 refinery（煉廠）")
+    from ..signals import DATA_MODULES, MODULE_NAMES
+    if module not in DATA_MODULES:
+        raise ToolError("module 必須是 " + "、".join(f"{m}（{MODULE_NAMES[m]}）" for m in DATA_MODULES))
     rows = []
     for code, ind in ctx.cfg.indicators.items():
         if ind.module == module and not ind.hidden:
@@ -248,7 +249,7 @@ def tool_what_if(ctx: _Ctx, adjustments: list | None = None, parameters: dict | 
 TOOLS: dict[str, tuple[Callable, str]] = {
     "search": (tool_search, 'search(query) — 按中文名或代碼的片段找指標、序列、參數、煉廠模型、平衡表。不確定代碼時先用它'),
     "get_values": (tool_get_values, 'get_values(code, last=10, scenario=null) — 一個序列或指標的最近幾個值；指標另附公式、狀態、變化、一年分位'),
-    "list_indicators": (tool_list_indicators, 'list_indicators(module) — 一個模組的全部指標現況。module: spread / balance / refinery'),
+    "list_indicators": (tool_list_indicators, 'list_indicators(module) — 一個模組的全部指標現況。module: spread / balance / refinery / positioning'),
     "get_balance": (tool_get_balance, 'get_balance(code, scenario=null) — 平衡表（最近 4 期 + 預測 6 期）。可指定已保存的情境'),
     "get_refinery": (tool_get_refinery, 'get_refinery(code) — 煉廠模型的毛利、拆解、產品明細'),
     "get_signals": (tool_get_signals, 'get_signals() — 四個模組的方向信號和綜合分數（−1 利空 … +1 利多）'),

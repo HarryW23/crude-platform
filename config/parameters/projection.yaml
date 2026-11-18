@@ -3,7 +3,8 @@
 - {key: PROJ_PRICE_PER_BALANCE, name_zh: 平衡對價格的敏感度, unit: USD*d/bbl/mb, group: 推演,
    description: 全球平衡在期限內平均每多過剩 1 百萬桶/日，Brent 下跌多少美元/桶。這是推演的核心假設，沒有預設值，必須由你給出}
 - {key: SIG_WEIGHT_SPREAD, name_zh: 信號權重：地域價差, value: 1, group: 推演,
-   description: 四個模組在綜合信號裡的權重，預設等權}
+   description: 各模組在綜合信號裡的權重，預設等權}
 - {key: SIG_WEIGHT_BALANCE, name_zh: 信號權重：供需, value: 1, group: 推演}
 - {key: SIG_WEIGHT_REFINERY, name_zh: 信號權重：煉廠, value: 1, group: 推演}
+- {key: SIG_WEIGHT_POSITIONING, name_zh: 信號權重：資金持倉, value: 1, group: 推演}
 - {key: SIG_WEIGHT_GEO, name_zh: 信號權重：地緣, value: 1, group: 推演}

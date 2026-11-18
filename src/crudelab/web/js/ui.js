@@ -1,5 +1,5 @@
 // 通用的小工具：轉義、數字格式、狀態標籤。不含業務邏輯。
-export const MODULES = { spread: "地域價差", balance: "供需", geo: "地緣", refinery: "煉廠", common: "公用" };
+export const MODULES = { spread: "地域價差", balance: "供需", geo: "地緣", refinery: "煉廠", positioning: "資金持倉", common: "公用" };
 
 export const esc = (s) => String(s ?? "").replace(/[&<>"']/g,
   (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));

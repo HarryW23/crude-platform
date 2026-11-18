@@ -100,6 +100,7 @@ def write_sample_workbook(path: Path, days: int = 60, seed: int = 7, end: date =
 
     _balance_sheets(wb, rng, end)
     _back_months(wb, dates, curves)
+    _positioning(wb, end, random.Random(seed + 2))
     ws4 = wb.create_sheet("說明")
     ws4.append(["這一頁只有文字，系統會標記為無法識別並跳過。"])
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -194,3 +195,25 @@ def _back_months(wb: Workbook, dates: list[date], curves: dict[str, dict[int, li
     ws.append(header_rics)
     for i, day in enumerate(dates):
         ws.append([day, *[column[i] for column in columns]])
+
+
+def _positioning(wb: Workbook, end: date, rng: random.Random) -> None:
+    """持倉演示數據：每周二一行，三年多。淨多頭佔比在 −5% 到 25% 之間慢慢擺動。"""
+    tuesdays, d = [], end - timedelta(days=(end.weekday() - 1) % 7)
+    while len(tuesdays) < 170:
+        tuesdays.append(d)
+        d -= timedelta(days=7)
+    tuesdays.reverse()
+    ws = wb.create_sheet("持倉")
+    ws.append(["Report date", "WTI Managed Money Long", "WTI Managed Money Short", "WTI Open Interest",
+               "Brent Managed Money Long", "Brent Managed Money Short", "Brent Open Interest"])
+    crowd = 0.1
+    for i, day in enumerate(tuesdays):
+        crowd = 0.1 + 0.85 * (crowd - 0.1) + rng.gauss(0, 0.025)
+        row = [day]
+        for oi_base, scale in ((1_800_000, 1.0), (2_400_000, 1.3)):
+            oi = oi_base + 150_000 * math.sin(2 * math.pi * i / 52) + rng.gauss(0, 20_000)
+            net = oi * (crowd * scale)
+            short = 60_000 + abs(rng.gauss(0, 15_000))
+            row += [round(short + net) if short + net > 0 else 0, round(short), round(oi)]
+        ws.append(row)

@@ -24,6 +24,9 @@ jobs:
   # EIA 周報通常在美東時間周三上午發佈（北京時間周三深夜），周四早上取；另外每天取一次以涵蓋延期和月度數據
   - {code: PULL_EIA, name_zh: 取 EIA 數據, action: pull, source: eia, at: "07:30", days: daily}
 
+  # CFTC 持倉報告：美東周五下午發佈（北京時間周六凌晨），周六早上取；漏了的話周日補（catch_up_hours）
+  - {code: PULL_CFTC, name_zh: 取 CFTC 持倉, action: pull, source: cftc, at: "08:10", days: [sat, sun], catch_up_hours: 24}
+
   # 每個工作日早上檢查一次有沒有數據斷更；持續斷更時按 notifications.yaml 的 repeat_hours 提醒
   - {code: CHECK_FRESHNESS, name_zh: 檢查數據斷更, action: check_freshness, at: "09:15", days: weekdays}
 

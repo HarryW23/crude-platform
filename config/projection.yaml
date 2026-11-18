@@ -12,4 +12,5 @@ module_weights:                           # 各模組信號在綜合分數裡的
   spread: SIG_WEIGHT_SPREAD
   balance: SIG_WEIGHT_BALANCE
   refinery: SIG_WEIGHT_REFINERY
+  positioning: SIG_WEIGHT_POSITIONING
   geo: SIG_WEIGHT_GEO

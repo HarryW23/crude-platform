@@ -51,7 +51,7 @@ DEFAULT_HORIZONS = [HorizonDef(code="W1", name_zh="1 周", calendar_days=7, trad
                     HorizonDef(code="M1", name_zh="1 個月", calendar_days=30, trading_days=21),
                     HorizonDef(code="M3", name_zh="3 個月", calendar_days=91, trading_days=63)]
 MODES = {"observation": "按數據日期", "vintage": "按入庫時間（嚴格）"}
-DATA_MODULES = ("spread", "balance", "refinery")
+DATA_MODULES = signals.DATA_MODULES
 MAX_POINTS = 400                                        # 每個散點圖最多帶多少個點
 STALE_AFTER = timedelta(hours=2)
 log = logging.getLogger("crudelab.backtest")
@@ -403,7 +403,8 @@ def run(session: Session, cfg: Config, options: Options) -> dict:
         if engine.rolled_curves(anchor) else f"{cfg.name_of(anchor)} 不是期貨曲線上的合約，收益按原始價格計算。",
         "評估日之間的收益窗口互相重疊，統計按「有效樣本」計算；有效樣本少於 "
         f"{settings.min_effective_samples} 的結果標為樣本不足，不要當結論用。",
-        "地緣模組不參與回測：事件的方向判斷沒有歷史版本。綜合分數只由地域價差、供需、煉廠三個模組構成。",
+        "地緣模組不參與回測：事件的方向判斷沒有歷史版本。綜合分數只由"
+        + "、".join(signals.MODULE_NAMES[m] for m in DATA_MODULES) + "這幾個模組構成。",
         "價格區間只檢驗推演的基準分支；情境分支是人的假設，無法回測。",
         "公允價值的漂移假設因子在期限內不變；它的回測檢驗的正是這個假設下，加漂移是否讓推演的中樞更準。",
     ]

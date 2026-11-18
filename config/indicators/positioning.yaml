@@ -1,0 +1,29 @@
+# 模組：資金持倉。字段說明見 spread.yaml。
+# 淨多頭佔總持倉的比例是跨時期可比的擁擠度指標（總持倉量會隨時間變大，單看手數不可比）。
+
+# ---------- WTI ----------
+- {code: POS_WTI_MM_NET, name_zh: WTI 管理基金淨多頭, module: positioning, group: 管理基金淨多頭, unit: lots,
+   formula: "CFTC_WTI_MM_LONG - CFTC_WTI_MM_SHORT"}
+- {code: POS_WTI_MM_NET_OI, name_zh: WTI 淨多頭佔總持倉, module: positioning, group: 擁擠度, unit: "1",
+   formula: "(CFTC_WTI_MM_LONG - CFTC_WTI_MM_SHORT) / CFTC_WTI_OI",
+   notes: 比例，0.10 表示淨多頭等於總持倉的 10%}
+- {code: POS_WTI_MM_LS, name_zh: WTI 多空比, module: positioning, group: 擁擠度, unit: "1",
+   formula: "CFTC_WTI_MM_LONG / CFTC_WTI_MM_SHORT"}
+- {code: POS_WTI_MM_NET_WOW, name_zh: WTI 淨多頭周變化, module: positioning, group: 資金流向, unit: lots,
+   formula: "diff(POS_WTI_MM_NET, 1)"}
+
+# ---------- Brent ----------
+- {code: POS_BRENT_MM_NET, name_zh: Brent 管理基金淨多頭, module: positioning, group: 管理基金淨多頭, unit: lots,
+   formula: "ICE_BRENT_MM_LONG - ICE_BRENT_MM_SHORT"}
+- {code: POS_BRENT_MM_NET_OI, name_zh: Brent 淨多頭佔總持倉, module: positioning, group: 擁擠度, unit: "1",
+   formula: "(ICE_BRENT_MM_LONG - ICE_BRENT_MM_SHORT) / ICE_BRENT_OI",
+   notes: 比例，0.10 表示淨多頭等於總持倉的 10%}
+- {code: POS_BRENT_MM_LS, name_zh: Brent 多空比, module: positioning, group: 擁擠度, unit: "1",
+   formula: "ICE_BRENT_MM_LONG / ICE_BRENT_MM_SHORT"}
+- {code: POS_BRENT_MM_NET_WOW, name_zh: Brent 淨多頭周變化, module: positioning, group: 資金流向, unit: lots,
+   formula: "diff(POS_BRENT_MM_NET, 1)"}
+
+# ---------- 合計 ----------
+- {code: POS_CRUDE_MM_NET, name_zh: 原油管理基金淨多頭合計（WTI + Brent）, module: positioning, group: 管理基金淨多頭,
+   unit: lots, formula: "POS_WTI_MM_NET + POS_BRENT_MM_NET",
+   notes: 兩個合約規模相同（1000 桶），可以直接相加}

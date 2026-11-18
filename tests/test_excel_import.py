@@ -22,7 +22,11 @@ def test_messy_workbook_layouts_are_detected(session, settings, sample_bytes):
     preview = preview_file(session, settings, sample_bytes, "sample.xlsx", "demo")
     layouts = {s["name"]: s["layout"] for s in preview["sheets"]}
     assert layouts == {"期貨": "wide", "新加坡成品油": "wide_transposed", "升貼水": "long", "中國": "wide",
-                       "EIA周度": "wide", "STEO月度": "wide", "遠月合約": "wide", "說明": "unrecognized"}
+                       "EIA周度": "wide", "STEO月度": "wide", "遠月合約": "wide", "持倉": "wide",
+                       "說明": "unrecognized"}
+    held = _cols(preview, "持倉")
+    assert {c["series_code"] for c in held.values()} == {"CFTC_WTI_MM_LONG", "CFTC_WTI_MM_SHORT", "CFTC_WTI_OI",
+                                                        "ICE_BRENT_MM_LONG", "ICE_BRENT_MM_SHORT", "ICE_BRENT_OI"}
     back = _cols(preview, "遠月合約")
     assert back["Brent M12 | LCOc12"]["series_code"] == "BRENT_M12"
     assert back["迪拜掉期M2"]["series_code"] == "DUBAI_SWAP_M2"

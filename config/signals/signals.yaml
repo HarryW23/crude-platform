@@ -31,3 +31,11 @@
 - {code: SIG_US_321, name_zh: 美國 3-2-1 裂解, module: refinery, input: CRK_US_321, direction: 1}
 - {code: SIG_ICE_GASOIL_CRACK, name_zh: ICE 柴油裂解, module: refinery, input: CRK_ICE_GASOIL, direction: 1}
 - {code: SIG_SG_MARGIN, name_zh: 新加坡複雜型毛利, module: refinery, input: RM_SG_COMPLEX_MARGIN, direction: 1}
+
+# ---------- 資金持倉 ----------
+# 逆向信號：管理基金淨多頭佔總持倉的比例處在三年高位時，做多已經很擁擠，之後回吐的風險大（direction: -1）。
+# 這是常見的用法，但不是定律：推演頁的「歷史表現」會顯示它在回測裡是否成立，如果是「方向相反」就該改方向。
+- {code: SIG_WTI_POSITIONING, name_zh: WTI 資金擁擠度, module: positioning, input: POS_WTI_MM_NET_OI, direction: -1,
+   lookback_days: 1095, min_points: 52, notes: 淨多頭佔比偏高 = 擁擠，回吐風險偏利空}
+- {code: SIG_BRENT_POSITIONING, name_zh: Brent 資金擁擠度, module: positioning, input: POS_BRENT_MM_NET_OI, direction: -1,
+   lookback_days: 1095, min_points: 52, notes: 淨多頭佔比偏高 = 擁擠，回吐風險偏利空}

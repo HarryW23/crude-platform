@@ -1,10 +1,11 @@
-// 指標看板：按 group 分組的表格 + 點選後的詳情（走勢、追溯）。地域價差和煉廠兩個前台頁面共用。
+// 指標看板：按 group 分組的表格 + 點選後的詳情（走勢、追溯）。地域價差、煉廠、資金持倉幾個前台頁面共用。
 import { api } from "./api.js";
 import { lineChart } from "./charts.js";
 import { adminLink } from "./site.js";
 import { deltaCell, esc, num, statusTag } from "./ui.js";
 
 const FREQ = { daily: "日", weekly: "周", monthly: "月", quarterly: "季" };
+const unitName = (u) => (u === "1" ? "比例" : u);      // 無量綱在配置裡寫作 "1"
 
 // 變化量按「期」算：日度指標是 1 / 5 / 20 個交易日，周度是 1 / 5 / 20 周，依此類推。
 // 依賴期貨曲線的指標，變化量按「同一組合約」對比，換月不算進去；做不到的（遠月數據不夠）標 †。
@@ -22,7 +23,7 @@ export function indicatorTable(list, { formula = false } = {}) {
       <td class="nw">${i.last_date ?? ""}${i.forecast_until ? `<div class="muted" title="之後的期間是預測值">預測至 ${i.forecast_until.slice(0, 7)}</div>` : ""}</td><td class="n">${i.status === "ok" ? num(i.last_value) : "—"}</td>
       ${["chg_1d", "chg_5d", "chg_20d"].map((k) => deltaCell(i[k], 2, (i.chg_unadjusted ?? []).includes(k) ? UNADJUSTED : "")).join("")}
       <td class="n">${i.percentile_1y == null ? "" : num(i.percentile_1y, 0) + "%"}</td>
-      <td class="nw">${esc(i.unit)}</td><td>${statusTag(i)}</td></tr>`).join("")}</table>`;
+      <td class="nw">${esc(unitName(i.unit))}</td><td>${statusTag(i)}</td></tr>`).join("")}</table>`;
 }
 
 function traceNode(n) {
@@ -56,7 +57,7 @@ export async function showIndicator(box, summary) {
       : "各輸入序列的日期沒有重疊。";
     panel.insertAdjacentHTML("beforeend", `<p class="muted">目前算不出結果。${why}</p>`);
   } else {
-    panel.append(lineChart(data, { unit: summary.unit, markers: rolls.map((r) => ({ date: r.date, label: `${r.curve_name}換月` })) }));
+    panel.append(lineChart(data, { unit: unitName(summary.unit), markers: rolls.map((r) => ({ date: r.date, label: `${r.curve_name}換月` })) }));
     if (rolls.length) panel.insertAdjacentHTML("beforeend", '<p class="muted">灰色豎虛線是換月日（新合約當上 M1 的第一天）。走勢圖畫的是連續合約的原始值，換月日的跳動在圖上保留；表格裡的變化量已剔除。</p>');
     const trace = await api(`/indicators/${summary.code}/trace`);
     panel.insertAdjacentHTML("beforeend",

@@ -14,7 +14,8 @@ from .config import Config
 from .schema import SeriesDef
 
 CN_FUTURES = ("SC_M", "FU_M", "LU_M", "BU_M", "PP_CN", "LLDPE_CN", "PTA_CN", "MEG_CN")
-MODULES = {"spread": "地域價差", "balance": "供需", "refinery": "煉廠", "geo": "地緣", "common": "公用"}
+MODULES = {"spread": "地域價差", "balance": "供需", "refinery": "煉廠", "positioning": "資金持倉", "geo": "地緣",
+           "common": "公用"}
 FREQUENCIES = {"daily": "日", "weekly": "周", "monthly": "月", "quarterly": "季"}
 
 

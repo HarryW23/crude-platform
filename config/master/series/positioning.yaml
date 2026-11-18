@@ -1,0 +1,29 @@
+# 資金持倉：期貨市場上各類參與者的持倉。
+#
+# CFTC 分類持倉報告（Disaggregated，只含期貨）：每周五美東下午發佈，數據截至當周周二，日期記在周二。
+#   公開數據，不需要密鑰，由後台「數據源」的 CFTC 自動取數（定時任務 PULL_CFTC）。
+#   cftc.market 是 CFTC 的合約代碼，cftc.field 是報告裡的字段名。
+# ICE Brent 的持倉由 ICE 自己發佈（不在 CFTC 報告裡）：目前用 Excel 導入（表頭寫別名裡的任一個即可），
+#   以後可以改走路透。
+#
+# 「管理基金」（Managed Money）主要是商品投機基金（CTA 等），是看資金擁擠度最常用的一類。
+
+series:
+  # ---------- WTI（NYMEX，CFTC 報告） ----------
+  - {code: CFTC_WTI_MM_LONG, name_zh: WTI 管理基金多頭, commodity: WTI, location: CUSHING, kind: position, unit: lots,
+     frequency: weekly, module: positioning, cftc: {market: "067651", field: m_money_positions_long_all},
+     aliases: ["WTI Managed Money Long", "WTI 管理基金多頭"]}
+  - {code: CFTC_WTI_MM_SHORT, name_zh: WTI 管理基金空頭, commodity: WTI, location: CUSHING, kind: position, unit: lots,
+     frequency: weekly, module: positioning, cftc: {market: "067651", field: m_money_positions_short_all},
+     aliases: ["WTI Managed Money Short", "WTI 管理基金空頭"]}
+  - {code: CFTC_WTI_OI, name_zh: WTI 總持倉量, commodity: WTI, location: CUSHING, kind: position, unit: lots,
+     frequency: weekly, module: positioning, cftc: {market: "067651", field: open_interest_all},
+     aliases: ["WTI Open Interest", "WTI 總持倉量"]}
+
+  # ---------- Brent（ICE，ICE 自己的報告，Excel 導入） ----------
+  - {code: ICE_BRENT_MM_LONG, name_zh: Brent 管理基金多頭, commodity: BRENT, location: NWE, kind: position, unit: lots,
+     frequency: weekly, module: positioning, aliases: ["Brent Managed Money Long", "ICE Brent Managed Money Long", "Brent 管理基金多頭"]}
+  - {code: ICE_BRENT_MM_SHORT, name_zh: Brent 管理基金空頭, commodity: BRENT, location: NWE, kind: position, unit: lots,
+     frequency: weekly, module: positioning, aliases: ["Brent Managed Money Short", "ICE Brent Managed Money Short", "Brent 管理基金空頭"]}
+  - {code: ICE_BRENT_OI, name_zh: Brent 總持倉量, commodity: BRENT, location: NWE, kind: position, unit: lots,
+     frequency: weekly, module: positioning, aliases: ["Brent Open Interest", "ICE Brent Open Interest", "Brent 總持倉量"]}

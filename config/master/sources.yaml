@@ -5,6 +5,8 @@
 - {code: excel_other,  name: 其他 Excel 導入,    kind: excel,  status: active,   priority: 50}
 - {code: eia,          name: EIA 公開數據,       kind: api,    status: active,   priority: 30,
    notes: 需要免費的 EIA_API_KEY 環境變量}
+- {code: cftc,         name: CFTC 持倉報告（公開）, kind: api, status: active, priority: 30,
+   notes: 每周五發佈（數據截至周二），不需要密鑰}
 - {code: reuters_api,  name: 路透 / LSEG API,    kind: api,    status: reserved, priority: 15}
 - {code: kpler,        name: Kpler API,          kind: api,    status: reserved, priority: 25}
 - {code: cn_vendor,    name: 國內資訊商（隆眾 / 卓創 / 金聯創 / Wind）, kind: api, status: reserved, priority: 25}
