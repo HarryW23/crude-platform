@@ -108,7 +108,8 @@ def _report(session: Session, cfg: Config, settings: Settings, job: JobDef) -> R
         from .llm import LLMError, LLMNotConfigured, get_provider
         from .llm.tasks import write_narrative
         try:
-            result = write_narrative(get_provider(), report.markdown, report_service.KINDS[job.kind])
+            provider = get_provider("narrative", cfg.llm)
+            result = write_narrative(provider, report.markdown, report_service.KINDS[job.kind])
             report.narrative, report.narrative_meta = result.pop("text"), result
             message += "，含大模型解讀" + ("" if result["guard_passed"] else "（數字核對未通過）")
         except LLMNotConfigured:

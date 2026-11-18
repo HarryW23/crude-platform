@@ -4,7 +4,11 @@ from abc import ABC, abstractmethod
 
 
 class LLMError(RuntimeError):
-    """調用大模型失敗（網絡、額度、被拒絕、回覆無法解析）。"""
+    """調用大模型失敗（網絡、額度、被拒絕、回覆無法解析）。status 是對方返回的 HTTP 狀態碼（有的話）。"""
+
+    def __init__(self, message: str, status: int | None = None):
+        super().__init__(message)
+        self.status = status
 
 
 class LLMNotConfigured(LLMError):
@@ -16,6 +20,7 @@ class LLMProvider(ABC):
 
     name: str       # 供應商代號
     model: str      # 實際調用的模型
+    last_usage: tuple[int | None, int | None] = (None, None)    # 最近一次調用的（輸入, 輸出）token 數
 
     @abstractmethod
     def complete(self, system: str, user: str, *, json: bool = False, max_tokens: int = 4000) -> str:

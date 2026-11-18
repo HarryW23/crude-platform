@@ -20,6 +20,7 @@ config/ 的結構：
     backtest.yaml              回測設定
     fair_value.yaml            基本面公允價值模型
     backup.yaml                備份位置與保留策略
+    llm.yaml                   大模型的調用限制
 
 校驗一次做完並一次報全：結構（字段名、類型）、引用（單位、地區、品種、公式裡的名字）、
 唯一性（代碼、別名）、公式語法、循環引用、量綱。任何一項不過，整份配置都不生效。
@@ -49,6 +50,7 @@ from .schema import (
     FairValueModel,
     FreshnessDef,
     IndicatorDef,
+    LLMSettings,
     LocationDef,
     NotificationsDef,
     ParameterDef,
@@ -100,6 +102,7 @@ class Config:
     freshness: FreshnessDef = field(default_factory=FreshnessDef)
     backtest: BacktestSettings = field(default_factory=BacktestSettings)
     backup: BackupSettings = field(default_factory=BackupSettings)
+    llm: LLMSettings = field(default_factory=LLMSettings)
     fair_values: dict[str, FairValueModel] = field(default_factory=dict)
     curves: dict[str, CurveDef] = field(default_factory=dict)          # 期貨曲線：代碼 → 模板
 
@@ -257,6 +260,9 @@ def load_config(config_dir: Path) -> Config:
     backtest_path = config_dir / "backtest.yaml"
     if backtest_path.exists():
         cfg.backtest = ld.build(BacktestSettings, ld.read(backtest_path) or {}, backtest_path) or BacktestSettings()
+    llm_path = config_dir / "llm.yaml"
+    if llm_path.exists():
+        cfg.llm = ld.build(LLMSettings, ld.read(llm_path) or {}, llm_path) or LLMSettings()
     backup_path = config_dir / "backup.yaml"
     if backup_path.exists():
         cfg.backup = ld.build(BackupSettings, ld.read(backup_path) or {}, backup_path) or BackupSettings()

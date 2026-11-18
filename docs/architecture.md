@@ -204,6 +204,7 @@ config/*.yaml ──校驗──▶ Config ──同步──▶ 數據庫主數
 | 改斷更的期限、指定關鍵序列 | `config/freshness.yaml` | 否 |
 | 改換月規則、修正某個合約的最後交易日 | 曲線配置的 `roll`（`overrides: {"2026-12": 2026-10-29}`） | 否 |
 | 加一條期貨曲線、改月份數 | `config/master/series/*.yaml` 的 `curves`（形態指標在 `config/indicators/spread.yaml` 的「曲線形態」組） | 否 |
+| 換大模型、改調用上限 | `config/llm.yaml`（密鑰用 `crudelab secret set`） | 否 |
 | 改備份位置、保留策略 | `config/backup.yaml`（或環境變量 `CRUDELAB_BACKUP_DIR`） | 否 |
 | 加 / 改公允價值模型的因子 | `config/fair_value.yaml` | 否 |
 | 加一個新單位 | `config/master/units.yaml`（必要時加原子單位） | 否 |

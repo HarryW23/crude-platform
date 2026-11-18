@@ -1,4 +1,4 @@
-"""各家大模型的接入。都還沒有用真實密鑰調用驗證過。
+"""各家大模型的接入。都還沒有用真實密鑰調用驗證過。所有調用都經過 limits.py 的限制（registry.get_provider 負責套上）。
 
 DeepSeek 和 OpenAI 用的是同一種接口格式（chat completions），所以共用一個類；
 Claude 的接口不同，用 Anthropic 官方 SDK。
@@ -31,13 +31,17 @@ class OpenAICompatibleProvider(LLMProvider):
             response = httpx.post(self._url, json=body, timeout=self._timeout,
                                   headers={"Authorization": f"Bearer {self._key}"})
             response.raise_for_status()
-            choice = response.json()["choices"][0]
+            payload = response.json()
+            choice = payload["choices"][0]
+            usage = payload.get("usage") or {}
+            self.last_usage = (usage.get("prompt_tokens"), usage.get("completion_tokens"))
         # 錯誤訊息只用狀態碼和我們自己的說明：不轉述對方返回的原文，不帶請求內容（裡面有密鑰和發出去的數據）
         except httpx.HTTPStatusError as exc:
             code = exc.response.status_code
             hint = {401: "密鑰無效", 403: "密鑰沒有權限", 402: "帳戶餘額不足", 404: "模型名或接口地址不對",
+                    400: "請求被拒絕（可能是內容審核或參數問題）", 422: "請求參數不對",
                     429: "觸發了頻率或額度限制"}.get(code, "服務端錯誤" if code >= 500 else "請求被拒絕")
-            raise LLMError(f"{self.name} 回報錯誤 {code}：{hint}") from None
+            raise LLMError(f"{self.name} 回報錯誤 {code}：{hint}", status=code) from None
         except httpx.HTTPError as exc:
             raise LLMError(f"連不上 {self.name}（{type(exc).__name__}）") from None
         except (KeyError, IndexError, ValueError):
@@ -78,13 +82,15 @@ class AnthropicProvider(LLMProvider):
             else:
                 response = self._client.messages.create(**request)
         except sdk.AuthenticationError:
-            raise LLMError("Claude 的密鑰無效") from None
+            raise LLMError("Claude 的密鑰無效", status=401) from None
         except sdk.RateLimitError:
-            raise LLMError("Claude 觸發了頻率限制，請稍後再試") from None
+            raise LLMError("Claude 觸發了頻率限制，請稍後再試", status=429) from None
         except sdk.APIStatusError as exc:
-            raise LLMError(f"Claude 回報錯誤 {exc.status_code}") from None
+            raise LLMError(f"Claude 回報錯誤 {exc.status_code}", status=exc.status_code) from None
         except sdk.APIConnectionError:
             raise LLMError("連不上 Claude") from None
+        usage = getattr(response, "usage", None)
+        self.last_usage = (getattr(usage, "input_tokens", None), getattr(usage, "output_tokens", None))
         if response.stop_reason == "refusal":
             raise LLMError("Claude 拒絕了這個請求")
         if response.stop_reason == "max_tokens":

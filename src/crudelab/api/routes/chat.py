@@ -34,7 +34,7 @@ def chat(body: ChatRequest, session: Session = Depends(get_db), state: AppState 
          actor: str = Depends(get_actor)):
     """回答一個問題。回傳回答、完整的取數過程（steps），以及數字核對的結果。問答不會修改任何數據。"""
     try:
-        result = chat_service.answer(get_provider(), session, state.cfg, body.question,
+        result = chat_service.answer(get_provider("chat", state.cfg.llm), session, state.cfg, body.question,
                                      [t.model_dump() for t in body.history])
     except LLMNotConfigured as exc:
         raise HTTPException(409, str(exc)) from exc

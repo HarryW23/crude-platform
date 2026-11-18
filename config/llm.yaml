@@ -1,0 +1,28 @@
+# 大模型：用哪一家、哪個模型，以及調用限制。見 README「大模型」。
+# 密鑰不寫在這裡：用 crudelab secret set DEEPSEEK_API_KEY 保存（輸入不顯示），只存在你自己電腦的 ~/.crudelab/secrets.env。
+#
+#   provider   none（不用大模型）/ deepseek / openai / anthropic / compatible
+#   model      不寫就用預設：deepseek → deepseek-chat。型號以官網的模型列表為準，名字錯了會報「模型名或接口地址不對」
+#   base_url   只有 compatible 要填，必須是 https
+#   同名環境變量（CRUDELAB_LLM_PROVIDER / CRUDELAB_LLM_MODEL / CRUDELAB_LLM_BASE_URL）優先於這裡
+#
+# 調用限制：保護帳號（不要短時間大量請求、不要拿著錯誤的密鑰反覆請求），也保護錢包。
+#
+# 計數按「最近 60 秒 / 最近 24 小時」滾動算，前台、後台、調度器共用。超過上限的請求不會發出去，頁面上會說明原因。
+# 問答的一個問題最多會調用 9 次（每查一次數據算一次），所以每分鐘上限不要設得比 10 低太多。
+#
+# 另外有自動暫停（不可配置，見 src/crudelab/llm/limits.py 開頭）：
+#   密鑰無效 → 停 24 小時；餘額不足 → 停 6 小時；觸發對方頻率限制 → 停 10 分鐘起，連續觸發加倍；
+#   1 小時內被拒絕 3 次（常見是內容審核）→ 停 1 小時；連續 3 次連不上 → 停 10 分鐘。
+#   處理好之後可以在後台「大模型」頁或用 crudelab llm reset 立即解除。
+# 任何失敗都不自動重試。
+
+provider: none
+model:
+
+max_requests_per_minute: 10
+max_requests_per_day: 300
+max_tokens_per_day: 1500000     # 輸入 + 輸出。按官網的每百萬 token 價格可以估出一天最多花多少
+max_concurrent: 2
+min_interval_seconds: 1
+timeout_seconds: 120

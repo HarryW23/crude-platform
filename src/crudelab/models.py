@@ -300,6 +300,31 @@ class JobRun(Base):
     detail: Mapped[dict | None] = mapped_column(JSON)
 
 
+class LLMCall(Base):
+    """一次大模型調用。用來做跨進程的頻率和用量限制，也讓人看得到花了多少。不存發出去的內容和回覆。"""
+    __tablename__ = "llm_call"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime)
+    provider: Mapped[str] = mapped_column(String(32))
+    model: Mapped[str] = mapped_column(String(128))
+    purpose: Mapped[str] = mapped_column(String(32))                 # chat / extract / narrative / test
+    status: Mapped[str] = mapped_column(String(16))                  # running / ok / failed
+    http_status: Mapped[int | None] = mapped_column(Integer)
+    prompt_tokens: Mapped[int | None] = mapped_column(Integer)
+    completion_tokens: Mapped[int | None] = mapped_column(Integer)
+    message: Mapped[str | None] = mapped_column(Text)                # 失敗原因（我們自己的說明，已脫敏）
+
+
+class LLMPause(Base):
+    """某家大模型被自動暫停（密鑰無效、餘額不足、觸發頻率限制、連續出錯）。到期自動恢復，也可以手動解除。"""
+    __tablename__ = "llm_pause"
+    provider: Mapped[str] = mapped_column(String(32), primary_key=True)
+    until: Mapped[datetime] = mapped_column(DateTime)
+    reason: Mapped[str] = mapped_column(Text)
+    strikes: Mapped[int] = mapped_column(Integer, default=0)         # 連續觸發頻率限制的次數，用來加長暫停
+
+
 class Switch(Base):
     """後台頁面上的開關。沒有記錄 = 用配置文件裡的預設值；有記錄 = 以這裡為準。
 

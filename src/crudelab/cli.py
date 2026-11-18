@@ -375,6 +375,51 @@ def cmd_restore(args) -> int:
     return 0
 
 
+def cmd_llm(args) -> int:
+    """大模型：查看配置和用量、做一次最小的連通測試、解除自動暫停。"""
+    import time as _time
+
+    from .config import load_config
+    from .llm import LLMError, LLMNotConfigured, get_provider, limits, status
+    settings = get_settings()
+    db.init_engine(settings)
+    cfg = load_config(settings.config_dir)
+    st = status(cfg.llm)
+    if args.action == "reset":
+        n = limits.reset()
+        print(f"已解除 {n} 個自動暫停" if n else "目前沒有自動暫停")
+        return 0
+    if args.action == "status":
+        print(f"供應商：{st['provider']}　模型：{st['model'] or '—'}　{st['message']}")
+        k = cfg.llm
+        print(f"限制：每分鐘 {k.max_requests_per_minute} 次，24 小時 {k.max_requests_per_day} 次 / "
+              f"{k.max_tokens_per_day:,} token，同時 {k.max_concurrent} 個，間隔 ≥ {k.min_interval_seconds} 秒")
+        with db.session_scope() as session:
+            u = limits.usage(session)
+            print(f"最近 24 小時：{u['day']} 次（失敗 {u['failed_day']}），"
+                  f"token 輸入 {u['prompt_tokens_day']:,} / 輸出 {u['completion_tokens_day']:,}")
+            if st["configured"]:
+                pause = limits.active_pause(session, st["provider"])
+                if pause:
+                    print(f"！已自動暫停到 {pause.until:%Y-%m-%d %H:%M}（UTC）：{pause.reason}。解除：crudelab llm reset")
+        return 0
+    # test：一次最小的請求，確認密鑰、模型名、網絡都通
+    try:
+        provider = get_provider("test", cfg.llm)
+        started = _time.monotonic()
+        reply = provider.complete("你是連通測試。只回覆兩個字：正常", "連通測試", max_tokens=50)
+    except LLMNotConfigured as exc:
+        print(exc, file=sys.stderr)
+        return 1
+    except LLMError as exc:
+        print(f"連通測試失敗：{exc}", file=sys.stderr)
+        return 1
+    tokens = provider.inner.last_usage
+    print(f"連通正常：{provider.name} / {provider.model}，用時 {_time.monotonic() - started:.1f} 秒，"
+          f"token 輸入 {tokens[0]} / 輸出 {tokens[1]}。回覆：{reply.strip()[:40]}")
+    return 0
+
+
 def cmd_run_job(args) -> int:
     from . import jobs
     from .config import ConfigError, load_config
@@ -520,6 +565,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--with-config", action="store_true", help="連配置文件一起恢復（預設不動配置文件）")
     p.add_argument("--force", action="store_true", help="跳過「服務還開著」和「恢復前備份失敗」的檢查")
     p.set_defaults(func=cmd_restore)
+    p = sub.add_parser("llm", help="大模型：status 查看配置和用量 / test 連通測試（發一次很短的請求）/ reset 解除自動暫停")
+    p.add_argument("action", choices=["status", "test", "reset"])
+    p.set_defaults(func=cmd_llm)
     p = sub.add_parser("data-needs", help="生成數據與接口需求清單")
     p.add_argument("--output", help="寫入這個文件；不給就打印")
     p.set_defaults(func=cmd_data_needs)

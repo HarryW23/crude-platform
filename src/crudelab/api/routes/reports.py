@@ -34,8 +34,8 @@ def _head(r: Report) -> dict:
 
 
 @router.get("/llm")
-def llm_status():
-    return status()
+def llm_status(state: AppState = Depends(get_state)):
+    return status(state.cfg.llm)
 
 
 @router.get("/reports")
@@ -76,11 +76,12 @@ def download_markdown(report_id: int, session: Session = Depends(get_db)):
 
 
 @router.post("/reports/{report_id}/narrative")
-def add_narrative(report_id: int, session: Session = Depends(get_db)):
+def add_narrative(report_id: int, session: Session = Depends(get_db), state: AppState = Depends(get_state)):
     """讓大模型根據報告正文寫解讀。寫出的每個數字都會和正文核對，對不上的會被列出。"""
     r = _require(session, report_id)
     try:
-        result = write_narrative(get_provider(), r.markdown, service.KINDS.get(r.kind, r.kind))
+        provider = get_provider("narrative", state.cfg.llm)
+        result = write_narrative(provider, r.markdown, service.KINDS.get(r.kind, r.kind))
     except LLMNotConfigured as exc:
         raise HTTPException(409, str(exc)) from exc
     except LLMError as exc:

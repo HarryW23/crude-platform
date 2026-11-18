@@ -255,7 +255,7 @@ def test_provider_selection_from_environment(monkeypatch):
     assert (get_provider().name, get_provider().model) == ("deepseek", "deepseek-chat")
     monkeypatch.setenv("CRUDELAB_LLM_PROVIDER", "openai")
     monkeypatch.setenv("OPENAI_API_KEY", "k")
-    with pytest.raises(LLMNotConfigured, match="CRUDELAB_LLM_MODEL"):
+    with pytest.raises(LLMNotConfigured, match="model"):
         get_provider()                                           # 不替使用者猜模型名
     monkeypatch.setenv("CRUDELAB_LLM_PROVIDER", "nope")
     assert "不認識" in status()["message"]

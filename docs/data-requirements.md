@@ -244,12 +244,12 @@ WS 點折成 美元/桶 還需要 Worldscale 每年的基準費率，見下面�
 
 ## 大模型接口
 
-三選一，由環境變量 `CRUDELAB_LLM_PROVIDER` 決定；不配置時相關功能停用，其餘不受影響。
+三選一，由 `config/llm.yaml` 的 `provider` 決定（環境變量 `CRUDELAB_LLM_PROVIDER` 優先）；不配置時相關功能停用，其餘不受影響。每次調用都受 `config/llm.yaml` 的頻率和用量上限約束，出錯會自動暫停，不自動重試。
 
 | 供應商 | 憑證 | 預設模型 | 狀態 |
 |---|---|---|---|
 | DeepSeek | `DEEPSEEK_API_KEY` | `deepseek-chat` | 請求格式用本機模擬服務驗過；沒有用真實密鑰調用過 |
-| OpenAI | `OPENAI_API_KEY` | 無，須用 `CRUDELAB_LLM_MODEL` 指定 | 與 DeepSeek 共用同一段接入代碼；沒有用真實密鑰調用過 |
+| OpenAI | `OPENAI_API_KEY` | 無，須在 `config/llm.yaml` 的 `model` 指定 | 與 DeepSeek 共用同一段接入代碼；沒有用真實密鑰調用過 |
 | Claude | `ANTHROPIC_API_KEY` | `claude-opus-5-5` | 沒有調用過 |
 
 **用大模型時，數據會離開你的系統。** 發給供應商的內容：

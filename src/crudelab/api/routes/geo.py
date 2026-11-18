@@ -119,7 +119,7 @@ def extract(body: ExtractRequest, session: Session = Depends(get_db), state: App
             actor: str = Depends(get_actor)):
     """讓大模型從一段新聞或筆記裡抽取事件，存成草稿。草稿不參與任何計算，要人確認後才生效。"""
     try:
-        provider = get_provider()
+        provider = get_provider("extract", state.cfg.llm)
         found, dropped = extract_events(provider, body.text, state.cfg)
     except LLMNotConfigured as exc:
         raise HTTPException(409, str(exc)) from exc

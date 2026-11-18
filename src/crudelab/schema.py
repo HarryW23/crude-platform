@@ -492,6 +492,24 @@ class BacktestSettings(Strict):
     vintage_max_dates: int = Field(default=400, ge=10)        # 按入庫時間回測最多評估多少個日期（每個日期都要重算一遍）
 
 
+# ------------------------------ 大模型的調用限制 ------------------------------
+
+class LLMSettings(Strict):
+    """用哪一家大模型（見 llm/registry.py）和調用限制（見 llm/limits.py）。密鑰不在這裡。
+
+    所有計數都按「最近 60 秒 / 最近 24 小時」滾動計算，前台、後台、調度器幾個進程共用（記在數據庫裡）。
+    """
+    provider: Literal["none", "deepseek", "openai", "anthropic", "compatible"] = "none"
+    model: str | None = None
+    base_url: str | None = Field(default=None, pattern=r"^https://")     # 只允許 https：密鑰不走明文
+    max_requests_per_minute: int = Field(default=10, ge=1, le=600)
+    max_requests_per_day: int = Field(default=300, ge=1, le=100000)
+    max_tokens_per_day: int = Field(default=1_500_000, ge=1000)
+    max_concurrent: int = Field(default=2, ge=1, le=20)
+    min_interval_seconds: float = Field(default=1.0, ge=0, le=60)
+    timeout_seconds: float = Field(default=120, ge=10, le=600)
+
+
 # ------------------------------ 備份 ------------------------------
 
 class BackupSettings(Strict):

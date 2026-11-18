@@ -114,6 +114,7 @@ Windows 把 `.venv/bin/` 換成 `.venv\Scripts\`。
 | `crudelab backtest` | 回測信號和推演區間 |
 | `crudelab backup` / `backup list` / `backup verify 文件` | 立即備份 / 列出備份 / 校驗一份備份 |
 | `crudelab restore 文件 --yes` | 從備份恢復（先自動備份現在的數據） |
+| `crudelab llm status` / `llm test` / `llm reset` | 大模型的配置和用量 / 連通測試 / 解除自動暫停 |
 | `pytest` / `ruff check src tests` | 測試 / 代碼檢查 |
 
 ## 回測
@@ -290,29 +291,46 @@ Windows 把 `.venv/bin/` 換成 `.venv\Scripts\`。
 
 不配置也能用：事件手動錄入，報告只有系統排版的正文。配置後多三項功能：從文字抽取事件草稿、為報告寫解讀、問答。
 
-| 環境變量 | 說明 |
-|---|---|
-| `CRUDELAB_LLM_PROVIDER` | `none`（預設）/ `deepseek` / `openai` / `anthropic` / `compatible` |
-| `CRUDELAB_LLM_MODEL` | 模型名。`deepseek` 預設 `deepseek-chat`，`anthropic` 預設 `claude-opus-5-5`；`openai` 和 `compatible` 必填 |
-| `CRUDELAB_LLM_BASE_URL` | 僅 `compatible`：任何兼容 chat completions 格式的服務的地址 |
+**選哪一家**：`config/llm.yaml` 的 `provider`（`none` / `deepseek` / `openai` / `anthropic` / `compatible`）和 `model`。
+同名環境變量 `CRUDELAB_LLM_PROVIDER` / `CRUDELAB_LLM_MODEL` / `CRUDELAB_LLM_BASE_URL` 優先。
 
-密鑰（`DEEPSEEK_API_KEY` / `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `CRUDELAB_LLM_API_KEY`）**不要寫在命令行或任何文件裡**，用 `crudelab secret set` 保存，見下面「密鑰」一節。
+**密鑰**（`DEEPSEEK_API_KEY` / `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `CRUDELAB_LLM_API_KEY`）**不要寫在任何文件、命令行或聊天裡**，
+只用 `crudelab secret set` 保存，見下面「密鑰」一節。
 
-例如用 DeepSeek。先保存密鑰（輸入不會顯示，也不會留在終端的歷史記錄裡）：
+### 接入 DeepSeek
 
-```bash
-.venv/bin/crudelab secret set DEEPSEEK_API_KEY
-```
+1. 在 DeepSeek 開放平台建一個**專門給 crudelab 用的** API key（不要和別的程序共用：出了問題可以單獨作廢），複製下來。
+2. 在你自己的電腦上，項目文件夾裡打開終端，保存密鑰（粘貼後按 Enter，輸入不會顯示，也不會進終端的歷史記錄）：
 
-再選擇供應商後啟動：
+   ```bash
+   .venv/bin/crudelab secret set DEEPSEEK_API_KEY
+   ```
 
-```bash
-export CRUDELAB_LLM_PROVIDER=deepseek
-```
+3. 打開 `config/llm.yaml`，把 `provider: none` 改成 `provider: deepseek`。`model` 留空就用 `deepseek-chat`；
+   想用別的型號，填官網模型列表裡的名字。
+4. 連通測試（只發一次很短的請求，幾十個 token）：
 
-用 Claude 需要另外安裝 `pip install -e ".[anthropic]"`。想省錢時把 `CRUDELAB_LLM_MODEL` 換成同一家更便宜的型號即可，不用改代碼。
-三家的接入都還沒有用真實密鑰驗證過（DeepSeek / GPT 這條只用本機的模擬服務驗過請求格式），第一次用時請先拿一段短新聞試抽取。
-問答一個問題要調用大模型幾次（每查一次數據一次），費用和等待時間比抽取、寫解讀高。
+   ```bash
+   .venv/bin/crudelab llm test
+   ```
+
+   看到「連通正常」就好了。也可以在後台「大模型」頁點「連通測試」。
+5. 第一次正式用時先拿一段短新聞試「抽取事件」，再試問答。
+
+**保護措施**（`config/llm.yaml`，詳細在 `src/crudelab/llm/limits.py` 開頭）：
+
+- 頻率和用量上限：預設每分鐘 10 次、24 小時 300 次和 150 萬 token、同時最多 2 個請求、相鄰兩次至少隔 1 秒。超過的請求不會發出去。
+- 自動暫停：密鑰無效停 24 小時，餘額不足停 6 小時，觸發對方頻率限制停 10 分鐘起（連續觸發加倍），
+  1 小時內被拒絕 3 次停 1 小時，連續 3 次連不上停 10 分鐘。處理好之後在後台「大模型」頁或用 `crudelab llm reset` 解除。
+- 任何失敗都不自動重試。
+- 每次調用只記時間、用途、用量和結果，不記內容。後台「大模型」頁可以看最近 24 小時的用量和每次調用；命令行是 `crudelab llm status`。
+- 定時任務生成報告時預設不調用大模型（`schedule.yaml` 裡 `narrative: false`）。
+
+**數據會離開你的系統**：發給大模型的是報告正文、你的問題和查到的數字、你貼的新聞。數據授權不允許發給第三方的內容，不要接大模型，
+具體見 [docs/data-requirements.md](docs/data-requirements.md) 的「大模型接口」一節。
+
+用 Claude 需要另外安裝 `pip install -e ".[anthropic]"`。想省錢時把 `model` 換成同一家更便宜的型號即可，不用改代碼。
+問答一個問題要調用大模型幾次（每查一次數據一次，最多 9 次），費用和等待時間比抽取、寫解讀高。
 
 ## 使用前需要你做的
 
@@ -342,6 +360,7 @@ config/                 所有可調的東西
   fair_value.yaml       公允價值模型
   backtest.yaml         回測設定（發佈延遲等）
   backup.yaml           備份位置與保留策略
+  llm.yaml              用哪家大模型、調用上限
 src/crudelab/
   schema.py config.py   配置的結構與校驗
   units.py formula.py   單位代數、公式語言
