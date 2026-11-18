@@ -1,5 +1,5 @@
 import { api } from "../../api.js";
-import { errorBox, esc, time } from "../../ui.js";
+import { errorBox, esc, time, zoneLabel } from "../../ui.js";
 
 const since = (d) => d == null ? "" : d === "1900-01-01" ? "自始" : d;
 
@@ -37,7 +37,7 @@ export async function render(main) {
         <label>生效日期 <input type="date" id="pd"></label><span class="muted">不填 = 更正目前的值</span>
         <label>原因 <input id="pn" size="18"></label><button class="btn primary" id="psave">保存</button>
         ${p.value != null && !p.verified ? '<button class="btn" id="pverify">數值無誤，標為已核對</button>' : ""}</div><div id="pmsg"></div>
-      <h3>版本記錄</h3><div class="scroll"><table><tr><th>生效自</th><th class="n">數值</th><th>原因</th><th>錄入者</th><th>錄入時間（UTC）</th><th></th></tr>
+      <h3>版本記錄</h3><div class="scroll"><table><tr><th>生效自</th><th class="n">數值</th><th>原因</th><th>錄入者</th><th>錄入時間（${zoneLabel()}）</th><th></th></tr>
         ${versions.map((v) => `<tr><td>${since(v.valid_from)}</td><td class="n">${v.value}</td><td>${esc(v.note ?? "")}</td><td>${esc(v.created_by)}</td>
           <td>${time(v.created_at)}</td><td>${v.effective ? "" : '<span class="tag">已被更正</span>'}</td></tr>`).join("") || '<tr><td colspan="6" class="muted">還沒有數值。</td></tr>'}</table></div></div>`;
     box.scrollIntoView({ behavior: "smooth", block: "nearest" });

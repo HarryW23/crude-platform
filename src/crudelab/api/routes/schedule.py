@@ -1,7 +1,6 @@
 """定時任務：查看安排和執行記錄、手動立即運行。只在後台。"""
 from __future__ import annotations
 
-from datetime import UTC
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -9,7 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ... import jobs, notifications, scheduler, switches
-from ...models import AuditLog
+from ...models import AuditLog, iso_utc
 from ..deps import AppState, get_actor, get_db, get_state
 
 admin_router = APIRouter(tags=["schedule"])
@@ -61,11 +60,6 @@ def notification_status(session: Session = Depends(get_db), state: AppState = De
     """通知的規則、每個渠道的狀態（不含地址和密碼）、最近發出的通知。"""
     cfg = state.cfg
     current, changed = switches.load(session, cfg), switches.overridden(session)
-    tz = ZoneInfo(cfg.schedule.timezone)
-
-    def local(value):
-        return value.replace(tzinfo=UTC).astimezone(tz).strftime("%Y-%m-%d %H:%M")
-
     return {"enabled": current[switches.NOTIFY], "on_failure": cfg.notifications.on_failure,
             "on_recovery": cfg.notifications.on_recovery, "repeat_hours": cfg.notifications.repeat_hours,
             "channels": [{"code": c.code, "name_zh": c.name_zh, "type": c.type,
@@ -76,7 +70,7 @@ def notification_status(session: Session = Depends(get_db), state: AppState = De
                           "credential": notifications.credential_name(c),
                           "target": "、".join(c.mail_to) if c.type == "email" else None}
                          for c in cfg.notifications.channels],
-            "recent": [{"at": local(n.created_at), "job": n.job_code, "event": n.event, "title": n.title,
+            "recent": [{"at": iso_utc(n.created_at), "job": n.job_code, "event": n.event, "title": n.title,
                         "body": n.body, "results": n.results} for n in notifications.recent(session)]}
 
 

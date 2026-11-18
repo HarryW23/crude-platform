@@ -1,6 +1,6 @@
 // 備份：位置與保留策略、最近的備份、立即備份、校驗。恢復只能用命令行，這裡只給出命令。
 import { api } from "../../api.js";
-import { errorBox, esc, num } from "../../ui.js";
+import { errorBox, esc, num, time, zoneLabel } from "../../ui.js";
 
 const LABEL_TAG = { scheduled: "", manual: "ok", "pre-restore": "warn" };
 const mb = (bytes) => `${num(bytes / 1e6, 1)} MB`;
@@ -34,8 +34,8 @@ export async function render(main) {
       <p class="muted" style="margin:0">定時備份保留：最近 ${k.keep_daily} 天每天一份，再往前 ${k.keep_weekly} 周每周一份、${k.keep_monthly} 個月每月一份。
         手動備份和恢復前的自動備份不會被自動清理，不需要時自己刪除。</p></div>
     <div class="panel"><h2>備份記錄</h2><div class="scroll"><table>
-      <tr><th>時間（${esc(s.timezone)}）</th><th>類型</th><th class="n">大小</th><th class="n">數據點</th><th class="n">原始文件</th><th>程序版本</th><th>文件名</th><th></th></tr>
-      ${s.backups.map((b) => `<tr><td class="nw">${esc(b.at)}</td>
+      <tr><th>時間（${esc(zoneLabel())}）</th><th>類型</th><th class="n">大小</th><th class="n">數據點</th><th class="n">原始文件</th><th>程序版本</th><th>文件名</th><th></th></tr>
+      ${s.backups.map((b) => `<tr><td class="nw">${time(b.created_at)}</td>
         <td><span class="tag ${LABEL_TAG[b.label]}">${esc(b.label_zh)}</span></td>
         <td class="n">${mb(b.size)}</td>
         ${b.error ? `<td colspan="3"><span class="tag bad">無法讀取</span> ${esc(b.error)}</td>`

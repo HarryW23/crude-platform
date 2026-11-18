@@ -129,7 +129,7 @@ def test_tick_runs_due_jobs_once(ready, cfg, session):
 
     status = scheduler.status(cfg, now + timedelta(minutes=10))
     daily = next(j for j in status["jobs"] if j["code"] == "REPORT_DAILY")
-    assert status["running"] and daily["next_run"] == "2026-11-18 18:30" and daily["last"]["status"] == "ok"
+    assert status["running"] and daily["next_run"] == "2026-11-18T10:30:00Z" and daily["last"]["status"] == "ok"
     # 「最近一次」記的是實際執行的時刻（真實時鐘），只檢查它是今天（按上海時區），不寫死日期
     today = datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
     assert daily["last"]["at"].startswith(today) and daily["schedule"] == "周一至周五 18:30"
@@ -231,3 +231,14 @@ def test_schedule_api_is_admin_only(sites, monkeypatch):
     assert runs[0]["job"] == "REPORT_DAILY" and runs[0]["trigger"] == "manual" and runs[0]["seconds"] is not None
     assert admin.get("/api/schedule/runs?job=PULL_EIA").json() == []
     assert "job_run" in {a["action"] for a in admin.get("/api/audit").json()}
+
+
+def test_iso_utc_marks_timezone():
+    from datetime import UTC, datetime, timedelta, timezone
+
+    from crudelab.models import iso_utc
+    assert iso_utc(None) is None
+    assert iso_utc(datetime(2026, 11, 18, 10, 30)) == "2026-11-18T10:30:00Z"          # 數據庫裡的時間：不帶時區的 UTC
+    shanghai = datetime(2026, 11, 18, 18, 30, tzinfo=timezone(timedelta(hours=8)))
+    assert iso_utc(shanghai) == "2026-11-18T10:30:00Z"
+    assert iso_utc(datetime(2026, 11, 18, 10, 30, 15, 999, tzinfo=UTC)) == "2026-11-18T10:30:15Z"

@@ -37,7 +37,7 @@ export async function render(main) {
           <p class="muted" style="margin:10px 0 0">日期不填就用全部歷史。間隔不填：按數據日期每天評估，按入庫時間每 5 天。</p></div>
         <div class="panel"><h2>記錄</h2>${runs.length ? `<table>${runs.map((r) => `<tr class="click ${r.id === state.run ? "sel" : ""}" data-run="${r.id}">
           <td>#${r.id} <span class="tag ${STATUS[r.status][0]}">${STATUS[r.status][1]}</span> <span class="muted">${esc(r.mode_name)}</span>
-          <div class="muted">${time(r.created_at)} UTC${r.summary ? ` · ${r.summary.start} 至 ${r.summary.end}` : ""}</div>
+          <div class="muted">${time(r.created_at)}${r.summary ? ` · ${r.summary.start} 至 ${r.summary.end}` : ""}</div>
           ${r.summary ? `<div class="ink2">綜合 1 個月命中率 ${pct(r.summary.hit_rate)}，IC ${r.summary.ic == null ? "—" : signed(r.summary.ic)}</div>` : ""}
           ${r.message ? `<div class="down">${esc(r.message)}</div>` : ""}</td></tr>`).join("")}</table>` : '<p class="muted">還沒有回測。</p>'}</div>
       </div>

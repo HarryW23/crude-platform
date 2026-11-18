@@ -1,6 +1,6 @@
 import { api } from "../../api.js";
 import { SITE } from "../../site.js";
-import { errorBox, esc, time } from "../../ui.js";
+import { errorBox, esc, time, zoneLabel } from "../../ui.js";
 
 const ROLES = { viewer: "只讀：只能看前台", analyst: "研究員：前台全部功能", admin: "管理員：前台 + 後台" };
 
@@ -15,7 +15,7 @@ export async function render(main) {
         <label>角色 <select id="u-role">${Object.entries(ROLES).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}</select></label>
         <button class="btn primary" id="u-add">建立</button></div><div id="u-msg"></div></div>
     <div class="panel"><h2>現有帳號</h2>${users.length ? `<div class="scroll"><table>
-      <tr><th>用戶名</th><th>角色</th><th>狀態</th><th>建立（UTC）</th><th>上次登錄（UTC）</th><th>重設密碼</th><th></th></tr>
+      <tr><th>用戶名</th><th>角色</th><th>狀態</th><th>建立（${zoneLabel()}）</th><th>上次登錄（${zoneLabel()}）</th><th>重設密碼</th><th></th></tr>
       ${users.map((u) => `<tr><td><b>${esc(u.username)}</b>${SITE.auth.user?.username === u.username ? ' <span class="tag">你</span>' : ""}</td>
         <td><select data-role="${u.id}" aria-label="角色">${Object.entries(ROLES).map(([k, v]) => `<option value="${k}" ${k === u.role ? "selected" : ""}>${v}</option>`).join("")}</select></td>
         <td>${u.active ? '<span class="tag ok">可用</span>' : '<span class="tag warn">已停用</span>'}</td>

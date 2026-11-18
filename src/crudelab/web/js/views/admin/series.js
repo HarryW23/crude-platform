@@ -1,6 +1,6 @@
 import { api } from "../../api.js";
 import { lineChart } from "../../charts.js";
-import { errorBox, esc, MODULES, num, time } from "../../ui.js";
+import { errorBox, esc, MODULES, num, time, zoneLabel } from "../../ui.js";
 
 export async function render(main) {
   const [rows, fresh] = await Promise.all([api("/series"), api("/freshness")]);
@@ -44,7 +44,7 @@ export async function render(main) {
       <div class="row" style="margin-top:10px"><b>手動錄入</b><input type="date" id="md" aria-label="日期">
         <input id="mv" class="num" placeholder="數值" inputmode="decimal" aria-label="數值"><button class="btn" id="msave">保存</button>
         <span id="mmsg" class="muted">手動錄入的值優先於其他來源；改寫已有的值時，舊值會留在修訂歷史裡。</span></div>
-      ${revisions.length ? `<h3>修訂歷史</h3><div class="scroll"><table><tr><th>數據日期</th><th>來源</th><th class="n">舊值</th><th>被取代的時間（UTC）</th><th>操作者</th></tr>
+      ${revisions.length ? `<h3>修訂歷史</h3><div class="scroll"><table><tr><th>數據日期</th><th>來源</th><th class="n">舊值</th><th>被取代的時間（${zoneLabel()}）</th><th>操作者</th></tr>
         ${revisions.map((r) => `<tr><td>${r.date}</td><td>${esc(r.source)}</td><td class="n">${num(r.old_value, 4)}</td><td>${time(r.replaced_at)}</td><td>${esc(r.replaced_by)}</td></tr>`).join("")}</table></div>` : ""}</div>`;
     if (data.length) box.querySelector("#chart").append(lineChart(data, { unit: s.unit }));
     else box.querySelector("#chart").innerHTML = '<p class="muted">這條序列還沒有數據。</p>';

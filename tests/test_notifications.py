@@ -61,7 +61,7 @@ def test_each_job_has_its_own_switch_and_there_is_a_master(ready, cfg, session):
     flip("job:REPORT_MONTHLY", True, cfg)                                    # 配置裡停用的，也能在後台打開
     monthly = next(j for j in scheduler.status(cfg, T0)["jobs"] if j["code"] == "REPORT_MONTHLY")
     assert monthly["enabled"] and monthly["overridden"] and monthly["default_enabled"] is False
-    assert monthly["next_run"] == "2026-12-01 09:00"
+    assert monthly["next_run"] == "2026-12-01T01:00:00Z"                  # 北京 09:00 = UTC 01:00
     with pytest.raises(switches.SwitchError):
         flip("job:NOPE", True, cfg)
 

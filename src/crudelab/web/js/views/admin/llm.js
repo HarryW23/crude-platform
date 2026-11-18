@@ -1,6 +1,6 @@
 // 大模型：用哪一家、調用限制、最近 24 小時用量、自動暫停、最近的調用記錄（只有時間、用途和用量，不含內容）。
 import { api } from "../../api.js";
-import { errorBox, esc, num } from "../../ui.js";
+import { errorBox, esc, num, time, zoneLabel } from "../../ui.js";
 
 const STATUS = { ok: ["ok", "成功"], failed: ["bad", "失敗"], running: ["warn", "進行中"] };
 
@@ -14,7 +14,7 @@ export async function render(main) {
     每次調用只記時間、用途、用量和結果，不記發出去的內容和回覆。</p>
     ${s.configured ? `<div class="msg ok">${esc(s.provider)} / ${esc(s.model)}：${esc(s.message)}</div>`
       : `<div class="msg warn">${esc(s.message)}${keyName ? `。在服務器上運行 <span class="mono">crudelab secret set ${keyName}</span>` : ""}</div>`}
-    ${d.pause ? `<div class="msg bad">已自動暫停到 ${esc(d.pause.until)}：${esc(d.pause.reason)}。確認處理好之後再解除。
+    ${d.pause ? `<div class="msg bad">已自動暫停到 ${time(d.pause.until)}（${esc(zoneLabel())}）：${esc(d.pause.reason)}。確認處理好之後再解除。
       <button class="btn" id="reset" style="margin-left:8px">解除暫停</button></div>` : ""}
     <div class="panel"><div class="row"><h2 style="margin:0">最近 24 小時</h2><span style="flex:1"></span>
         <button class="btn" id="test" ${s.configured ? "" : "disabled"}>連通測試</button></div>
@@ -32,8 +32,8 @@ export async function render(main) {
         ${d.by_purpose.map((p) => `<tr><td>${esc(p.name_zh)}</td><td class="n">${num(p.calls, 0)}</td><td class="n">${num(p.prompt_tokens, 0)}</td><td class="n">${num(p.completion_tokens, 0)}</td></tr>`).join("")}</table>` : ""}
     </div>
     <div class="panel"><h2>最近的調用</h2><div class="scroll"><table>
-      <tr><th>時間（${esc(d.timezone)}）</th><th>用途</th><th>模型</th><th>結果</th><th class="n">用時</th><th class="n">輸入</th><th class="n">輸出</th><th>說明</th></tr>
-      ${d.recent.map((c) => `<tr><td class="nw">${esc(c.at)}</td><td>${esc(c.purpose_zh)}</td><td class="mono">${esc(c.provider)} / ${esc(c.model)}</td>
+      <tr><th>時間（${esc(zoneLabel())}）</th><th>用途</th><th>模型</th><th>結果</th><th class="n">用時</th><th class="n">輸入</th><th class="n">輸出</th><th>說明</th></tr>
+      ${d.recent.map((c) => `<tr><td class="nw">${time(c.at, true)}</td><td>${esc(c.purpose_zh)}</td><td class="mono">${esc(c.provider)} / ${esc(c.model)}</td>
         <td><span class="tag ${STATUS[c.status]?.[0] ?? ""}">${STATUS[c.status]?.[1] ?? esc(c.status)}</span>${c.http_status && c.http_status !== 200 ? ` <span class="muted">${c.http_status}</span>` : ""}</td>
         <td class="n">${c.seconds == null ? "" : num(c.seconds, 1) + " 秒"}</td><td class="n">${num(c.prompt_tokens, 0)}</td><td class="n">${num(c.completion_tokens, 0)}</td>
         <td>${esc(c.message ?? "")}</td></tr>`).join("") || '<tr><td colspan="8" class="muted">還沒有調用過。</td></tr>'}</table></div></div>`;

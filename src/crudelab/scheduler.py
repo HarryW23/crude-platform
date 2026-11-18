@@ -17,7 +17,7 @@ from zoneinfo import ZoneInfo
 
 from . import db, jobs, notifications, switches
 from .config import Config
-from .models import JobRun, SchedulerHeartbeat, utcnow
+from .models import JobRun, SchedulerHeartbeat, iso_utc, utcnow
 from .schema import WEEKDAYS, JobDef
 from .settings import Settings
 
@@ -123,10 +123,6 @@ def status(cfg: Config, now: datetime | None = None) -> dict:
     """給頁面用：調度器是否在運行、每個任務的時間安排和最近一次結果。"""
     now = now or utcnow()
     tz = ZoneInfo(cfg.schedule.timezone)
-
-    def local(value: datetime | None) -> str | None:
-        return value.replace(tzinfo=UTC).astimezone(tz).strftime("%Y-%m-%d %H:%M") if value else None
-
     with db.session_scope() as session:
         beat = session.get(SchedulerHeartbeat, 1)
         state, changed = switches.load(session, cfg), switches.overridden(session)
@@ -140,18 +136,16 @@ def status(cfg: Config, now: datetime | None = None) -> dict:
                 "code": job.code, "name_zh": job.name_zh, "enabled": enabled, "action": job.action,
                 "switch": key, "default_enabled": job.enabled, "overridden": key in changed,
                 "schedule": describe(job),
-                "next_run": local(next_slot(job, now, tz)) if enabled and master else None,
+                "next_run": iso_utc(next_slot(job, now, tz)) if enabled and master else None,
                 "last": None if last is None else {"status": last.status, "message": last.message,
-                                                   "trigger": last.trigger, "at": local(last.started_at)}})
-        return {"timezone": cfg.schedule.timezone, "now": local(now), "enabled": master,
+                                                   "trigger": last.trigger, "at": iso_utc(last.started_at)}})
+        return {"timezone": cfg.schedule.timezone, "now": iso_utc(now), "enabled": master,
                 "failing": [j["code"] for j in out_jobs if j["last"] and j["last"]["status"] == "failed"],
                 "running": beat is not None and now - beat.at <= HEARTBEAT_FRESH,
-                "last_heartbeat": local(beat.at) if beat else None, "jobs": out_jobs}
+                "last_heartbeat": iso_utc(beat.at) if beat else None, "jobs": out_jobs}
 
 
-def run_view(run: JobRun, tz: ZoneInfo) -> dict:
-    def local(value: datetime | None) -> str | None:
-        return value.replace(tzinfo=UTC).astimezone(tz).strftime("%Y-%m-%d %H:%M:%S") if value else None
+def run_view(run: JobRun, tz: ZoneInfo | None = None) -> dict:
     seconds = (run.finished_at - run.started_at).total_seconds() if run.finished_at else None
     return {"id": run.id, "job": run.job_code, "trigger": run.trigger, "status": run.status,
-            "started_at": local(run.started_at), "seconds": seconds, "message": run.message, "detail": run.detail}
+            "started_at": iso_utc(run.started_at), "seconds": seconds, "message": run.message, "detail": run.detail}

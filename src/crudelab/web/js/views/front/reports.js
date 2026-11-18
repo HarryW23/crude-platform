@@ -35,7 +35,7 @@ export async function render(main) {
       <button class="btn primary" id="make">生成報告</button><span id="msg"></span></div></div>
     <div class="split" style="grid-template-columns:320px minmax(0,1fr)">
       <div class="panel noprint"><h2>已生成</h2>${reports.length ? `<table>${reports.map((r) => `<tr class="click ${r.id === state.report ? "sel" : ""}" data-report="${r.id}">
-        <td>${esc(r.title)}<div class="muted">${time(r.created_at)} UTC${r.has_narrative ? " · 含解讀" : ""}</div></td></tr>`).join("")}</table>` : '<p class="muted">還沒有報告。</p>'}</div>
+        <td>${esc(r.title)}<div class="muted">${time(r.created_at)}${r.has_narrative ? " · 含解讀" : ""}</div></td></tr>`).join("")}</table>` : '<p class="muted">還沒有報告。</p>'}</div>
       <div id="view"></div></div>`;
   main.querySelector("#make").addEventListener("click", async () => {
     try {

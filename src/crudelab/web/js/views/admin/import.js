@@ -1,5 +1,5 @@
 import { api } from "../../api.js";
-import { errorBox, esc, num, time } from "../../ui.js";
+import { errorBox, esc, num, time, zoneLabel } from "../../ui.js";
 
 const LAYOUT = { wide: "直排（一列日期）", wide_transposed: "橫排（日期在一行）", long: "長表", unrecognized: "無法識別，已跳過" };
 
@@ -20,7 +20,7 @@ export async function render(main) {
   const history = async () => {
     const rows = await api("/imports");
     main.querySelector("#hist").innerHTML = rows.length
-      ? `<table><tr><th>批次</th><th>文件</th><th>數據源</th><th>時間（UTC）</th><th class="n">新增</th><th class="n">更新</th><th class="n">未對應的列</th></tr>
+      ? `<table><tr><th>批次</th><th>文件</th><th>數據源</th><th>時間（${zoneLabel()}）</th><th class="n">新增</th><th class="n">更新</th><th class="n">未對應的列</th></tr>
         ${rows.map((b) => `<tr><td>${b.id}</td><td>${esc(b.filename)}</td><td>${esc(b.source_code)}</td><td class="nw">${time(b.created_at)}</td>
           <td class="n">${b.stats.inserted}</td><td class="n">${b.stats.updated}</td><td class="n">${b.stats.unmapped_columns}</td></tr>`).join("")}</table>`
       : '<p class="muted">還沒有導入過文件。</p>';

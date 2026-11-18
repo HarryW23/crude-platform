@@ -1,7 +1,7 @@
 import { api } from "../../api.js";
 import { balanceBars, scatterChart, seasonalChart } from "../../charts.js";
 import { mountBoard } from "../../indicator-board.js";
-import { errorBox, esc, num, signed, statusTag, time } from "../../ui.js";
+import { errorBox, esc, num, signed, statusTag, time, zoneLabel } from "../../ui.js";
 
 const FREQ = { weekly: "周度", monthly: "月度", quarterly: "季度", daily: "日度" };
 const state = { table: null, scenario: "", stock: null, relation: null };
@@ -144,7 +144,7 @@ async function renderAdjustments(box, t, main) {
       <label>加減 <input class="num" id="adj-delta" inputmode="decimal" placeholder="例如 -0.3"></label><span class="ink2">${esc(t.unit)}</span></div>
     <div class="row" style="margin-top:8px"><input id="adj-note" placeholder="依據：為什麼這樣調" style="flex:1;min-width:200px">
       <button class="btn primary" id="adj-add">加入調整</button></div><div id="adj-msg"></div>
-    ${rows.length ? `<div class="scroll" style="margin-top:12px"><table><tr><th>項目</th><th>時段</th><th class="n">加減</th><th>依據</th><th>錄入（UTC）</th><th></th></tr>
+    ${rows.length ? `<div class="scroll" style="margin-top:12px"><table><tr><th>項目</th><th>時段</th><th class="n">加減</th><th>依據</th><th>錄入（${zoneLabel()}）</th><th></th></tr>
       ${rows.map((a) => `<tr><td>${esc(a.target_name ?? a.target)}${a.orphaned ? ' <span class="tag warn">目標已不存在</span>' : ""}<div class="mono muted">${a.target}</div></td>
         <td class="nw">${a.date_from} → ${a.date_to ?? "持續"}</td><td class="n">${signed(a.delta)} ${esc(a.unit ?? "")}</td>
         <td>${esc(a.note ?? "")}</td><td class="nw">${time(a.created_at)}</td>

@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -17,10 +16,7 @@ admin_router = APIRouter(tags=["backups"])
 @admin_router.get("/backups")
 def backup_status(state: AppState = Depends(get_state)):
     cfg, settings = state.cfg, state.settings
-    tz = ZoneInfo(cfg.schedule.timezone)
     rows = backup.list_backups(settings, cfg)
-    for row in rows:
-        row["at"] = datetime.fromisoformat(row["created_at"]).astimezone(tz).strftime("%Y-%m-%d %H:%M")
     good = [r for r in rows if not r["error"]]
     age = ((datetime.now(UTC) - datetime.fromisoformat(good[0]["created_at"])).total_seconds() / 3600
            if good else None)

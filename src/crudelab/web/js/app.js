@@ -1,7 +1,7 @@
 // 入口：導覽與頁面切換。前台和後台各有自己的一組頁面（views/front、views/admin），由 <body data-site> 決定載入哪一組。
 import { api } from "./api.js";
 import { loadSite, SITE } from "./site.js";
-import { errorBox, esc } from "./ui.js";
+import { currentZone, errorBox, esc, setZone, ZONES } from "./ui.js";
 
 const PAGES = {
   front: [["overview", "總覽"], ["spreads", "地域價差"], ["balance", "供需平衡"], ["refinery", "煉廠盈利"],
@@ -82,6 +82,16 @@ try {
   const other = document.getElementById("other-site");
   other.href = SITE.site === "front" ? SITE.admin_url : SITE.front_url;
   other.textContent = SITE.site === "front" ? "後台 ↗" : "前台 ↗";
+  // 時區切換：頁面上的時間都按這裡選的時區顯示，換了之後當前頁面重畫
+  const tz = document.createElement("select");
+  tz.id = "tz";
+  tz.className = "tz";
+  tz.title = "頁面上的時間按哪個時區顯示";
+  tz.setAttribute("aria-label", "顯示時區");
+  tz.innerHTML = ZONES.map(([z, name]) => `<option value="${z}" ${z === currentZone() ? "selected" : ""}>${name === "UTC" ? "UTC" : name + "時間"}</option>`).join("");
+  tz.addEventListener("change", () => setZone(tz.value));
+  other.before(tz);
+  window.addEventListener("crudelab:timezone", () => { if (ready) show(location.hash.slice(1)); });
   if (SITE.config_error) {
     document.getElementById("banner").innerHTML = `<div class="msg bad" style="margin:12px 28px 0;white-space:pre-wrap">config/ 裡的配置有錯，目前沿用上一份正確的配置：\n${esc(SITE.config_error)}</div>`;
   }

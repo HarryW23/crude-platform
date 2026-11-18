@@ -41,6 +41,14 @@ NAMING = {"ix": "ix_%(column_0_label)s", "uq": "uq_%(table_name)s_%(column_0_nam
           "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s", "pk": "pk_%(table_name)s"}
 
 
+def iso_utc(value: datetime | None) -> str | None:
+    """數據庫裡的時間都是不帶時區的 UTC。給頁面時明確標上 Z，由頁面按使用者選的時區顯示。"""
+    if value is None:
+        return None
+    value = value if value.tzinfo is None else value.astimezone(UTC).replace(tzinfo=None)
+    return value.isoformat(timespec="seconds") + "Z"
+
+
 def utcnow() -> datetime:
     return datetime.now(UTC).replace(tzinfo=None)
 
