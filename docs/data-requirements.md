@@ -239,7 +239,7 @@ WS 點折成 美元/桶 還需要 Worldscale 每年的基準費率，見下面�
 | 接口 | 憑證 | 能提供什麼 | 現狀 |
 |---|---|---|---|
 | Kpler | `KPLER_API_TOKEN` | 船期、到港量、浮倉、分國別進出口流量 | 目前沒有任何序列依賴它。接通後可以把全球平衡表從「機構口徑」細化到分國別自下而上。 |
-| 路透 / LSEG 數據 API | `LSEG_APP_KEY` 等 | 以代碼直接取行情，取代人工導出 Excel | 預留。上面標為「路透導出 Excel」的序列都可以改走它 |
+| 路透 / LSEG Workspace | App Key（在 Workspace 裡生成，只在那台電腦上用） | 以 RIC 直接取行情，取代人工導出 Excel | `scripts/lseg_export.py` 在裝了 Workspace 的電腦上導出 CSV，再導入；RIC 清單見 `scripts/lseg_rics.txt` |
 | 國內資訊商 API | `CN_VENDOR_API_KEY` | 國內現貨價、開工率、庫存 | 預留 |
 
 ## 大模型接口

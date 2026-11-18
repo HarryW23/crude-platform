@@ -310,6 +310,18 @@ def _backup_file(settings, cfg, given: str) -> Path:
     return path
 
 
+def cmd_lseg_rics(args) -> int:
+    from .config import load_config
+    from .data_needs import lseg_rics_text
+    text = lseg_rics_text(load_config(get_settings().config_dir))
+    if args.output:
+        Path(args.output).write_text(text, encoding="utf-8")
+        print(f"已寫出 {args.output}")
+    else:
+        print(text, end="")
+    return 0
+
+
 def cmd_backup(args) -> int:
     from . import backup
     from .config import load_config
@@ -621,6 +633,9 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("run-job", help="立即運行一個定時任務；不給名字則列出全部")
     p.add_argument("code", nargs="?")
     p.set_defaults(func=cmd_run_job)
+    p = sub.add_parser("lseg-rics", help="生成 LSEG 導出腳本用的 RIC 清單（scripts/lseg_rics.txt）")
+    p.add_argument("--output", help="寫入這個文件；不給就打印")
+    p.set_defaults(func=cmd_lseg_rics)
     p = sub.add_parser("backup", help="備份：不給動作就立即做一份手動備份")
     p.add_argument("action", nargs="?", choices=["create", "list", "verify", "prune"], default="create",
                    help="create 立即備份（預設）/ list 列出 / verify 校驗一份 / prune 按保留策略清理定時備份")

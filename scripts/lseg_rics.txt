@@ -1,0 +1,107 @@
+# crudelab 從 LSEG Workspace 導出的序列清單（由 crudelab lseg-rics 從配置生成，不要手改這個文件）
+# 每行：序列代碼  RIC  [字段]。字段不寫時依次試 SETTLE、TRDPRC_1、CLOSE、MID_PRICE、BID。
+# 要加 RIC：在 config/master/series/ 裡給那條序列的 aliases 加上 RIC，再運行 crudelab lseg-rics。
+
+BRENT_M1                 LCOc1
+BRENT_M2                 LCOc2
+BRENT_M3                 LCOc3
+BRENT_M4                 LCOc4
+BRENT_M5                 LCOc5
+BRENT_M6                 LCOc6
+BRENT_M7                 LCOc7
+BRENT_M8                 LCOc8
+BRENT_M9                 LCOc9
+BRENT_M10                LCOc10
+BRENT_M11                LCOc11
+BRENT_M12                LCOc12
+WTI_M1                   CLc1
+WTI_M2                   CLc2
+WTI_M3                   CLc3
+WTI_M4                   CLc4
+WTI_M5                   CLc5
+WTI_M6                   CLc6
+WTI_M7                   CLc7
+WTI_M8                   CLc8
+WTI_M9                   CLc9
+WTI_M10                  CLc10
+WTI_M11                  CLc11
+WTI_M12                  CLc12
+SC_M1                    ISCc1
+SC_M2                    ISCc2
+SC_M3                    ISCc3
+SC_M4                    ISCc4
+SC_M5                    ISCc5
+SC_M6                    ISCc6
+SC_M7                    ISCc7
+SC_M8                    ISCc8
+SC_M9                    ISCc9
+SC_M10                   ISCc10
+SC_M11                   ISCc11
+SC_M12                   ISCc12
+DATED_BRENT              BFO-
+USDCNY                   CNY=
+GASOIL_ICE_M1            LGOc1
+GASOIL_ICE_M2            LGOc2
+GASOIL_ICE_M3            LGOc3
+RBOB_M1                  RBc1
+RBOB_M2                  RBc2
+HO_M1                    HOc1
+HO_M2                    HOc2
+
+# 下面 56 條可能在路透上，但還不知道 RIC（現貨評估價通常要另外訂閱 Platts / Argus）：
+# DUBAI_SWAP_M1          ?    迪拜掉期 M1
+# DUBAI_SWAP_M2          ?    迪拜掉期 M2
+# DUBAI_SWAP_M3          ?    迪拜掉期 M3
+# DUBAI_SWAP_M4          ?    迪拜掉期 M4
+# DUBAI_SWAP_M5          ?    迪拜掉期 M5
+# DUBAI_SWAP_M6          ?    迪拜掉期 M6
+# DUBAI_SWAP_M7          ?    迪拜掉期 M7
+# DUBAI_SWAP_M8          ?    迪拜掉期 M8
+# DUBAI_SWAP_M9          ?    迪拜掉期 M9
+# DUBAI_SWAP_M10         ?    迪拜掉期 M10
+# DUBAI_SWAP_M11         ?    迪拜掉期 M11
+# DUBAI_SWAP_M12         ?    迪拜掉期 M12
+# DUBAI_CASH             ?    迪拜現貨
+# OMAN_M1                ?    阿曼期貨 M1
+# MURBAN_M1              ?    穆爾班期貨 M1
+# BRENT_DUBAI_EFS        ?    Brent-Dubai EFS
+# ESPO_DIFF              ?    ESPO 升貼水
+# URALS_DIFF             ?    烏拉爾升貼水
+# UPPER_ZAKUM_DIFF       ?    上扎庫姆升貼水
+# FORTIES_DIFF           ?    福蒂斯升貼水
+# EKOFISK_DIFF           ?    埃科菲斯克升貼水
+# JOHAN_SVERDRUP_DIFF    ?    約翰斯維德魯普升貼水
+# CPC_DIFF               ?    CPC 升貼水
+# BONNY_LIGHT_DIFF       ?    邦尼輕質升貼水
+# WTI_MIDLAND_DIFF       ?    WTI 米德蘭升貼水
+# WTI_MEH_DIFF           ?    WTI 休斯頓升貼水
+# MARS_DIFF              ?    Mars 升貼水
+# WCS_HARDISTY_DIFF      ?    WCS（哈迪斯蒂）升貼水
+# TUPI_CHINA_DIFF        ?    Tupi 到中國升貼水（到岸）
+# TD3C_WS                ?    TD3C 中東→中國 VLCC
+# TD15_WS                ?    TD15 西非→中國 VLCC
+# TD20_WS                ?    TD20 西非→歐洲 蘇伊士型
+# TD25_WS                ?    TD25 美灣→歐洲 阿芙拉型
+# SG_GASOLINE_92         ?    新加坡 92# 汽油
+# SG_GASOIL_10PPM        ?    新加坡 10ppm 柴油
+# SG_JET_KERO            ?    新加坡航煤
+# SG_NAPHTHA             ?    新加坡石腦油
+# SG_HSFO_380            ?    新加坡 380cst 高硫燃料油
+# SG_VLSFO               ?    新加坡 0.5% 低硫燃料油
+# JAPAN_NAPHTHA          ?    日本到岸石腦油
+# NWE_EUROBOB            ?    西北歐 Eurobob 汽油
+# NWE_DIESEL_10PPM       ?    西北歐 10ppm 柴油
+# NWE_JET                ?    西北歐航煤
+# NWE_NAPHTHA            ?    西北歐石腦油
+# RDAM_HSFO_35           ?    鹿特丹 3.5% 燃料油
+# FU_M1                  ?    上期所燃料油主力
+# LU_M1                  ?    INE 低硫燃料油主力
+# BU_M1                  ?    上期所瀝青主力
+# PX_CFR_CHINA           ?    PX CFR 中國
+# BENZENE_FOB_KOREA      ?    純苯 FOB 韓國
+# ETHYLENE_CFR_NEA       ?    乙烯 CFR 東北亞
+# PROPYLENE_CFR_CHINA    ?    丙烯 CFR 中國
+# PP_CN                  ?    聚丙烯期貨主力
+# LLDPE_CN               ?    LLDPE 期貨主力
+# PTA_CN                 ?    PTA 期貨主力
+# MEG_CN                 ?    乙二醇期貨主力

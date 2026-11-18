@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from . import credentials
@@ -147,7 +148,8 @@ def render(cfg: Config) -> str:
 
     lines += ["## 預留、尚未使用的數據接口", "", "| 接口 | 憑證 | 能提供什麼 | 現狀 |", "|---|---|---|---|"]
     lines += [f"| {name} | {cred} | {what} | {state} |" for name, cred, what, state in RESERVED_APIS]
-    lines += ["| 路透 / LSEG 數據 API | `LSEG_APP_KEY` 等 | 以代碼直接取行情，取代人工導出 Excel | 預留。上面標為「路透導出 Excel」的序列都可以改走它 |",
+    lines += ["| 路透 / LSEG Workspace | App Key（在 Workspace 裡生成，只在那台電腦上用） | 以 RIC 直接取行情，取代人工導出 Excel | "
+              "`scripts/lseg_export.py` 在裝了 Workspace 的電腦上導出 CSV，再導入；RIC 清單見 `scripts/lseg_rics.txt` |",
               "| 國內資訊商 API | `CN_VENDOR_API_KEY` | 國內現貨價、開工率、庫存 | 預留 |", ""]
 
     lines += ["## 大模型接口", "",
@@ -183,3 +185,32 @@ def render(cfg: Config) -> str:
               "不要只是把它從文件裡刪掉——已經洩漏的密鑰刪了也還能用。",
               "- **申請密鑰時**：能限制權限、額度、來源 IP 的都限制上。大模型的密鑰建議設月度消費上限。", ""]
     return "\n".join(lines)
+
+
+# ------------------------------ 給 LSEG 導出腳本的 RIC 清單 ------------------------------
+
+LSEG_PROVIDERS = ("exchange_intl", "exchange_cn", "pra", "freight", "fx")      # 路透終端上可能取得到的
+_RIC = re.compile(r"^[0-9A-Z]{1,8}c\d{1,2}$|^[0-9A-Za-z.]+=[A-Z]*$|^[A-Z0-9]+-$")
+
+
+def ric_of(s: SeriesDef) -> str | None:
+    """序列別名裡看起來像路透代碼（RIC）的那個。"""
+    return next((a for a in s.aliases if _RIC.match(a)), None)
+
+
+def lseg_rics_text(cfg: Config) -> str:
+    """scripts/lseg_rics.txt 的內容：有 RIC 的序列一行一條；可能在路透上、但還不知道 RIC 的列在後面（註釋掉）。"""
+    lines = ["# crudelab 從 LSEG Workspace 導出的序列清單（由 crudelab lseg-rics 從配置生成，不要手改這個文件）",
+             "# 每行：序列代碼  RIC  [字段]。字段不寫時依次試 SETTLE、TRDPRC_1、CLOSE、MID_PRICE、BID。",
+             "# 要加 RIC：在 config/master/series/ 裡給那條序列的 aliases 加上 RIC，再運行 crudelab lseg-rics。", ""]
+    known, unknown = [], []
+    for s in cfg.series.values():
+        if provider_of(s) not in LSEG_PROVIDERS:
+            continue
+        ric = ric_of(s)
+        (known if ric else unknown).append((s, ric))
+    lines += [f"{s.code:<24} {ric}" for s, ric in known]
+    if unknown:
+        lines += ["", f"# 下面 {len(unknown)} 條可能在路透上，但還不知道 RIC（現貨評估價通常要另外訂閱 Platts / Argus）："]
+        lines += [f"# {s.code:<22} ?    {s.name_zh}" for s, _ in unknown]
+    return "\n".join(lines) + "\n"

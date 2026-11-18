@@ -236,6 +236,36 @@ Windows 把 `.venv/bin/` 換成 `.venv\Scripts\`。
 系統需要哪些數據、從哪裡取得、需要什麼憑證、哪些要你確認授權，全部列在 [docs/data-requirements.md](docs/data-requirements.md)。
 這份清單由 `crudelab data-needs` 從配置生成。
 
+## 從路透（LSEG Workspace）取數
+
+在裝了 Workspace（或舊版 Eikon）的那台電腦上運行 `scripts/lseg_export.py`，它按 RIC 取歷史行情，寫成 CSV，
+再交給平台導入（放進 `data/inbox/` 或在後台「數據導入」頁上傳，數據源選「路透（Excel 整理）」）。
+Workspace 的接口只能在它自己那台電腦上調用，所以用「在那台電腦上導出文件」的方式，不需要打通兩台機器的網絡。
+
+那台電腦上需要：
+
+1. Workspace 已經打開並登錄。
+2. Python 3.9 以上，並安裝 LSEG 的庫（`pip install lseg-data`；舊環境裡已有 `refinitiv-data` 或 `eikon` 也能用）。
+3. 一個 App Key：在 Workspace 裡搜索「APPKEY」打開 App Key Generator 生成。**運行時輸入，不要寫進任何文件**；
+   要定時運行時用環境變量 `LSEG_APP_KEY`。
+4. 把 `scripts/lseg_export.py` 和 `scripts/lseg_rics.txt` 兩個文件複製到同一個文件夾。
+
+先檢測能不能取數（只取 LCOc1 最近兩周）：
+
+```bash
+python lseg_export.py probe
+```
+
+能取數後導出（預設最近約三年；每天更新可以加 `--days 10`）：
+
+```bash
+python lseg_export.py export
+```
+
+`scripts/lseg_rics.txt` 由配置生成（`crudelab lseg-rics --output scripts/lseg_rics.txt`）：有 RIC 的序列一行一條，
+還不知道 RIC 的列在後面。要補 RIC，在 `config/master/series/` 裡給序列的 `aliases` 加上，再重新生成。
+現貨評估價（Platts、Argus）在路透上通常要另外訂閱，以及確認授權是否允許存進自建系統（待辦 #5）。
+
 ## 密鑰
 
 數據源和大模型的 API key、數據庫連接串，統一這樣保管：
