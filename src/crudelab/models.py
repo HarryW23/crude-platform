@@ -241,6 +241,31 @@ class Projection(Base):
     archived_at: Mapped[datetime | None] = mapped_column(DateTime)
 
 
+class MarketView(Base):
+    """一條記下的觀點（判斷）。記下後內容不能改，只能撤銷：這是覆盤可信的前提。
+    結果不存，到期後按當時的數據現算（數據修訂了，結果跟著修正）。"""
+    __tablename__ = "market_view"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    made_on: Mapped[date] = mapped_column(Date)                       # 判斷的日期（以這天的收盤價為起點）
+    horizon: Mapped[str] = mapped_column(String(8))                    # 期限代碼：W1 / M1 / M3
+    target_date: Mapped[date] = mapped_column(Date, index=True)        # 到期日 = made_on + 期限的日曆天數
+    series_code: Mapped[str] = mapped_column(String(64))               # 看的是哪個價格（推演的錨定價格）
+    direction: Mapped[int] = mapped_column(Integer)                    # −1 偏空 / 0 中性 / +1 偏多
+    low: Mapped[float | None] = mapped_column(Float)                   # 目標區間（可不填）
+    high: Mapped[float | None] = mapped_column(Float)
+    confidence: Mapped[float | None] = mapped_column(Float)            # 方向判斷對的把握 0.5–1（可不填）
+    reasons: Mapped[list] = mapped_column(JSON)                        # 理由的因子標籤
+    rationale: Mapped[str | None] = mapped_column(Text)
+    start_price: Mapped[float] = mapped_column(Float)                  # 起點價格（made_on 當天或之前最近的值）
+    start_date: Mapped[date] = mapped_column(Date)
+    daily_vol: Mapped[float | None] = mapped_column(Float)            # 當時的日波動率：決定「中性」的範圍
+    system: Mapped[dict | None] = mapped_column(JSON)                  # 當時系統信號的快照（綜合與各模組分數）
+    created_by: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime)
+    cancel_reason: Mapped[str | None] = mapped_column(Text)
+
+
 class ProjectionCase(Base):
     """推演裡的一個分支。scenario_code 為空 = 基準（只看數據，不加任何調整）。"""
     __tablename__ = "projection_case"

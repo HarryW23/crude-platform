@@ -31,6 +31,7 @@ from .routes import (
     geo,
     imports,
     indicators,
+    journal,
     llm_admin,
     outlook,
     parameters,
@@ -49,7 +50,7 @@ WEB_DIR = Path(__file__).resolve().parents[1] / "web"
 _COMMON = [core.router, series.router, indicators.router, parameters.router, auth_routes.router]
 ROUTERS = {
     "front": [*_COMMON, refineries.router, balances.router, analysis.router, scenarios.router, geo.router,
-              outlook.router, reports.router, chat.router, backtest.router],
+              outlook.router, reports.router, chat.router, backtest.router, journal.router],
     "admin": [*_COMMON, core.admin_router, series.admin_router, imports.admin_router, parameters.admin_router,
               sources.admin_router, auth_routes.admin_router, schedule.admin_router, backups.admin_router,
               llm_admin.admin_router],
