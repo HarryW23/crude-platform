@@ -86,6 +86,7 @@ def write_sample_workbook(path: Path, days: int = 60, seed: int = 7) -> None:
                     round(4800 + rng.gauss(0, 60)), round(2400 + rng.gauss(0, 50))])
 
     _balance_sheets(wb, rng)
+    _back_months(wb, dates, cols, random.Random(seed + 1))
     ws4 = wb.create_sheet("說明")
     ws4.append(["這一頁只有文字，系統會標記為無法識別並跳過。"])
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -132,3 +133,32 @@ def _balance_sheets(wb: Workbook, rng: random.Random) -> None:
         stocks += (opec + nonopec - oecd - nonoecd) * 4 + (2_800 - stocks) * 0.05
         ws2.append([f"{year}-{month:02d}", round(opec, 2), round(nonopec, 2), round(opec - 5.4, 2), round(oecd, 2),
                     round(nonoecd, 2), round(stocks, 1)])
+
+
+def _back_months(wb: Workbook, dates: list[date], cols: dict, rng: random.Random) -> None:
+    """遠月合約：在「期貨」表的 M1、M3 之外補齊到 M12，讓曲線圖有東西可畫。
+
+    用獨立的隨機數，不影響其他表的數值。曲線的斜率隨時間慢慢擺動：有時近強遠弱，有時近弱遠強。
+    """
+    by_name = {name: values for (name, _), values in cols.items()}
+    curves = {"Brent": ("Brent M1", "Brent M3", "LCOc{n}", "Brent M{n}", [4]),
+              "WTI": ("WTI M1", "WTI M3", "CLc{n}", "WTI M{n}", [2, 4]),
+              "Dubai": ("迪拜掉期M1", "迪拜掉期M3", "", "迪拜掉期M{n}", [2, 4])}
+    header_names, header_rics, columns = ["日期"], [""], []
+    for _, (m1_name, m3_name, ric, label, first) in curves.items():
+        m1, m3 = by_name[m1_name], by_name[m3_name]
+        wanted = [first[0]] + list(range(4, 13)) if first[0] == 2 else list(range(4, 13))
+        for n in wanted:
+            header_names.append(label.replace("{n}", str(n)))
+            header_rics.append(ric.replace("{n}", str(n)) if ric else "")
+            values = []
+            for i in range(len(dates)):
+                slope = 0.25 + 0.35 * math.sin(2 * math.pi * i / 180)       # 每多一個月，價格低多少
+                base = (m1[i] + m3[i]) / 2 if n == 2 else m3[i] - slope * (n - 3) * (0.93 ** (n - 3))
+                values.append(round(base + rng.gauss(0, 0.04), 2))
+            columns.append(values)
+    ws = wb.create_sheet("遠月合約")
+    ws.append(header_names)
+    ws.append(header_rics)
+    for i, day in enumerate(dates):
+        ws.append([day, *[column[i] for column in columns]])

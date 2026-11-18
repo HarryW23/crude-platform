@@ -21,6 +21,13 @@ def _name(engine: IndicatorEngine, name: str) -> str:
     return engine.cfg.indicators[name].name_zh if name in engine.cfg.indicators else engine.cfg.series[name].name_zh
 
 
+@router.get("/curves")
+def curves(engine: IndicatorEngine = Depends(get_engine)):
+    """每條期貨曲線今天、1 周前、1 個月前的形狀，以及近遠月結構。"""
+    from ...curves import all_snapshots
+    return all_snapshots(engine, engine.cfg)
+
+
 @router.get("/seasonal/{name}")
 def seasonal(name: str, years: int = Query(5, ge=1, le=10), window_days: int = Query(365, ge=30, le=1830),
              engine: IndicatorEngine = Depends(get_engine)):

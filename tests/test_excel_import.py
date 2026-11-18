@@ -22,7 +22,11 @@ def test_messy_workbook_layouts_are_detected(session, settings, sample_bytes):
     preview = preview_file(session, settings, sample_bytes, "sample.xlsx", "demo")
     layouts = {s["name"]: s["layout"] for s in preview["sheets"]}
     assert layouts == {"期貨": "wide", "新加坡成品油": "wide_transposed", "升貼水": "long", "中國": "wide",
-                       "EIA周度": "wide", "STEO月度": "wide", "說明": "unrecognized"}
+                       "EIA周度": "wide", "STEO月度": "wide", "遠月合約": "wide", "說明": "unrecognized"}
+    back = _cols(preview, "遠月合約")
+    assert back["Brent M12 | LCOc12"]["series_code"] == "BRENT_M12"
+    assert back["迪拜掉期M2"]["series_code"] == "DUBAI_SWAP_M2"
+    assert all(c["series_code"] for c in back.values())
     steo = _cols(preview, "STEO月度")["OPEC液體產量"]                   # 表頭是「2026-09」這種期間寫法
     assert steo["series_code"] == "STEO_OPEC_SUPPLY" and steo["n_values"] == 96
     assert (steo["first_date"], steo["last_date"]) == ("2020-01-01", "2027-12-01")

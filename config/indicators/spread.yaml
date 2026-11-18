@@ -39,6 +39,42 @@
 - {code: TS_SC_M1_M3, name_zh: SC M1 − M3, module: spread, group: 月差結構, unit: CNY/bbl,
    formula: "SC_M1 - SC_M3"}
 
+# ---------- 曲線形態（12 個月的曲線） ----------
+# 近端月差看現貨鬆緊，遠端月差看市場對未來的預期；曲率 = M1 − 2×M6 + M12：
+#   大於 0 表示近端比遠端陡（緊張集中在近月），小於 0 表示遠端更陡
+- {code: TS_BRENT_M1_M6, name_zh: Brent M1 − M6, module: spread, group: 曲線形態, unit: USD/bbl,
+   formula: "BRENT_M1 - BRENT_M6"}
+- {code: TS_BRENT_M1_M12, name_zh: Brent M1 − M12, module: spread, group: 曲線形態, unit: USD/bbl,
+   formula: "BRENT_M1 - BRENT_M12"}
+- {code: TS_BRENT_M6_M12, name_zh: Brent M6 − M12（遠端）, module: spread, group: 曲線形態, unit: USD/bbl,
+   formula: "BRENT_M6 - BRENT_M12"}
+- {code: CRV_BRENT_FLY, name_zh: Brent 曲率, module: spread, group: 曲線形態, unit: USD/bbl,
+   formula: "BRENT_M1 - 2 * BRENT_M6 + BRENT_M12"}
+- {code: TS_WTI_M1_M6, name_zh: WTI M1 − M6, module: spread, group: 曲線形態, unit: USD/bbl,
+   formula: "WTI_M1 - WTI_M6"}
+- {code: TS_WTI_M1_M12, name_zh: WTI M1 − M12, module: spread, group: 曲線形態, unit: USD/bbl,
+   formula: "WTI_M1 - WTI_M12"}
+- {code: TS_WTI_M6_M12, name_zh: WTI M6 − M12（遠端）, module: spread, group: 曲線形態, unit: USD/bbl,
+   formula: "WTI_M6 - WTI_M12"}
+- {code: CRV_WTI_FLY, name_zh: WTI 曲率, module: spread, group: 曲線形態, unit: USD/bbl,
+   formula: "WTI_M1 - 2 * WTI_M6 + WTI_M12"}
+- {code: TS_DUBAI_M1_M6, name_zh: Dubai M1 − M6, module: spread, group: 曲線形態, unit: USD/bbl,
+   formula: "DUBAI_SWAP_M1 - DUBAI_SWAP_M6"}
+- {code: TS_DUBAI_M1_M12, name_zh: Dubai M1 − M12, module: spread, group: 曲線形態, unit: USD/bbl,
+   formula: "DUBAI_SWAP_M1 - DUBAI_SWAP_M12"}
+- {code: TS_DUBAI_M6_M12, name_zh: Dubai M6 − M12（遠端）, module: spread, group: 曲線形態, unit: USD/bbl,
+   formula: "DUBAI_SWAP_M6 - DUBAI_SWAP_M12"}
+- {code: CRV_DUBAI_FLY, name_zh: Dubai 曲率, module: spread, group: 曲線形態, unit: USD/bbl,
+   formula: "DUBAI_SWAP_M1 - 2 * DUBAI_SWAP_M6 + DUBAI_SWAP_M12"}
+- {code: TS_SC_M1_M6, name_zh: SC M1 − M6, module: spread, group: 曲線形態, unit: CNY/bbl,
+   formula: "SC_M1 - SC_M6"}
+- {code: TS_SC_M1_M12, name_zh: SC M1 − M12, module: spread, group: 曲線形態, unit: CNY/bbl,
+   formula: "SC_M1 - SC_M12"}
+- {code: TS_SC_M6_M12, name_zh: SC M6 − M12（遠端）, module: spread, group: 曲線形態, unit: CNY/bbl,
+   formula: "SC_M6 - SC_M12"}
+- {code: CRV_SC_FLY, name_zh: SC 曲率, module: spread, group: 曲線形態, unit: CNY/bbl,
+   formula: "SC_M1 - 2 * SC_M6 + SC_M12"}
+
 # ---------- 現貨絕對價（基準 + 升貼水，裝港價） ----------
 - {code: OMAN_DUBAI_AVG, name_zh: 阿曼/迪拜均價, module: spread, group: 現貨絕對價, unit: USD/bbl, hidden: true,
    formula: "(OMAN_M1 + DUBAI_CASH) / 2"}

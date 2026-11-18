@@ -2,16 +2,16 @@
 
 > 這份文檔由 `crudelab data-needs --output docs/data-requirements.md` 從 `config/` 生成。不要手改；改了配置後重新生成。
 
-系統目前定義了 **106 條序列**，供 101 個指標、5 個煉廠模型、2 張平衡表使用。下面按「從哪裡取得」分組。任何序列都可以用 Excel 導入或在後台手動錄入，接口只是省去人工。
+系統目前定義了 **142 條序列**，供 117 個指標、5 個煉廠模型、2 張平衡表使用。下面按「從哪裡取得」分組。任何序列都可以用 Excel 導入或在後台手動錄入，接口只是省去人工。
 
 ## 一覽
 
 | 來源 | 序列數 | 現在怎麼取得 | 需要的憑證 | 狀態 |
 |---|---|---|---|---|
 | EIA（美國能源信息署）公開數據 | 24 | 接口自動取數：後台「數據源」頁點「立即取數」，或 `crudelab pull eia` | `EIA_API_KEY`，在 eia.gov/opendata 免費申請 | 接口已寫好，**沒有用真實密鑰調用過** |
-| 國際交易所期貨結算價（ICE、NYMEX、DME / IFAD） | 15 | 路透終端導出 Excel 後在後台導入 | 路透 / LSEG 訂閱；之後可接 LSEG API（`LSEG_*`） | Excel 導入可用；API 預留 |
-| 國內交易所期貨結算價（INE、上期所、大商所、鄭商所） | 10 | 路透或 Wind 導出 Excel 後導入 | 路透 / Wind 等任一行情訂閱 | Excel 導入可用 |
-| 報價機構的現貨評估價（Platts、Argus 等） | 35 | 路透終端導出 Excel 後導入 | 路透訂閱 **加** 對應報價機構的授權 | Excel 導入可用 |
+| 國際交易所期貨結算價（ICE、NYMEX、DME / IFAD） | 33 | 路透終端導出 Excel 後在後台導入 | 路透 / LSEG 訂閱；之後可接 LSEG API（`LSEG_*`） | Excel 導入可用；API 預留 |
+| 國內交易所期貨結算價（INE、上期所、大商所、鄭商所） | 19 | 路透或 Wind 導出 Excel 後導入 | 路透 / Wind 等任一行情訂閱 | Excel 導入可用 |
+| 報價機構的現貨評估價（Platts、Argus 等） | 44 | 路透終端導出 Excel 後導入 | 路透訂閱 **加** 對應報價機構的授權 | Excel 導入可用 |
 | 產油國官方售價（沙特、伊拉克等） | 5 | 每月公佈一次，手動錄入或隨 Excel 導入 | 公開信息，路透有轉載 | 手動 / Excel |
 | 油輪運價（波羅的海交易所 TD 航線） | 4 | 路透終端導出 Excel 後導入 | 路透訂閱（含波羅的海交易所數據） | Excel 導入可用 |
 | 匯率 | 1 | 路透導出 Excel 後導入 | 任一行情訂閱 | Excel 導入可用 |
@@ -57,12 +57,30 @@
 
 | 代碼 | 名稱 | 單位 | 頻率 | 用到它的指標 |
 |---|---|---|---|---|
-| `BRENT_M1` | 布倫特期貨 M1 | USD/bbl | 日 | 煉廠 6、地域價差 8 |
+| `BRENT_M1` | 布倫特期貨 M1 | USD/bbl | 日 | 煉廠 6、地域價差 11 |
 | `BRENT_M2` | 布倫特期貨 M2 | USD/bbl | 日 | 地域價差 1 |
 | `BRENT_M3` | 布倫特期貨 M3 | USD/bbl | 日 | 地域價差 1 |
-| `WTI_M1` | WTI 期貨 M1 | USD/bbl | 日 | 煉廠 3、地域價差 7 |
+| `BRENT_M4` | 布倫特期貨 M4 | USD/bbl | 日 | （目前沒有指標用到） |
+| `BRENT_M5` | 布倫特期貨 M5 | USD/bbl | 日 | （目前沒有指標用到） |
+| `BRENT_M6` | 布倫特期貨 M6 | USD/bbl | 日 | 地域價差 3 |
+| `BRENT_M7` | 布倫特期貨 M7 | USD/bbl | 日 | （目前沒有指標用到） |
+| `BRENT_M8` | 布倫特期貨 M8 | USD/bbl | 日 | （目前沒有指標用到） |
+| `BRENT_M9` | 布倫特期貨 M9 | USD/bbl | 日 | （目前沒有指標用到） |
+| `BRENT_M10` | 布倫特期貨 M10 | USD/bbl | 日 | （目前沒有指標用到） |
+| `BRENT_M11` | 布倫特期貨 M11 | USD/bbl | 日 | （目前沒有指標用到） |
+| `BRENT_M12` | 布倫特期貨 M12 | USD/bbl | 日 | 地域價差 3 |
+| `WTI_M1` | WTI 期貨 M1 | USD/bbl | 日 | 煉廠 3、地域價差 10 |
 | `WTI_M2` | WTI 期貨 M2 | USD/bbl | 日 | 地域價差 1 |
 | `WTI_M3` | WTI 期貨 M3 | USD/bbl | 日 | 地域價差 1 |
+| `WTI_M4` | WTI 期貨 M4 | USD/bbl | 日 | （目前沒有指標用到） |
+| `WTI_M5` | WTI 期貨 M5 | USD/bbl | 日 | （目前沒有指標用到） |
+| `WTI_M6` | WTI 期貨 M6 | USD/bbl | 日 | 地域價差 3 |
+| `WTI_M7` | WTI 期貨 M7 | USD/bbl | 日 | （目前沒有指標用到） |
+| `WTI_M8` | WTI 期貨 M8 | USD/bbl | 日 | （目前沒有指標用到） |
+| `WTI_M9` | WTI 期貨 M9 | USD/bbl | 日 | （目前沒有指標用到） |
+| `WTI_M10` | WTI 期貨 M10 | USD/bbl | 日 | （目前沒有指標用到） |
+| `WTI_M11` | WTI 期貨 M11 | USD/bbl | 日 | （目前沒有指標用到） |
+| `WTI_M12` | WTI 期貨 M12 | USD/bbl | 日 | 地域價差 3 |
 | `OMAN_M1` | 阿曼期貨 M1 | USD/bbl | 日 | 煉廠 1、地域價差 8 |
 | `MURBAN_M1` | 穆爾班期貨 M1 | USD/bbl | 日 | 地域價差 1 |
 | `GASOIL_ICE_M1` | ICE 柴油期貨 M1 | USD/t | 日 | 煉廠 1 |
@@ -77,9 +95,18 @@
 
 | 代碼 | 名稱 | 單位 | 頻率 | 用到它的指標 |
 |---|---|---|---|---|
-| `SC_M1` | 上海原油期貨 M1 | CNY/bbl | 日 | 煉廠 7、地域價差 5 |
+| `SC_M1` | 上海原油期貨 M1 | CNY/bbl | 日 | 煉廠 7、地域價差 8 |
 | `SC_M2` | 上海原油期貨 M2 | CNY/bbl | 日 | （目前沒有指標用到） |
 | `SC_M3` | 上海原油期貨 M3 | CNY/bbl | 日 | 地域價差 1 |
+| `SC_M4` | 上海原油期貨 M4 | CNY/bbl | 日 | （目前沒有指標用到） |
+| `SC_M5` | 上海原油期貨 M5 | CNY/bbl | 日 | （目前沒有指標用到） |
+| `SC_M6` | 上海原油期貨 M6 | CNY/bbl | 日 | 地域價差 3 |
+| `SC_M7` | 上海原油期貨 M7 | CNY/bbl | 日 | （目前沒有指標用到） |
+| `SC_M8` | 上海原油期貨 M8 | CNY/bbl | 日 | （目前沒有指標用到） |
+| `SC_M9` | 上海原油期貨 M9 | CNY/bbl | 日 | （目前沒有指標用到） |
+| `SC_M10` | 上海原油期貨 M10 | CNY/bbl | 日 | （目前沒有指標用到） |
+| `SC_M11` | 上海原油期貨 M11 | CNY/bbl | 日 | （目前沒有指標用到） |
+| `SC_M12` | 上海原油期貨 M12 | CNY/bbl | 日 | 地域價差 3 |
 | `FU_M1` | 上期所燃料油主力 | CNY/t | 日 | （目前沒有指標用到） |
 | `LU_M1` | INE 低硫燃料油主力 | CNY/t | 日 | （目前沒有指標用到） |
 | `BU_M1` | 上期所瀝青主力 | CNY/t | 日 | （目前沒有指標用到） |
@@ -94,9 +121,18 @@
 
 | 代碼 | 名稱 | 單位 | 頻率 | 用到它的指標 |
 |---|---|---|---|---|
-| `DUBAI_SWAP_M1` | 迪拜掉期 M1 | USD/bbl | 日 | 煉廠 9、地域價差 8 |
+| `DUBAI_SWAP_M1` | 迪拜掉期 M1 | USD/bbl | 日 | 煉廠 9、地域價差 11 |
 | `DUBAI_SWAP_M2` | 迪拜掉期 M2 | USD/bbl | 日 | （目前沒有指標用到） |
 | `DUBAI_SWAP_M3` | 迪拜掉期 M3 | USD/bbl | 日 | 地域價差 1 |
+| `DUBAI_SWAP_M4` | 迪拜掉期 M4 | USD/bbl | 日 | （目前沒有指標用到） |
+| `DUBAI_SWAP_M5` | 迪拜掉期 M5 | USD/bbl | 日 | （目前沒有指標用到） |
+| `DUBAI_SWAP_M6` | 迪拜掉期 M6 | USD/bbl | 日 | 地域價差 3 |
+| `DUBAI_SWAP_M7` | 迪拜掉期 M7 | USD/bbl | 日 | （目前沒有指標用到） |
+| `DUBAI_SWAP_M8` | 迪拜掉期 M8 | USD/bbl | 日 | （目前沒有指標用到） |
+| `DUBAI_SWAP_M9` | 迪拜掉期 M9 | USD/bbl | 日 | （目前沒有指標用到） |
+| `DUBAI_SWAP_M10` | 迪拜掉期 M10 | USD/bbl | 日 | （目前沒有指標用到） |
+| `DUBAI_SWAP_M11` | 迪拜掉期 M11 | USD/bbl | 日 | （目前沒有指標用到） |
+| `DUBAI_SWAP_M12` | 迪拜掉期 M12 | USD/bbl | 日 | 地域價差 3 |
 | `DATED_BRENT` | 即期布倫特 | USD/bbl | 日 | 地域價差 8、煉廠 1 |
 | `DUBAI_CASH` | 迪拜現貨 | USD/bbl | 日 | 煉廠 1、地域價差 7 |
 | `BRENT_DUBAI_EFS` | Brent-Dubai EFS | USD/bbl | 日 | （目前沒有指標用到） |

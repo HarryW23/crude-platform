@@ -5,18 +5,19 @@
 #   aliases   導入 Excel 時用來自動識別列名的別名（路透 RIC、中英文名等）；後台指定過的對應也會自動記住
 #   frequency 缺省 daily。monthly 的值預設沿用 35 天，weekly 沿用 7 天（可用 valid_days 覆蓋）
 #
-# curves：連續合約曲線模板，展開成 {code}_M1、{code}_M2 …。aliases 裡的 {n} 換成月序。
+# curves：連續合約曲線模板，展開成 {code}_M1、{code}_M2 … {code}_M12。aliases 裡的 {n} 換成月序。
+#         曲線上的所有月份可以在前台「地域價差」頁畫成一條曲線，並和 1 周前、1 個月前對比。
 # 目前存的是連續合約（M1 = 近月），不含具體到期月份；換月當天的跳動沒有做調整。
 
 curves:
   - {code: BRENT, name_zh: 布倫特期貨, commodity: BRENT, location: NWE, kind: futures, unit: USD/bbl,
-     months: [1, 2, 3], module: common, aliases: ["LCOc{n}", "Brent M{n}", "布倫特M{n}", "ICE Brent M{n}"]}
+     months: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], module: common, aliases: ["LCOc{n}", "Brent M{n}", "布倫特M{n}", "ICE Brent M{n}"]}
   - {code: WTI, name_zh: WTI 期貨, commodity: WTI, location: CUSHING, kind: futures, unit: USD/bbl,
-     months: [1, 2, 3], module: common, aliases: ["CLc{n}", "WTI M{n}", "NYMEX WTI M{n}"]}
+     months: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], module: common, aliases: ["CLc{n}", "WTI M{n}", "NYMEX WTI M{n}"]}
   - {code: DUBAI_SWAP, name_zh: 迪拜掉期, commodity: DUBAI, location: MEG, kind: swap, unit: USD/bbl,
-     months: [1, 2, 3], module: common, aliases: ["Dubai Swap M{n}", "迪拜掉期M{n}", "Dubai M{n}"]}
+     months: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], module: common, aliases: ["Dubai Swap M{n}", "迪拜掉期M{n}", "Dubai M{n}"]}
   - {code: SC, name_zh: 上海原油期貨, commodity: SC, location: CHINA, kind: futures, unit: CNY/bbl,
-     months: [1, 2, 3], module: common, aliases: ["ISCc{n}", "SC M{n}", "INE SC M{n}", "上海原油M{n}"]}
+     months: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], module: common, aliases: ["ISCc{n}", "SC M{n}", "INE SC M{n}", "上海原油M{n}"]}
 
 series:
   # ---------- 基準：現貨與其他期貨 ----------

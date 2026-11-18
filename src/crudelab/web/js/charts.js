@@ -4,6 +4,7 @@
 //   正負兩極（瀑布、平衡柱） --series-1 為正 / 加項，--series-2 為負 / 減項，小計與合計用中性灰
 //   季節性                   當前值 --series-1；歷史區間與均值用中性灰（它們是背景參照，不是另一個類別）
 //   散點                     歷史樣本中性灰，最新一點 --series-2，擬合線 --series-1
+//   期貨曲線                 今天 --series-1 實線；1 周前 --series-2 虛線；1 個月前中性灰點線
 // 數值一律同時用文字或提示標出，不只靠顏色區分。
 import { esc, num } from "./ui.js";
 
@@ -184,7 +185,7 @@ export function seasonalChart(points, { unit = "", years = 5, height = 260 } = {
       </svg><div class="tip" hidden></div>
       ${banded.length ? "" : `<p class="muted">歷史不足 ${years} 年，無法給出同期區間。</p>`}`;
     const cross = box.querySelector(".cross"), dot = box.querySelector(".dot"), tip = box.querySelector(".tip");
-    const hit = box.querySelector(".hit"), svgTop = box.querySelector("svg").offsetTop;
+    const hit = box.querySelector(".hit"), svgTop = () => box.querySelector("svg").getBoundingClientRect().top - box.getBoundingClientRect().top;
     hit.addEventListener("pointermove", (ev) => {
       const px = ev.clientX - box.getBoundingClientRect().left;
       const i = Math.max(0, Math.min(usable.length - 1, Math.round((px - L) / (W - L - R) * (usable.length - 1))));
@@ -193,7 +194,7 @@ export function seasonalChart(points, { unit = "", years = 5, height = 260 } = {
       dot.setAttribute("cx", x(i)); dot.setAttribute("cy", y(p.value)); dot.setAttribute("visibility", "visible");
       tip.innerHTML = `${p.date}　<b>${num(p.value, 0)}</b>` + (p.avg == null ? "" :
         `　均值 ${num(p.avg, 0)}　區間 ${num(p.min, 0)} – ${num(p.max, 0)}`);
-      placeTip(tip, box, x(i), svgTop + y(p.value));
+      placeTip(tip, box, x(i), svgTop() + y(p.value));
     });
     hit.addEventListener("pointerleave", () => {
       cross.setAttribute("visibility", "hidden"); dot.setAttribute("visibility", "hidden"); tip.hidden = true;
@@ -257,14 +258,64 @@ export function pairChart(lines, { unit = "", height = 260 } = {}) {
         <rect class="hit" x="${L}" y="${T}" width="${W - L - R}" height="${H - T - B}" fill="transparent"/>
       </svg><div class="tip" hidden></div>`;
     const cross = box.querySelector(".cross"), tip = box.querySelector(".tip"), hit = box.querySelector(".hit");
-    const svgTop = box.querySelector("svg").offsetTop;
+    const svgTop = () => box.querySelector("svg").getBoundingClientRect().top - box.getBoundingClientRect().top;
     const byDate = lines.map((l) => Object.fromEntries(l.points.map((p) => [p.date, p.value])));
     hit.addEventListener("pointermove", (ev) => {
       const px = ev.clientX - box.getBoundingClientRect().left;
       const i = Math.max(0, Math.min(dates.length - 1, Math.round((px - L) / (W - L - R) * (dates.length - 1))));
       cross.setAttribute("x1", x(i)); cross.setAttribute("x2", x(i)); cross.setAttribute("visibility", "visible");
       tip.innerHTML = `${dates[i]}` + lines.map((l, k) => `　${esc(l.name)} <b>${num(byDate[k][dates[i]])}</b>`).join("");
-      placeTip(tip, box, x(i), svgTop + T + 20);
+      placeTip(tip, box, x(i), svgTop() + T + 20);
+    });
+    hit.addEventListener("pointerleave", () => { cross.setAttribute("visibility", "hidden"); tip.hidden = true; });
+  });
+}
+
+// ------------------------------ 期貨曲線 ------------------------------
+// snapshots: [{label, date, points: [{month, value|null}]}]。橫軸是合約月份。
+// 缺的月份不畫點、不插值；線只把有數據的點按月份順序連起來，每個有數據的點都畫出來，看得出哪裡是缺口。
+const CURVE_STYLE = [
+  { color: "var(--series-1)", dash: "", width: 2.5 },
+  { color: "var(--series-2)", dash: "6 4", width: 2 },
+  { color: "var(--neutral-bar)", dash: "2 4", width: 2 },
+];
+
+export function curveChart(snapshots, months, { unit = "", height = 280 } = {}) {
+  const values = snapshots.flatMap((s) => s.points.map((p) => p.value)).filter((v) => v !== null);
+  if (values.length < 2 || months.length < 2) return empty("數據點不足，無法畫曲線。");
+  return responsive((box, W) => {
+    const H = height, L = 66, R = 14, T = 14, B = 26;
+    const [lo, hi] = scale(values), d = axisDigits(lo, hi);
+    const x = (i) => L + (W - L - R) * i / (months.length - 1);
+    const y = (v) => T + (H - T - B) * (1 - (v - lo) / (hi - lo));
+    const idx = Object.fromEntries(months.map((m, i) => [m, i]));
+    const path = (pts) => {
+      const have = pts.filter((p) => p.value !== null);
+      return have.map((p, i) => `${i ? "L" : "M"}${x(idx[p.month]).toFixed(1)},${y(p.value).toFixed(1)}`).join("");
+    };
+    const style = (k) => CURVE_STYLE[Math.min(k, CURVE_STYLE.length - 1)];
+    box.innerHTML = `<div class="legend">${snapshots.map((s, k) => `<span><i style="background:${style(k).color};${k ? "height:2px;vertical-align:3px" : ""}"></i>${esc(s.label)}（${s.date}）</span>`).join("")}<span>${esc(unit)}</span></div>
+      <svg width="${W}" height="${H}" role="img" aria-label="期貨曲線，${esc(snapshots.map((s) => s.label).join("、"))}">
+        ${ticks(lo, hi).map((v) => `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--hairline)"/>
+          <text x="${L - 8}" y="${y(v) + 4}" text-anchor="end">${num(v, d)}</text>`).join("")}
+        ${months.map((m, i) => `<text x="${x(i)}" y="${H - 7}" text-anchor="middle">M${m}</text>`).join("")}
+        ${snapshots.map((s, k) => `<path d="${path(s.points)}" fill="none" stroke="${style(k).color}" stroke-width="${style(k).width}" stroke-dasharray="${style(k).dash}" stroke-linejoin="round"/>`).reverse().join("")}
+        ${snapshots.map((s, k) => s.points.filter((p) => p.value !== null).map((p) => `<circle cx="${x(idx[p.month])}" cy="${y(p.value)}" r="${k ? 2.5 : 3.5}" fill="${style(k).color}" stroke="var(--surface)" stroke-width="1.5"/>`).join("")).reverse().join("")}
+        <line class="cross" y1="${T}" y2="${H - B}" stroke="var(--axis)" visibility="hidden"/>
+        <rect class="hit" x="${L}" y="${T}" width="${W - L - R}" height="${H - T - B}" fill="transparent"/>
+      </svg><div class="tip" hidden></div>`;
+    const cross = box.querySelector(".cross"), tip = box.querySelector(".tip"), hit = box.querySelector(".hit");
+    const svgTop = () => box.querySelector("svg").getBoundingClientRect().top - box.getBoundingClientRect().top;
+    hit.addEventListener("pointermove", (ev) => {
+      const px = ev.clientX - box.getBoundingClientRect().left;
+      const i = Math.max(0, Math.min(months.length - 1, Math.round((px - L) / (W - L - R) * (months.length - 1))));
+      cross.setAttribute("x1", x(i)); cross.setAttribute("x2", x(i)); cross.setAttribute("visibility", "visible");
+      tip.innerHTML = `<b>M${months[i]}</b>` + snapshots.map((s) => {
+        const v = s.points.find((p) => p.month === months[i])?.value ?? null;
+        return `<br>${esc(s.label)}　${v === null ? '<span class="muted">無數據</span>' : `<b>${num(v)}</b>`}`;
+      }).join("");
+      const anchor = snapshots[0].points.find((p) => p.month === months[i])?.value ?? null;
+      placeTip(tip, box, x(i), svgTop() + (anchor === null ? (H - B) / 2 : y(anchor)));
     });
     hit.addEventListener("pointerleave", () => { cross.setAttribute("visibility", "hidden"); tip.hidden = true; });
   });

@@ -43,6 +43,7 @@ from .schema import (
     BacktestSettings,
     BalanceDef,
     CommodityDef,
+    CurveDef,
     FairValueModel,
     FreshnessDef,
     IndicatorDef,
@@ -97,6 +98,7 @@ class Config:
     freshness: FreshnessDef = field(default_factory=FreshnessDef)
     backtest: BacktestSettings = field(default_factory=BacktestSettings)
     fair_values: dict[str, FairValueModel] = field(default_factory=dict)
+    curves: dict[str, CurveDef] = field(default_factory=dict)          # 期貨曲線：代碼 → 模板
 
     @property
     def market_series(self) -> list[str]:
@@ -201,10 +203,13 @@ def load_config(config_dir: Path) -> Config:
     cfg.sources = ld.keyed(ld.items(SourceDef, master / "sources.yaml"), "數據源")
 
     series: list[SeriesDef] = []
+    curves: list[CurveDef] = []
     for path in ld.files("master/series"):
         doc = ld.build(SeriesFile, ld.read(path) or {}, path)
         if doc:
             series += [s for curve in doc.curves for s in curve.expand()] + doc.series
+            curves += doc.curves
+    cfg.curves = ld.keyed(curves, "期貨曲線")
     cfg.series = ld.keyed(series, "序列")
 
     params = [p for path in ld.files("parameters") for p in ld.items(ParameterDef, path)]
