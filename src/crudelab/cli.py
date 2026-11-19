@@ -310,6 +310,74 @@ def _backup_file(settings, cfg, given: str) -> Path:
     return path
 
 
+def cmd_jin10(args) -> int:
+    """金十數據：probe 把真實接口的樣子列出來（用來核對字段和規則）；usage 看今天的用量。不打印 token。"""
+    import json as _json
+
+    from . import jin10
+    from .config import load_config
+    from .connectors.mcp import MCPError
+    settings = get_settings()
+    db.init_engine(settings)
+    cfg = load_config(settings.config_dir)
+    if args.action == "usage":
+        tools = ("list_calendar", "list_flash", "search_flash", "get_quote", "get_kline", "quote://codes")
+        print(f"今天（北京時間 {jin10.beijing_today()}）各工具的調用次數，上限 {cfg.jin10.max_calls_per_tool_per_day}：")
+        for tool in tools:
+            print(f"  {tool:<16} {jin10.used_today(tool)}")
+        return 0
+    try:
+        client = jin10.Jin10(cfg)
+    except jin10.Jin10NotReady as exc:
+        print(exc, file=sys.stderr)
+        return 1
+
+    def show(title, fn):
+        print(f"\n== {title}")
+        try:
+            return fn()
+        except (MCPError, jin10.Jin10LimitReached) as exc:
+            print(f"  ✗ {exc}")
+            return None
+    try:
+        tools = show("連接與工具", lambda: client.client.list_tools())
+        if tools is not None:
+            print(f"  ✓ 已連接（協議 {client.client.protocol}，服務 {client.client.server_info.get('name', '?')}）")
+            print("  工具：" + "、".join(tools))
+        codes = show("品種代碼（quote://codes）", lambda: client.resource("quote://codes"))
+        if codes is not None:
+            flat = _json.dumps(codes, ensure_ascii=False)
+            items = jin10.rows_of(codes) or (codes if isinstance(codes, list) else [])
+            print(f"  共約 {len(items)} 個；前幾個：{flat[:300]}")
+            hits = [k for k in ("DXY", "USDX", "美元指数", "US10Y", "美债", "UKOIL", "USOIL", "USDCNH") if k in flat]
+            print(f"  包含：{'、'.join(hits) or '（沒有找到美元指數 / 美債的代碼）'}")
+        quote = show("報價 UKOIL", lambda: client.call("get_quote", code="UKOIL"))
+        if quote is not None:
+            print("  " + _json.dumps(quote, ensure_ascii=False)[:400])
+        kline = show("K 線 UKOIL（count=5）", lambda: client.call("get_kline", code="UKOIL", count=5))
+        if kline is not None:
+            print("  " + _json.dumps(kline, ensure_ascii=False)[:600])
+        calendar = show("財經日曆", lambda: client.call("list_calendar"))
+        if calendar is not None:
+            rows = jin10.rows_of(calendar)
+            print(f"  {len(rows)} 項；第一項的字段：{sorted(rows[0]) if rows else '—'}")
+            for r in rows[:6]:
+                print(f"  {r.get('pub_time')}  {r.get('star')}★  {r.get('title')}  "
+                      f"前值 {r.get('previous')}  預期 {r.get('consensus')}  實際 {r.get('actual')}")
+            matched = [r.get("title") for r in rows if any(rule.match in str(r.get("title")) for rule in cfg.jin10.calendar_rules)]
+            print(f"  能對上 jin10.yaml 換算規則的：{matched[:6] or '本周沒有（或標題寫法不同，請把上面的標題發給負責平台的人）'}")
+        flash = show("快訊（list_flash）", lambda: client.call("list_flash"))
+        if flash is not None:
+            rows = jin10.rows_of(flash)
+            print(f"  {len(rows)} 條；第一條的字段：{sorted(rows[0]) if rows else '—'}")
+            if rows:
+                print("  第一條：" + _json.dumps(rows[0], ensure_ascii=False)[:300])
+    finally:
+        client.close()
+    print("\n把上面的輸出發給負責平台的人即可核對（裡面沒有 token）。")
+    return 0
+
+
 def cmd_lseg_rics(args) -> int:
     from .config import load_config
     from .data_needs import lseg_rics_text
@@ -633,6 +701,9 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("run-job", help="立即運行一個定時任務；不給名字則列出全部")
     p.add_argument("code", nargs="?")
     p.set_defaults(func=cmd_run_job)
+    p = sub.add_parser("jin10", help="金十數據：probe 檢測接口並列出真實的數據樣子 / usage 今天的調用次數")
+    p.add_argument("action", choices=["probe", "usage"])
+    p.set_defaults(func=cmd_jin10)
     p = sub.add_parser("lseg-rics", help="生成 LSEG 導出腳本用的 RIC 清單（scripts/lseg_rics.txt）")
     p.add_argument("--output", help="寫入這個文件；不給就打印")
     p.set_defaults(func=cmd_lseg_rics)

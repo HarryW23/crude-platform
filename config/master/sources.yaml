@@ -7,6 +7,8 @@
    notes: 需要免費的 EIA_API_KEY 環境變量}
 - {code: cftc,         name: CFTC 持倉報告（公開）, kind: api, status: active, priority: 30,
    notes: 每周五發佈（數據截至周二），不需要密鑰}
+- {code: jin10,        name: 金十數據（MCP）,     kind: api,    status: active,   priority: 40,
+   notes: 財經日曆的超預期、報價；需要 JIN10_TOKEN}
 - {code: reuters_api,  name: 路透 / LSEG API,    kind: api,    status: reserved, priority: 15}
 - {code: kpler,        name: Kpler API,          kind: api,    status: reserved, priority: 25}
 - {code: cn_vendor,    name: 國內資訊商（隆眾 / 卓創 / 金聯創 / Wind）, kind: api, status: reserved, priority: 25}

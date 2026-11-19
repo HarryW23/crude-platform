@@ -2,7 +2,7 @@
 
 > 這份文檔由 `crudelab data-needs --output docs/data-requirements.md` 從 `config/` 生成。不要手改；改了配置後重新生成。
 
-系統目前定義了 **148 條序列**，供 126 個指標、5 個煉廠模型、2 張平衡表使用。下面按「從哪裡取得」分組。任何序列都可以用 Excel 導入或在後台手動錄入，接口只是省去人工。
+系統目前定義了 **152 條序列**，供 126 個指標、5 個煉廠模型、2 張平衡表使用。下面按「從哪裡取得」分組。任何序列都可以用 Excel 導入或在後台手動錄入，接口只是省去人工。
 
 ## 一覽
 
@@ -11,7 +11,7 @@
 | EIA（美國能源信息署）公開數據 | 24 | 接口自動取數：後台「數據源」頁點「立即取數」，或 `crudelab pull eia` | `EIA_API_KEY`，在 eia.gov/opendata 免費申請 | 接口已寫好，**沒有用真實密鑰調用過** |
 | 國際交易所期貨結算價（ICE、NYMEX、DME / IFAD） | 33 | 路透終端導出 Excel 後在後台導入 | 路透 / LSEG 訂閱；之後可接 LSEG API（`LSEG_*`） | Excel 導入可用；API 預留 |
 | 國內交易所期貨結算價（INE、上期所、大商所、鄭商所） | 19 | 路透或 Wind 導出 Excel 後導入 | 路透 / Wind 等任一行情訂閱 | Excel 導入可用 |
-| 報價機構的現貨評估價（Platts、Argus 等） | 50 | 路透終端導出 Excel 後導入 | 路透訂閱 **加** 對應報價機構的授權 | Excel 導入可用 |
+| 報價機構的現貨評估價（Platts、Argus 等） | 54 | 路透終端導出 Excel 後導入 | 路透訂閱 **加** 對應報價機構的授權 | Excel 導入可用 |
 | 產油國官方售價（沙特、伊拉克等） | 5 | 每月公佈一次，手動錄入或隨 Excel 導入 | 公開信息，路透有轉載 | 手動 / Excel |
 | 油輪運價（波羅的海交易所 TD 航線） | 4 | 路透終端導出 Excel 後導入 | 路透訂閱（含波羅的海交易所數據） | Excel 導入可用 |
 | 匯率 | 1 | 路透導出 Excel 後導入 | 任一行情訂閱 | Excel 導入可用 |
@@ -121,6 +121,10 @@
 
 | 代碼 | 名稱 | 單位 | 頻率 | 用到它的指標 |
 |---|---|---|---|---|
+| `CAL_EIA_CRUDE_SURPRISE` | EIA 原油庫存超預期 | kb | 周 | （目前沒有指標用到） |
+| `CAL_EIA_GASOLINE_SURPRISE` | EIA 汽油庫存超預期 | kb | 周 | （目前沒有指標用到） |
+| `CAL_EIA_DISTILLATE_SURPRISE` | EIA 餾分油庫存超預期 | kb | 周 | （目前沒有指標用到） |
+| `CAL_API_CRUDE_SURPRISE` | API 原油庫存超預期 | kb | 周 | （目前沒有指標用到） |
 | `DUBAI_SWAP_M1` | 迪拜掉期 M1 | USD/bbl | 日 | 煉廠 9、地域價差 11 |
 | `DUBAI_SWAP_M2` | 迪拜掉期 M2 | USD/bbl | 日 | （目前沒有指標用到） |
 | `DUBAI_SWAP_M3` | 迪拜掉期 M3 | USD/bbl | 日 | 地域價差 1 |
@@ -288,6 +292,7 @@ WS 點折成 美元/桶 還需要 Worldscale 每年的基準費率，見下面�
 | `NOTIFY_SLACK_WEBHOOK` | 通知：Slack 的 incoming webhook 地址 |
 | `NOTIFY_WEBHOOK_URL` | 通知：自定義接收地址 |
 | `SMTP_PASSWORD` | 通知：發郵件用的郵箱密碼或授權碼 |
+| `JIN10_TOKEN` | 金十數據（MCP）的 Bearer token |
 | `LSEG_APP_KEY` | 路透 / LSEG 數據 API（預留） |
 | `LSEG_USERNAME` | 路透 / LSEG 帳號（預留） |
 | `LSEG_PASSWORD` | 路透 / LSEG 密碼（預留） |

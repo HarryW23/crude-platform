@@ -383,11 +383,12 @@ class JobDef(Strict):
       report           生成報告（kind = daily / weekly / monthly；narrative = 是否讓大模型加解讀）
       check_freshness  檢查數據有沒有斷更（規則在 freshness.yaml）。有斷更時記為失敗，從而觸發通知
       backup           備份數據庫、配置和原始文件，並按 backup.yaml 清理舊的定時備份
+      calendar         同步金十財經日曆（含市場預期），把超預期換算成序列（規則在 jin10.yaml）
     """
     code: str = Code
     name_zh: str
     enabled: bool = True
-    action: Literal["pull", "import_folder", "report", "check_freshness", "backup"]
+    action: Literal["pull", "import_folder", "report", "check_freshness", "backup", "calendar"]
     at: str | None = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
     days: list[Literal["mon", "tue", "wed", "thu", "fri", "sat", "sun"]] | Literal["daily", "weekdays"] = "daily"
     day_of_month: int | None = Field(default=None, ge=1, le=28)
@@ -524,6 +525,28 @@ class LLMSettings(Strict):
     max_concurrent: int = Field(default=2, ge=1, le=20)
     min_interval_seconds: float = Field(default=1.0, ge=0, le=60)
     timeout_seconds: float = Field(default=120, ge=10, le=600)
+
+
+# ------------------------------ 金十數據 ------------------------------
+
+class CalendarRule(Strict):
+    """財經日曆的一項怎麼變成序列：標題包含 match（以及 require，如果給了）時，
+    把「實際 − 公佈時凍結的預期」乘以 scale 寫進 series（日期 = 公佈的北京時間日期）。"""
+    match: str
+    require: str | None = None          # 例如單位「万桶」：標題裡沒有它就不換算，免得單位錯了還照算
+    series: str
+    scale: float = 1.0
+    note: str | None = None
+
+
+class Jin10Settings(Strict):
+    """金十數據（MCP）的設定。token 不在這裡：用 crudelab secret set JIN10_TOKEN 保存。"""
+    url: str = Field(default="https://mcp.jin10.com/mcp", pattern=r"^https://")
+    protocol_version: str = "2025-11-25"
+    max_calls_per_tool_per_day: int = Field(default=1000, ge=1, le=1500)   # 對方的上限是 1500，留出餘量
+    calendar_rules: list[CalendarRule] = []
+    flash_keywords: list[str] = []
+    flash_pages: int = Field(default=3, ge=1, le=10)
 
 
 # ------------------------------ 備份 ------------------------------

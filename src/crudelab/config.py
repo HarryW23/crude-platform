@@ -21,6 +21,7 @@ config/ 的結構：
     fair_value.yaml            基本面公允價值模型
     backup.yaml                備份位置與保留策略
     llm.yaml                   大模型的調用限制
+    jin10.yaml                 金十數據：額度、財經日曆的換算規則、快訊關鍵詞
 
 校驗一次做完並一次報全：結構（字段名、類型）、引用（單位、地區、品種、公式裡的名字）、
 唯一性（代碼、別名）、公式語法、循環引用、量綱。任何一項不過，整份配置都不生效。
@@ -50,6 +51,7 @@ from .schema import (
     FairValueModel,
     FreshnessDef,
     IndicatorDef,
+    Jin10Settings,
     LLMSettings,
     LocationDef,
     NotificationsDef,
@@ -103,6 +105,7 @@ class Config:
     backtest: BacktestSettings = field(default_factory=BacktestSettings)
     backup: BackupSettings = field(default_factory=BackupSettings)
     llm: LLMSettings = field(default_factory=LLMSettings)
+    jin10: Jin10Settings = field(default_factory=Jin10Settings)
     fair_values: dict[str, FairValueModel] = field(default_factory=dict)
     curves: dict[str, CurveDef] = field(default_factory=dict)          # 期貨曲線：代碼 → 模板
 
@@ -260,6 +263,9 @@ def load_config(config_dir: Path) -> Config:
     backtest_path = config_dir / "backtest.yaml"
     if backtest_path.exists():
         cfg.backtest = ld.build(BacktestSettings, ld.read(backtest_path) or {}, backtest_path) or BacktestSettings()
+    jin10_path = config_dir / "jin10.yaml"
+    if jin10_path.exists():
+        cfg.jin10 = ld.build(Jin10Settings, ld.read(jin10_path) or {}, jin10_path) or Jin10Settings()
     llm_path = config_dir / "llm.yaml"
     if llm_path.exists():
         cfg.llm = ld.build(LLMSettings, ld.read(llm_path) or {}, llm_path) or LLMSettings()
@@ -441,6 +447,9 @@ def _validate_indicators(cfg: Config) -> list[str]:
 
     for code in cfg.indicators:
         visit(code, [])
+    for rule in cfg.jin10.calendar_rules:
+        if rule.series not in cfg.series:
+            errors.append(f"jin10.yaml：日曆規則「{rule.match}」寫入的序列 {rule.series} 不存在")
     if any("循環引用" in e for e in errors):
         return errors
 

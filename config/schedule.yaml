@@ -14,6 +14,7 @@
 #     report         生成報告。kind: daily / weekly / monthly；narrative: true 會調用大模型寫解讀（要花錢）
 #     check_freshness  檢查數據有沒有斷更（規則在 freshness.yaml）。有斷更時記為失敗，從而觸發通知
 #     backup         備份數據庫、配置和原始文件，並清理舊備份（位置和保留策略在 backup.yaml）
+#     calendar       同步金十財經日曆，把超預期換算成序列（規則在 jin10.yaml）
 timezone: Asia/Shanghai
 
 jobs:
@@ -26,6 +27,9 @@ jobs:
 
   # CFTC 持倉報告：美東周五下午發佈（北京時間周六凌晨），周六早上取；漏了的話周日補（catch_up_hours）
   - {code: PULL_CFTC, name_zh: 取 CFTC 持倉, action: pull, source: cftc, at: "08:10", days: [sat, sun], catch_up_hours: 24}
+
+  # 金十財經日曆：每 2 小時同步一次（公佈後的實際值最多 2 小時內入庫）。沒設 JIN10_TOKEN 時只記「跳過」
+  - {code: SYNC_JIN10_CALENDAR, name_zh: 同步財經日曆, action: calendar, every_minutes: 120}
 
   # 每個工作日早上檢查一次有沒有數據斷更；持續斷更時按 notifications.yaml 的 repeat_hours 提醒
   - {code: CHECK_FRESHNESS, name_zh: 檢查數據斷更, action: check_freshness, at: "09:15", days: weekdays}

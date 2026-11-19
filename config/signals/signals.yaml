@@ -32,6 +32,11 @@
 - {code: SIG_ICE_GASOIL_CRACK, name_zh: ICE 柴油裂解, module: refinery, input: CRK_ICE_GASOIL, direction: 1}
 - {code: SIG_SG_MARGIN, name_zh: 新加坡複雜型毛利, module: refinery, input: RM_SG_COMPLEX_MARGIN, direction: 1}
 
+# ---------- 超預期（金十財經日曆） ----------
+# EIA 原油庫存「實際 − 公佈時的預期」：累庫比預期多偏利空。從接入金十那天起才開始積累，半年內樣本不足、不出分。
+- {code: SIG_EIA_CRUDE_SURPRISE, name_zh: EIA 原油庫存超預期, module: balance, input: CAL_EIA_CRUDE_SURPRISE, direction: -1,
+   lookback_days: 730, min_points: 26, notes: 正 = 累庫比預期多，偏利空}
+
 # ---------- 資金持倉 ----------
 # 逆向信號：管理基金淨多頭佔總持倉的比例處在三年高位時，做多已經很擁擠，之後回吐的風險大（direction: -1）。
 # 這是常見的用法，但不是定律：推演頁的「歷史表現」會顯示它在回測裡是否成立，如果是「方向相反」就該改方向。

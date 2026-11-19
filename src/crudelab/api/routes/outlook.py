@@ -50,6 +50,18 @@ def signals(session: Session = Depends(get_db), engine: IndicatorEngine = Depend
     return signal_service.compute(session, engine)
 
 
+@router.get("/calendar")
+def calendar(days_back: int = 7, days_ahead: int = 21, min_star: int = 0, session: Session = Depends(get_db),
+             state: AppState = Depends(get_state)):
+    """財經日曆（來自金十）：最近幾天已公佈的和之後幾周要公佈的，附「實際 − 公佈時的預期」。"""
+    from ... import credentials, jin10
+    rows = jin10.calendar_view(session, max(0, min(days_back, 90)), max(0, min(days_ahead, 90)), min_star)
+    rules = [r.match for r in state.cfg.jin10.calendar_rules]
+    for r in rows:
+        r["tracked"] = any(m in r["title"] for m in rules)
+    return {"configured": bool(credentials.get("JIN10_TOKEN")), "events": rows}
+
+
 @router.get("/signals/track-record")
 def track_record(session: Session = Depends(get_db), state: AppState = Depends(get_state)):
     """最近一次完成的回測裡，各信號、模組、綜合分數在各期限的表現和結論（有效 / 方向相反 / 不顯著 / 樣本不足）。"""

@@ -154,8 +154,30 @@ def _backup(session: Session, cfg: Config, settings: Settings, job: JobDef) -> R
     return "ok", message, {"backup": made["name"], "size": made["size"], "removed": removed}
 
 
+def _calendar(session: Session, cfg: Config, settings: Settings, job: JobDef) -> Result:
+    """同步金十財經日曆。沒設 token 時記為「跳過」；本地額度到了也記為跳過（明天自動恢復）。"""
+    from . import jin10
+    from .connectors.mcp import MCPError
+    try:
+        client = jin10.Jin10(cfg)
+    except jin10.Jin10NotReady as exc:
+        return "skipped", str(exc), {}
+    try:
+        stats = jin10.sync_calendar(session, cfg, client)
+    except jin10.Jin10LimitReached as exc:
+        return "skipped", str(exc), {}
+    except MCPError as exc:
+        raise JobError(str(exc)) from None
+    finally:
+        client.close()
+    message = f"日曆 {stats['items']} 項：新增 {stats['new']}，更新 {stats['updated']}，新公佈 {stats['released']}"
+    if stats["observations"]:
+        message += f"，寫入超預期 {stats['observations']} 個"
+    return "ok", message, stats
+
+
 ACTIONS = {"pull": _pull, "import_folder": _import_folder, "report": _report, "check_freshness": _check_freshness,
-           "backup": _backup}
+           "backup": _backup, "calendar": _calendar}
 
 
 # ------------------------------ 認領與執行 ------------------------------

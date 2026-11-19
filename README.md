@@ -36,6 +36,7 @@
 - **期貨曲線**：Brent、WTI、迪拜掉期、上海原油等 M1–M12 整條曲線，對比 1 周前和 1 個月前，標出近強遠弱 / 近弱遠強、M1 − M12 和蝶式（M1 − 2×M6 + M12）。曲線形態也作為指標（M1−M6、M1−M12、M6−M12、蝶式）可以看走勢和追溯。缺的月份留空，不插值。
 - **期貨換月**：按交易所規則推算每天的 M1 是哪個合約（例如 M1 = 2026-12）。日變化、5 日 / 20 日變化按同一組合約對比，推演的波動率和回測收益用換月調整後的價格，換月當天兩個合約之間的價差不再當成漲跌；走勢圖上用豎虛線標出換月日。
 - **基本面公允價值**：按曲線結構和庫存估算價格「應該」在哪、現在偏離多少、偏離通常多快消退，並拆出每個因子的貢獻。推演可以選擇把「預計消退的偏離」作為漂移計入。模型解釋力不足或偏離不回歸時，明說原因並不給漂移。
+- **財經日曆**（金十）：之後四周的數據和事件（EIA、OPEC+、美聯儲、非農等），帶前值、市場預期和實際值。公佈時把當時的預期凍結下來，EIA / API 庫存的「實際 − 預期」記成序列和信號（從接入那天起積累，金十的日曆接口不給歷史）。
 - **觀點覆盤**：記下自己的判斷（期限、方向、目標區間、把握、理由），系統同時記下當時的價格、波動率和系統信號；到期自動評分（方向用換月調整後的收益、按當時波動率劃定「沒怎麼動」），統計命中率、區間命中、把握是否校準（Brier），並按理由分類，和系統信號、「一直看多」對照。記下後不能改，只能在到期前撤銷。
 - **回測**：拿歷史檢驗方向信號和推演的價格區間。每個信號給出命中率（並和「一直看多 / 看空」比）、IC、有效樣本數和是否顯著；推演區間給出實際覆蓋率。
 - **報告**：一鍵生成日報 / 周報 / 月報，是那一刻的快照；可下載 Markdown、列印成 PDF；可讓大模型加一段解讀（解讀裡的數字會和正文逐個核對）。
@@ -134,6 +135,7 @@ Windows 把 `.venv/bin/` 換成 `.venv\Scripts\`。
 | `crudelab backtest` | 回測信號和推演區間 |
 | `crudelab backup` / `backup list` / `backup verify 文件` | 立即備份 / 列出備份 / 校驗一份備份 |
 | `crudelab restore 文件 --yes` | 從備份恢復（先自動備份現在的數據） |
+| `crudelab jin10 probe` / `jin10 usage` | 金十：檢測接口並列出數據的真實樣子 / 今天的調用次數 |
 | `crudelab llm models` / `llm use deepseek --model 型號 --thinking on` | 查能用的模型 / 選擇型號和思考模式（和後台同一個設定） |
 | `crudelab llm status` / `llm test` / `llm reset` | 大模型的配置和用量 / 連通測試 / 解除自動暫停 |
 | `crudelab local list` / `local set 名字 值` / `local unset 名字` | 這台機器自己的設定（不含密鑰），更新代碼不受影響 |
@@ -239,6 +241,27 @@ Windows 把 `.venv/bin/` 換成 `.venv\Scripts\`。
 
 系統需要哪些數據、從哪裡取得、需要什麼憑證、哪些要你確認授權，全部列在 [docs/data-requirements.md](docs/data-requirements.md)。
 這份清單由 `crudelab data-needs` 從配置生成。
+
+## 金十數據
+
+財經日曆（含市場預期）來自金十的 MCP 接口。接入：
+
+1. 在你的電腦上保存 token（輸入不顯示，只存在 `~/.crudelab/secrets.env`）：
+
+   ```bash
+   .venv/bin/crudelab secret set JIN10_TOKEN
+   ```
+
+2. 檢測：列出工具、品種代碼、日曆和快訊的真實樣子（輸出裡沒有 token，可以發給負責平台的人核對）：
+
+   ```bash
+   .venv/bin/crudelab jin10 probe
+   ```
+
+3. 之後定時任務「同步財經日曆」每 2 小時同步一次；`crudelab jin10 usage` 看今天各工具用了幾次。
+
+額度：對方每個工具每天 1500 次，`config/jin10.yaml` 再設一個 1000 次的上限，超過就不發請求。
+日曆項目怎麼換算成序列（例如 EIA 原油庫存，万桶 → 千桶）也在 `config/jin10.yaml`；標題寫法要用 probe 的輸出核對。
 
 ## 從路透（LSEG Workspace）取數
 
@@ -441,6 +464,7 @@ src/crudelab/
   contracts.py          合約日曆與換月處理
   fair_value.py         基本面公允價值
   journal.py            觀點記錄與覆盤
+  jin10.py              金十數據：額度、財經日曆（connectors/mcp.py 是通用的 MCP 客戶端）
   backtest.py           回測
   backup.py             備份與恢復
   connectors/ imports.py 數據接入

@@ -48,7 +48,11 @@ RBOB_M2                  RBc2
 HO_M1                    HOc1
 HO_M2                    HOc2
 
-# 下面 62 條可能在路透上，但還不知道 RIC（現貨評估價通常要另外訂閱 Platts / Argus）：
+# 下面 66 條可能在路透上，但還不知道 RIC（現貨評估價通常要另外訂閱 Platts / Argus）：
+# CAL_EIA_CRUDE_SURPRISE ?    EIA 原油庫存超預期
+# CAL_EIA_GASOLINE_SURPRISE ?    EIA 汽油庫存超預期
+# CAL_EIA_DISTILLATE_SURPRISE ?    EIA 餾分油庫存超預期
+# CAL_API_CRUDE_SURPRISE ?    API 原油庫存超預期
 # DUBAI_SWAP_M1          ?    迪拜掉期 M1
 # DUBAI_SWAP_M2          ?    迪拜掉期 M2
 # DUBAI_SWAP_M3          ?    迪拜掉期 M3

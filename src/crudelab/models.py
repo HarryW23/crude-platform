@@ -346,6 +346,40 @@ class AppSetting(Base):
     updated_by: Mapped[str] = mapped_column(String(64))
 
 
+class ExternalCall(Base):
+    """一次對外部數據服務的調用（目前是金十）。用來按「每個工具每天」計數、守住對方的額度，也讓人看得到用量。"""
+    __tablename__ = "external_call"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source: Mapped[str] = mapped_column(String(32))
+    tool: Mapped[str] = mapped_column(String(64))
+    day: Mapped[date] = mapped_column(Date, index=True)             # 對方計額度的日曆日（金十按北京時間）
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    status: Mapped[str] = mapped_column(String(16))                  # ok / failed
+    message: Mapped[str | None] = mapped_column(Text)
+
+
+class CalendarEvent(Base):
+    """財經日曆的一項（例如 EIA 原油庫存）。預期值會在公佈前變動：實際值第一次出現時，把當時的預期凍結下來，
+    「超預期」一律用凍結的預期算，避免事後修改的預期讓歷史看起來更準。"""
+    __tablename__ = "calendar_event"
+    __table_args__ = (UniqueConstraint("source", "key"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source: Mapped[str] = mapped_column(String(32))
+    key: Mapped[str] = mapped_column(String(64))                     # 公佈時間 + 標題的雜湊
+    pub_time: Mapped[datetime] = mapped_column(DateTime, index=True)  # UTC
+    title: Mapped[str] = mapped_column(String(300))
+    star: Mapped[int | None] = mapped_column(Integer)                 # 重要性 1–5
+    previous: Mapped[str | None] = mapped_column(String(64))
+    consensus: Mapped[str | None] = mapped_column(String(64))
+    actual: Mapped[str | None] = mapped_column(String(64))
+    revised: Mapped[str | None] = mapped_column(String(64))
+    affect: Mapped[str | None] = mapped_column(String(64))            # 對方給的「利多 / 利空」說明
+    consensus_at_release: Mapped[str | None] = mapped_column(String(64))
+    released_at: Mapped[datetime | None] = mapped_column(DateTime)    # 我們第一次看到實際值的時間
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
 class LLMCall(Base):
     """一次大模型調用。用來做跨進程的頻率和用量限制，也讓人看得到花了多少。不存發出去的內容和回覆。"""
     __tablename__ = "llm_call"

@@ -64,3 +64,14 @@ series:
      frequency: quarterly, module: balance, aliases: ["OPEC World Demand", "OPEC全球需求"]}
   - {code: OPEC_CALL_ON_OPEC, name_zh: 對 OPEC 原油的需求（OPEC）, commodity: GLOBAL_FUNDAMENTAL, location: OPEC, kind: flow, unit: mb/d,
      frequency: quarterly, module: balance, aliases: ["Call on OPEC", "對OPEC原油需求"]}
+
+  # ---------- 超預期（來自金十財經日曆，實際 − 公佈時的市場預期） ----------
+  # 由 config/jin10.yaml 的 calendar_rules 換算寫入。只有從接入那天起才有數據（日曆接口不給歷史），要積累一段時間。
+  - {code: CAL_EIA_CRUDE_SURPRISE, name_zh: EIA 原油庫存超預期, commodity: US_FUNDAMENTAL, location: US, kind: stock, unit: kb,
+     frequency: weekly, module: balance, notes: 正 = 累庫比預期多（或去庫比預期少），偏利空}
+  - {code: CAL_EIA_GASOLINE_SURPRISE, name_zh: EIA 汽油庫存超預期, commodity: US_FUNDAMENTAL, location: US, kind: stock, unit: kb,
+     frequency: weekly, module: balance}
+  - {code: CAL_EIA_DISTILLATE_SURPRISE, name_zh: EIA 餾分油庫存超預期, commodity: US_FUNDAMENTAL, location: US, kind: stock, unit: kb,
+     frequency: weekly, module: balance}
+  - {code: CAL_API_CRUDE_SURPRISE, name_zh: API 原油庫存超預期, commodity: US_FUNDAMENTAL, location: US, kind: stock, unit: kb,
+     frequency: weekly, module: balance}

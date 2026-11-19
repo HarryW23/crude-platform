@@ -38,6 +38,7 @@ KNOWN: dict[str, str] = {
     "NOTIFY_SLACK_WEBHOOK": "通知：Slack 的 incoming webhook 地址",
     "NOTIFY_WEBHOOK_URL": "通知：自定義接收地址",
     "SMTP_PASSWORD": "通知：發郵件用的郵箱密碼或授權碼",
+    "JIN10_TOKEN": "金十數據（MCP）的 Bearer token",
     "LSEG_APP_KEY": "路透 / LSEG 數據 API（預留）",
     "LSEG_USERNAME": "路透 / LSEG 帳號（預留）",
     "LSEG_PASSWORD": "路透 / LSEG 密碼（預留）",

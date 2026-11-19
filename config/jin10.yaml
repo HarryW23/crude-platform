@@ -1,0 +1,22 @@
+# 金十數據（MCP 接口）。token 用 crudelab secret set JIN10_TOKEN 保存，不寫在這裡。
+# 接上後先運行 crudelab jin10 probe：它會列出工具、品種代碼、日曆和快訊的樣子，用來核對下面的規則。
+#
+# 額度：對方每個工具每天最多 1500 次（北京時間的日曆日）。這裡再設一個更低的上限，超過就不發請求。
+
+max_calls_per_tool_per_day: 1000
+
+# 財經日曆 → 「超預期」序列。實際值第一次出現時，把當時的預期凍結下來，超預期 = 實際 − 凍結的預期。
+#   match    標題裡包含這段文字（金十用簡體）
+#   require  標題裡還必須包含這段文字（通常是單位），沒有就不換算：單位錯了寧可不算
+#   scale    換算係數。万桶 → 千桶 是 10
+# ⚠ 標題的寫法是按金十網站常見的格式登記的，還沒有用真實數據核對；probe 會列出實際標題。
+calendar_rules:
+  - {match: EIA原油库存, require: 万桶, series: CAL_EIA_CRUDE_SURPRISE, scale: 10, note: 万桶 → 千桶}
+  - {match: EIA汽油库存, require: 万桶, series: CAL_EIA_GASOLINE_SURPRISE, scale: 10, note: 万桶 → 千桶}
+  - {match: EIA精炼油库存, require: 万桶, series: CAL_EIA_DISTILLATE_SURPRISE, scale: 10, note: 万桶 → 千桶}
+  - {match: API原油库存, require: 万桶, series: CAL_API_CRUDE_SURPRISE, scale: 10, note: 万桶 → 千桶}
+
+# 原油相關快訊的關鍵詞（簡體，命中任一個就收錄；不分大小寫）
+flash_keywords: [原油, 石油, 油价, 布伦特, WTI, 欧佩克, OPEC, 沙特, 伊朗, 伊拉克, 俄罗斯石油, 霍尔木兹, 红海, 胡塞,
+                 炼厂, 炼油, 页岩, 钻井, EIA, API库存, 库欣, 战略储备, 油轮, 制裁]
+flash_pages: 3
