@@ -2,21 +2,24 @@
 
 > 這份文檔由 `crudelab data-needs --output docs/data-requirements.md` 從 `config/` 生成。不要手改；改了配置後重新生成。
 
-系統目前定義了 **158 條序列**，供 132 個指標、5 個煉廠模型、2 張平衡表使用。下面按「從哪裡取得」分組。任何序列都可以用 Excel 導入或在後台手動錄入，接口只是省去人工。
+系統目前定義了 **164 條序列**，供 142 個指標、5 個煉廠模型、2 張平衡表使用。下面按「從哪裡取得」分組。任何序列都可以用 Excel 導入或在後台手動錄入，接口只是省去人工。
 
 ## 一覽
 
 | 來源 | 序列數 | 現在怎麼取得 | 需要的憑證 | 狀態 |
 |---|---|---|---|---|
-| EIA（美國能源信息署）公開數據 | 24 | 接口自動取數：後台「數據源」頁點「立即取數」，或 `crudelab pull eia` | `EIA_API_KEY`，在 eia.gov/opendata 免費申請 | 接口已寫好，**沒有用真實密鑰調用過** |
+| EIA（美國能源信息署）公開數據 | 27 | 接口自動取數：後台「數據源」頁點「立即取數」，或 `crudelab pull eia` | `EIA_API_KEY`，在 eia.gov/opendata 免費申請 | 接口已寫好，**沒有用真實密鑰調用過** |
 | 國際交易所期貨結算價（ICE、NYMEX、DME / IFAD） | 33 | 路透終端導出 Excel 後在後台導入 | 路透 / LSEG 訂閱；之後可接 LSEG API（`LSEG_*`） | Excel 導入可用；API 預留 |
 | 國內交易所期貨結算價（INE、上期所、大商所、鄭商所） | 19 | 路透或 Wind 導出 Excel 後導入 | 路透 / Wind 等任一行情訂閱 | Excel 導入可用 |
-| 報價機構的現貨評估價（Platts、Argus 等） | 57 | 路透終端導出 Excel 後導入 | 路透訂閱 **加** 對應報價機構的授權 | Excel 導入可用 |
+| 報價機構的現貨評估價（Platts、Argus 等） | 44 | 路透終端導出 Excel 後導入 | 路透訂閱 **加** 對應報價機構的授權 | Excel 導入可用 |
 | 產油國官方售價（沙特、伊拉克等） | 5 | 每月公佈一次，手動錄入或隨 Excel 導入 | 公開信息，路透有轉載 | 手動 / Excel |
 | 油輪運價（波羅的海交易所 TD 航線） | 4 | 路透終端導出 Excel 後導入 | 路透訂閱（含波羅的海交易所數據） | Excel 導入可用 |
-| 匯率 | 4 | 路透導出 Excel 後導入 | 任一行情訂閱 | Excel 導入可用 |
-| 國內現貨價（隆眾、卓創、金聯創等） | 8 | 資訊商網站或終端導出 Excel 後導入 | 國內資訊商訂閱；之後可接其 API（`CN_VENDOR_API_KEY`） | Excel 導入可用；API 預留 |
+| 匯率 | 1 | 路透導出 Excel 後導入 | 任一行情訂閱 | Excel 導入可用 |
+| 國內現貨價（隆眾、卓創、金聯創等） | 10 | 資訊商網站或終端導出 Excel 後導入 | 國內資訊商訂閱；之後可接其 API（`CN_VENDOR_API_KEY`） | Excel 導入可用；API 預留 |
 | 機構月報（IEA、OPEC） | 4 | 從月報的表格整理成 Excel 後導入 | IEA 月報需訂閱；OPEC 月報公開 | Excel 導入可用 |
+| 煉廠檢修（諮詢機構） | 1 | 從諮詢機構的報告整理成 Excel 後導入 | IIR、Platts、Energy Aspects 等任一家的訂閱 | Excel 導入可用 |
+| CFTC / ICE 持倉報告 | 6 | 定時任務自動取（CFTC 公開接口；ICE 由路透導出） | CFTC 不需要；ICE 見路透 | CFTC 接口已接通 |
+| 金十數據 | 10 | 定時任務自動取（財經日曆、報價） | `JIN10_TOKEN`（`crudelab secret set JIN10_TOKEN`） | 已接通 |
 
 序列有沒有數據、最新到哪一天，在後台的「序列」頁看。
 
@@ -38,7 +41,10 @@
 | `EIA_CRUDE_IMPORTS`　`PET.WCRIMUS2.W` | 美國原油進口 | kb/d | 周 | 供需 2 |
 | `EIA_CRUDE_EXPORTS`　`PET.WCREXUS2.W` | 美國原油出口 | kb/d | 周 | 供需 2 |
 | `EIA_REFINERY_INPUT`　`PET.WCRRIUS2.W` | 美國煉廠原油加工量 | kb/d | 周 | 供需 4 |
-| `EIA_REFINERY_UTIL`　`PET.WPULEUS3.W` | 美國煉廠開工率 | pct | 周 | （目前沒有指標用到） |
+| `EIA_REFINERY_UTIL`　`PET.WPULEUS3.W` | 美國煉廠開工率 | pct | 周 | 煉廠 2 |
+| `EIA_REFINERY_GROSS_INPUT`　`PET.WGIRIUS2.W` | 美國煉廠總投入量 | kb/d | 周 | 煉廠 2 |
+| `EIA_REFINERY_CAPACITY`　`PET.WOCLEUS2.W` | 美國煉廠可運行產能（常減壓） | kb/d | 周 | 煉廠 2 |
+| `EIA_PADD3_REFINERY_UTIL`　`PET.W_NA_YUP_R30_PER.W` | 美灣（PADD 3）煉廠開工率 | pct | 周 | 煉廠 1 |
 | `EIA_PRODUCT_SUPPLIED`　`PET.WRPUPUS2.W` | 美國成品油表觀需求（合計） | kb/d | 周 | 供需 2 |
 | `EIA_GASOLINE_SUPPLIED`　`PET.WGFUPUS2.W` | 美國汽油表觀需求 | kb/d | 周 | 供需 2 |
 | `EIA_DISTILLATE_SUPPLIED`　`PET.WDIUPUS2.W` | 美國餾分油表觀需求 | kb/d | 周 | 供需 2 |
@@ -121,10 +127,6 @@
 
 | 代碼 | 名稱 | 單位 | 頻率 | 用到它的指標 |
 |---|---|---|---|---|
-| `CAL_EIA_CRUDE_SURPRISE` | EIA 原油庫存超預期 | kb | 周 | （目前沒有指標用到） |
-| `CAL_EIA_GASOLINE_SURPRISE` | EIA 汽油庫存超預期 | kb | 周 | （目前沒有指標用到） |
-| `CAL_EIA_DISTILLATE_SURPRISE` | EIA 餾分油庫存超預期 | kb | 周 | （目前沒有指標用到） |
-| `CAL_API_CRUDE_SURPRISE` | API 原油庫存超預期 | kb | 周 | （目前沒有指標用到） |
 | `DUBAI_SWAP_M1` | 迪拜掉期 M1 | USD/bbl | 日 | 煉廠 9、地域價差 11 |
 | `DUBAI_SWAP_M2` | 迪拜掉期 M2 | USD/bbl | 日 | 煉廠 1、地域價差 4 |
 | `DUBAI_SWAP_M3` | 迪拜掉期 M3 | USD/bbl | 日 | 地域價差 1 |
@@ -153,15 +155,6 @@
 | `MARS_DIFF` | Mars 升貼水 | USD/bbl | 日 | 地域價差 2 |
 | `WCS_HARDISTY_DIFF` | WCS（哈迪斯蒂）升貼水 | USD/bbl | 日 | 地域價差 1 |
 | `TUPI_CHINA_DIFF` | Tupi 到中國升貼水（到岸） | USD/bbl | 日 | 地域價差 1 |
-| `MACRO_XAUUSD` | 現貨黃金 | USD/oz | 日 | 資金持倉 2 |
-| `JIN10_UKOIL` | 布倫特原油報價（金十） | USD/bbl | 日 | 資金持倉 1 |
-| `JIN10_USOIL` | WTI 原油報價（金十） | USD/bbl | 日 | （目前沒有指標用到） |
-| `CFTC_WTI_MM_LONG` | WTI 管理基金多頭 | lots | 周 | 資金持倉 5 |
-| `CFTC_WTI_MM_SHORT` | WTI 管理基金空頭 | lots | 周 | 資金持倉 5 |
-| `CFTC_WTI_OI` | WTI 總持倉量 | lots | 周 | 資金持倉 1 |
-| `ICE_BRENT_MM_LONG` | Brent 管理基金多頭 | lots | 周 | 資金持倉 5 |
-| `ICE_BRENT_MM_SHORT` | Brent 管理基金空頭 | lots | 周 | 資金持倉 5 |
-| `ICE_BRENT_OI` | Brent 總持倉量 | lots | 周 | 資金持倉 1 |
 | `SG_GASOLINE_92` | 新加坡 92# 汽油 | USD/bbl | 日 | 煉廠 3 |
 | `SG_GASOIL_10PPM` | 新加坡 10ppm 柴油 | USD/bbl | 日 | 煉廠 4 |
 | `SG_JET_KERO` | 新加坡航煤 | USD/bbl | 日 | 煉廠 4 |
@@ -204,9 +197,6 @@ WS 點折成 美元/桶 還需要 Worldscale 每年的基準費率，見下面�
 
 | 代碼 | 名稱 | 單位 | 頻率 | 用到它的指標 |
 |---|---|---|---|---|
-| `MACRO_USDCNH` | 美元兌離岸人民幣 | CNY/USD | 日 | 資金持倉 2 |
-| `MACRO_EURUSD` | 歐元兌美元 | USD/EUR | 日 | 資金持倉 1 |
-| `MACRO_USDJPY` | 美元兌日元 | JPY/USD | 日 | 資金持倉 1 |
 | `USDCNY` | 美元兌人民幣（1 美元合多少人民幣） | CNY/USD | 日 | 資金持倉 1、煉廠 6、地域價差 4 |
 
 ### 國內現貨價（隆眾、卓創、金聯創等）
@@ -215,6 +205,8 @@ WS 點折成 美元/桶 還需要 Worldscale 每年的基準費率，見下面�
 
 | 代碼 | 名稱 | 單位 | 頻率 | 用到它的指標 |
 |---|---|---|---|---|
+| `CN_SD_TEAPOT_UTIL` | 山東地煉常減壓開工率 | pct | 周 | 煉廠 2 |
+| `CN_MAJOR_REFINERY_UTIL` | 中國主營煉廠開工率 | pct | 周 | 煉廠 1 |
 | `SD_GASOLINE_92` | 山東地煉 92# 汽油 | CNY/t | 日 | 煉廠 4 |
 | `SD_DIESEL_0` | 山東地煉 0# 柴油 | CNY/t | 日 | 煉廠 4 |
 | `SD_LPG` | 山東民用液化氣 | CNY/t | 日 | 煉廠 2 |
@@ -234,6 +226,42 @@ WS 點折成 美元/桶 還需要 Worldscale 每年的基準費率，見下面�
 | `IEA_WORLD_SUPPLY` | 全球供應（IEA） | mb/d | 季 | 供需 1 |
 | `OPEC_WORLD_DEMAND` | 全球需求（OPEC） | mb/d | 季 | 供需 1 |
 | `OPEC_CALL_ON_OPEC` | 對 OPEC 原油的需求（OPEC） | mb/d | 季 | （目前沒有指標用到） |
+
+### 煉廠檢修（諮詢機構）
+
+全球煉廠停工量（檢修 + 非計劃）。各家口徑不同，固定用一家。
+
+| 代碼 | 名稱 | 單位 | 頻率 | 用到它的指標 |
+|---|---|---|---|---|
+| `GLOBAL_REFINERY_OUTAGES` | 全球煉廠停工量（檢修 + 非計劃） | kb/d | 月 | 煉廠 2 |
+
+### CFTC / ICE 持倉報告
+
+| 代碼 | 名稱 | 單位 | 頻率 | 用到它的指標 |
+|---|---|---|---|---|
+| `CFTC_WTI_MM_LONG` | WTI 管理基金多頭 | lots | 周 | 資金持倉 5 |
+| `CFTC_WTI_MM_SHORT` | WTI 管理基金空頭 | lots | 周 | 資金持倉 5 |
+| `CFTC_WTI_OI` | WTI 總持倉量 | lots | 周 | 資金持倉 1 |
+| `ICE_BRENT_MM_LONG` | Brent 管理基金多頭 | lots | 周 | 資金持倉 5 |
+| `ICE_BRENT_MM_SHORT` | Brent 管理基金空頭 | lots | 周 | 資金持倉 5 |
+| `ICE_BRENT_OI` | Brent 總持倉量 | lots | 周 | 資金持倉 1 |
+
+### 金十數據
+
+報價只保存最近 1 個交易日，歷史補不了，從接上那天起積累。
+
+| 代碼 | 名稱 | 單位 | 頻率 | 用到它的指標 |
+|---|---|---|---|---|
+| `CAL_EIA_CRUDE_SURPRISE` | EIA 原油庫存超預期 | kb | 周 | （目前沒有指標用到） |
+| `CAL_EIA_GASOLINE_SURPRISE` | EIA 汽油庫存超預期 | kb | 周 | （目前沒有指標用到） |
+| `CAL_EIA_DISTILLATE_SURPRISE` | EIA 餾分油庫存超預期 | kb | 周 | （目前沒有指標用到） |
+| `CAL_API_CRUDE_SURPRISE` | API 原油庫存超預期 | kb | 周 | （目前沒有指標用到） |
+| `MACRO_USDCNH` | 美元兌離岸人民幣 | CNY/USD | 日 | 資金持倉 2 |
+| `MACRO_EURUSD` | 歐元兌美元 | USD/EUR | 日 | 資金持倉 1 |
+| `MACRO_USDJPY` | 美元兌日元 | JPY/USD | 日 | 資金持倉 1 |
+| `MACRO_XAUUSD` | 現貨黃金 | USD/oz | 日 | 資金持倉 2 |
+| `JIN10_UKOIL` | 布倫特原油報價（金十） | USD/bbl | 日 | 資金持倉 1 |
+| `JIN10_USOIL` | WTI 原油報價（金十） | USD/bbl | 日 | （目前沒有指標用到） |
 
 ## 需要外部數據的參數
 

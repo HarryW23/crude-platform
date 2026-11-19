@@ -58,6 +58,13 @@ PROVIDERS: dict[str, Provider] = {p.code: p for p in (
              "山東地煉汽柴油、液化氣、石油焦，華東汽柴油和純苯，航煤出廠價。兩個中國煉廠模型依賴這一組。"),
     Provider("agency", "機構月報（IEA、OPEC）", "從月報的表格整理成 Excel 後導入",
              "IEA 月報需訂閱；OPEC 月報公開", "Excel 導入可用", "只用於和 EIA 口徑對照，不影響平衡表本身。"),
+    Provider("consult", "煉廠檢修（諮詢機構）", "從諮詢機構的報告整理成 Excel 後導入",
+             "IIR、Platts、Energy Aspects 等任一家的訂閱", "Excel 導入可用",
+             "全球煉廠停工量（檢修 + 非計劃）。各家口徑不同，固定用一家。"),
+    Provider("cftc", "CFTC / ICE 持倉報告", "定時任務自動取（CFTC 公開接口；ICE 由路透導出）", "CFTC 不需要；ICE 見路透",
+             "CFTC 接口已接通"),
+    Provider("jin10", "金十數據", "定時任務自動取（財經日曆、報價）", "`JIN10_TOKEN`（`crudelab secret set JIN10_TOKEN`）",
+             "已接通", "報價只保存最近 1 個交易日，歷史補不了，從接上那天起積累。"),
 )}
 RESERVED_APIS = (
     ("Kpler", "`KPLER_API_TOKEN`", "船期、到港量、浮倉、分國別進出口流量",
@@ -66,8 +73,14 @@ RESERVED_APIS = (
 
 
 def provider_of(s: SeriesDef) -> str:
+    if s.provider:
+        return s.provider
     if s.eia_id:
         return "eia"
+    if s.jin10 or s.code.startswith("CAL_"):
+        return "jin10"
+    if s.cftc or s.kind == "position":
+        return "cftc"
     if s.code.startswith(("IEA_", "OPEC_")):
         return "agency"
     if s.kind == "fx":

@@ -48,11 +48,7 @@ RBOB_M2                  RBc2
 HO_M1                    HOc1
 HO_M2                    HOc2
 
-# 下面 72 條可能在路透上，但還不知道 RIC（現貨評估價通常要另外訂閱 Platts / Argus）：
-# CAL_EIA_CRUDE_SURPRISE ?    EIA 原油庫存超預期
-# CAL_EIA_GASOLINE_SURPRISE ?    EIA 汽油庫存超預期
-# CAL_EIA_DISTILLATE_SURPRISE ?    EIA 餾分油庫存超預期
-# CAL_API_CRUDE_SURPRISE ?    API 原油庫存超預期
+# 下面 56 條可能在路透上，但還不知道 RIC（現貨評估價通常要另外訂閱 Platts / Argus）：
 # DUBAI_SWAP_M1          ?    迪拜掉期 M1
 # DUBAI_SWAP_M2          ?    迪拜掉期 M2
 # DUBAI_SWAP_M3          ?    迪拜掉期 M3
@@ -82,22 +78,10 @@ HO_M2                    HOc2
 # MARS_DIFF              ?    Mars 升貼水
 # WCS_HARDISTY_DIFF      ?    WCS（哈迪斯蒂）升貼水
 # TUPI_CHINA_DIFF        ?    Tupi 到中國升貼水（到岸）
-# MACRO_USDCNH           ?    美元兌離岸人民幣
-# MACRO_EURUSD           ?    歐元兌美元
-# MACRO_USDJPY           ?    美元兌日元
-# MACRO_XAUUSD           ?    現貨黃金
-# JIN10_UKOIL            ?    布倫特原油報價（金十）
-# JIN10_USOIL            ?    WTI 原油報價（金十）
 # TD3C_WS                ?    TD3C 中東→中國 VLCC
 # TD15_WS                ?    TD15 西非→中國 VLCC
 # TD20_WS                ?    TD20 西非→歐洲 蘇伊士型
 # TD25_WS                ?    TD25 美灣→歐洲 阿芙拉型
-# CFTC_WTI_MM_LONG       ?    WTI 管理基金多頭
-# CFTC_WTI_MM_SHORT      ?    WTI 管理基金空頭
-# CFTC_WTI_OI            ?    WTI 總持倉量
-# ICE_BRENT_MM_LONG      ?    Brent 管理基金多頭
-# ICE_BRENT_MM_SHORT     ?    Brent 管理基金空頭
-# ICE_BRENT_OI           ?    Brent 總持倉量
 # SG_GASOLINE_92         ?    新加坡 92# 汽油
 # SG_GASOIL_10PPM        ?    新加坡 10ppm 柴油
 # SG_JET_KERO            ?    新加坡航煤

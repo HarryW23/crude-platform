@@ -17,7 +17,7 @@ def test_pages_and_empty_state(client):
     assert client.get("/").status_code == 200
     assert client.get("/static/js/app.js").status_code == 200
     o = client.get("/api/overview").json()
-    assert o["observations"] == 0 and o["indicators_ok"] == 0 and o["series_total"] == 158
+    assert o["observations"] == 0 and o["indicators_ok"] == 0 and o["series_total"] == 164
     assert o["parameters_missing"] == 6 and o["refinery_models"] == 5
     assert all(i["status"] != "ok" and i["last_value"] is None for i in client.get("/api/indicators").json())
     assert client.get("/api/refineries/CN_FUEL_SD").json()["breakdown"] is None
@@ -51,7 +51,7 @@ def test_data_flow(loaded_client, admin):
     assert admin.post("/api/observations", json={"points": [{**point, "series_code": "NOPE"}]}).status_code == 400
 
     sources = {s["code"]: s for s in admin.get("/api/sources").json()}
-    assert sources["kpler"]["ready"] is False and sources["eia"]["series_supported"] == 24
+    assert sources["kpler"]["ready"] is False and sources["eia"]["series_supported"] == 27
     assert admin.post("/api/sources/kpler/pull", json={}).status_code == 409
     assert admin.post("/api/sources/manual/pull", json={}).status_code == 404
     assert {a["action"] for a in admin.get("/api/audit").json()} >= {"import", "manual_entry"}

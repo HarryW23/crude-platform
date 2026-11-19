@@ -86,8 +86,10 @@ class ConfigError(ValueError):
 
 
 def normalize_alias(text: str) -> str:
-    """別名比對用的歸一化：忽略大小寫、空白和常見標點。"""
-    return _NORM_RE.sub("", str(text)).lower()
+    """別名比對用的歸一化：忽略大小寫、空白和常見標點，繁體轉成簡體。
+    國內資訊商導出的表頭是簡體（山东汽油92），配置裡寫的是繁體（山東汽油92）：兩種寫法都能認出來。"""
+    from .zh import to_simplified
+    return _NORM_RE.sub("", to_simplified(str(text))).lower()
 
 
 @dataclass

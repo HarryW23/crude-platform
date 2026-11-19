@@ -49,3 +49,4 @@
 - {code: GOLD,          name_zh: 黃金,             category: metals}
 - {code: US_FUNDAMENTAL, name_zh: 美國周度基本面,  category: fundamental}
 - {code: GLOBAL_FUNDAMENTAL, name_zh: 全球供需,     category: fundamental}
+- {code: CN_FUNDAMENTAL, name_zh: 中國基本面,       category: fundamental}

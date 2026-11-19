@@ -199,4 +199,9 @@ def test_data_requirements_doc_is_current_and_complete(cfg):
                      "DATED_BRENT": "pra", "ARAB_LIGHT_OSP_ASIA": "osp", "TD3C_WS": "freight", "USDCNY": "fx",
                      "SD_GASOLINE_92": "cn_vendor", "IEA_WORLD_DEMAND": "agency", "PP_CN": "exchange_cn",
                      "PX_CFR_CHINA": "pra"}
+    more = {code: provider_of(cfg.series[code]) for code in
+            ("CFTC_WTI_MM_LONG", "CAL_EIA_CRUDE_SURPRISE", "MACRO_XAUUSD", "GLOBAL_REFINERY_OUTAGES",
+             "CN_SD_TEAPOT_UTIL")}
+    assert more == {"CFTC_WTI_MM_LONG": "cftc", "CAL_EIA_CRUDE_SURPRISE": "jin10", "MACRO_XAUUSD": "jin10",
+                    "GLOBAL_REFINERY_OUTAGES": "consult", "CN_SD_TEAPOT_UTIL": "cn_vendor"}   # 自動取的不能歸到 Platts
     assert "FLAT_TD3C" in text and "PROJ_PRICE_PER_STOCK" in text

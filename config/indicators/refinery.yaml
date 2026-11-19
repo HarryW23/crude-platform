@@ -68,3 +68,26 @@
    formula: "PX_CFR_CHINA * USDCNY * (1 + CN_PX_TARIFF) * (1 + CN_VAT_RATE)"}
 - {code: PTA_PROCESSING_FEE, name_zh: PTA 加工費, module: refinery, group: 化工價差, unit: CNY/t, ffill_limit: 3,
    formula: "PTA_CN - PTA_PX_RATIO * PX_CN_CNY_T"}
+
+# ---------- 煉廠開工與檢修（#24） ----------
+# 開工率高 / 停工少 = 煉廠在多買原油，對原油需求偏利多；但成品油供應也多，對裂解偏利空。
+# 和過去 5 年同期比，去掉每年春秋檢修季的季節性（同期數據不足 5 年就不出值）。
+- {code: RU_US_UTIL, name_zh: 美國煉廠開工率, module: refinery, group: 煉廠開工, unit: pct, formula: "EIA_REFINERY_UTIL"}
+- {code: RU_US_UTIL_VS_5Y, name_zh: 美國開工率 − 五年同期均值, module: refinery, group: 煉廠開工, unit: pct,
+   formula: "EIA_REFINERY_UTIL - seasonal_avg(EIA_REFINERY_UTIL, 5)"}
+- {code: RU_US_PADD3_UTIL, name_zh: 美灣煉廠開工率, module: refinery, group: 煉廠開工, unit: pct,
+   formula: "EIA_PADD3_REFINERY_UTIL"}
+- {code: RU_US_OFFLINE, name_zh: 美國煉廠停掉的產能, module: refinery, group: 煉廠開工, unit: kb/d,
+   formula: "EIA_REFINERY_CAPACITY - EIA_REFINERY_GROSS_INPUT",
+   notes: 可運行產能 − 總投入量：檢修、故障和經濟性減產停掉的產能合計}
+- {code: RU_US_OFFLINE_VS_5Y, name_zh: 美國停掉的產能 − 五年同期均值, module: refinery, group: 煉廠開工, unit: kb/d,
+   formula: "RU_US_OFFLINE - seasonal_avg(RU_US_OFFLINE, 5)"}
+- {code: RU_GLOBAL_OUTAGES, name_zh: 全球煉廠停工量, module: refinery, group: 煉廠開工, unit: kb/d,
+   formula: "GLOBAL_REFINERY_OUTAGES", notes: 含計劃檢修和非計劃停工；未來月份是預測}
+- {code: RU_GLOBAL_OUTAGES_VS_5Y, name_zh: 全球停工量 − 五年同期均值, module: refinery, group: 煉廠開工, unit: kb/d,
+   formula: "GLOBAL_REFINERY_OUTAGES - seasonal_avg(GLOBAL_REFINERY_OUTAGES, 5)"}
+- {code: RU_CN_TEAPOT_UTIL, name_zh: 山東地煉開工率, module: refinery, group: 煉廠開工, unit: pct, formula: "CN_SD_TEAPOT_UTIL"}
+- {code: RU_CN_TEAPOT_YOY, name_zh: 山東地煉開工率同比, module: refinery, group: 煉廠開工, unit: pct,
+   formula: "yoy(CN_SD_TEAPOT_UTIL)", notes: 減去一年前同期；地煉受原油配額和稅費政策影響大，年份之間可比性差，只看同比}
+- {code: RU_CN_MAJOR_UTIL, name_zh: 中國主營煉廠開工率, module: refinery, group: 煉廠開工, unit: pct,
+   formula: "CN_MAJOR_REFINERY_UTIL"}

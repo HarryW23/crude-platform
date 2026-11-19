@@ -85,6 +85,7 @@ class SeriesDef(Strict):
     # 用於「對某個月生效」的數據，例如官價：12 月裝船的官價記在 2026-12-01，只用於 12 月，不是公布日。
     within_period: bool = False
     calendar: str | None = None          # 交易日曆（config/calendars.yaml），缺省只按周一到周五算
+    provider: str | None = None          # 從哪裡取得（數據需求清單的分組，見 data_needs.PROVIDERS）；缺省按序列類型推斷
 
     @model_validator(mode="after")
     def _period(self) -> SeriesDef:

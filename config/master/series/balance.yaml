@@ -26,6 +26,15 @@ series:
      frequency: weekly, module: balance, eia_id: PET.WCRRIUS2.W, aliases: ["US Refinery Crude Input", "美國煉廠加工量"]}
   - {code: EIA_REFINERY_UTIL, name_zh: 美國煉廠開工率, commodity: US_FUNDAMENTAL, location: US, kind: ratio, unit: pct,
      frequency: weekly, module: balance, eia_id: PET.WPULEUS3.W, aliases: ["US Refinery Utilization", "美國煉廠開工率"]}
+  - {code: EIA_REFINERY_GROSS_INPUT, name_zh: 美國煉廠總投入量, commodity: US_FUNDAMENTAL, location: US, kind: flow, unit: kb/d,
+     frequency: weekly, module: refinery, eia_id: PET.WGIRIUS2.W, aliases: ["US Refiner Gross Inputs", "美國煉廠總投入"],
+     notes: 進常減壓裝置的原油和其他原料；開工率 = 總投入量 ÷ 可運行產能}
+  - {code: EIA_REFINERY_CAPACITY, name_zh: 美國煉廠可運行產能（常減壓）, commodity: US_FUNDAMENTAL, location: US, kind: flow,
+     unit: kb/d, frequency: weekly, module: refinery, eia_id: PET.WOCLEUS2.W,
+     aliases: ["US Operable Crude Distillation Capacity", "美國煉廠可運行產能"]}
+  - {code: EIA_PADD3_REFINERY_UTIL, name_zh: 美灣（PADD 3）煉廠開工率, commodity: US_FUNDAMENTAL, location: USGC, kind: ratio,
+     unit: pct, frequency: weekly, module: refinery, eia_id: PET.W_NA_YUP_R30_PER.W,
+     aliases: ["PADD 3 Refinery Utilization", "美灣煉廠開工率"]}
   - {code: EIA_PRODUCT_SUPPLIED, name_zh: 美國成品油表觀需求（合計）, commodity: US_FUNDAMENTAL, location: US, kind: flow, unit: kb/d,
      frequency: weekly, module: balance, eia_id: PET.WRPUPUS2.W, aliases: ["US Total Product Supplied", "美國成品油表需"]}
   - {code: EIA_GASOLINE_SUPPLIED, name_zh: 美國汽油表觀需求, commodity: US_FUNDAMENTAL, location: US, kind: flow, unit: kb/d,
@@ -75,3 +84,17 @@ series:
      frequency: weekly, module: balance}
   - {code: CAL_API_CRUDE_SURPRISE, name_zh: API 原油庫存超預期, commodity: US_FUNDAMENTAL, location: US, kind: stock, unit: kb,
      frequency: weekly, module: balance}
+
+  # ---------- 煉廠檢修與開工（沒有免費接口：Excel 導入，或日後接資訊商 API） ----------
+  # 全球停工量：諮詢機構（例如 IIR、Platts、Energy Aspects）或 IEA 月報的「煉廠停工 / 檢修量」，含計劃與非計劃，
+  #   月度、記在月初，未來月份是預測。口徑各家不同，換來源時要從頭換，不要混著接。
+  - {code: GLOBAL_REFINERY_OUTAGES, name_zh: 全球煉廠停工量（檢修 + 非計劃）, commodity: GLOBAL_FUNDAMENTAL, location: GLOBAL,
+     kind: flow, unit: kb/d, frequency: monthly, module: refinery, provider: consult,
+     aliases: ["Global Refinery Outages", "Global Refinery Maintenance", "全球煉廠檢修量", "全球煉廠停工量"]}
+  # 中國開工率：國內資訊商（隆眾、卓創、金聯創等）的周度數據，口徑同樣要固定一家。
+  - {code: CN_SD_TEAPOT_UTIL, name_zh: 山東地煉常減壓開工率, commodity: CN_FUNDAMENTAL, location: SHANDONG, kind: ratio, unit: pct,
+     frequency: weekly, module: refinery, calendar: CN, provider: cn_vendor,
+     aliases: ["山東地煉開工率", "山東地煉常減壓開工率", "Shandong Teapot Utilization"]}
+  - {code: CN_MAJOR_REFINERY_UTIL, name_zh: 中國主營煉廠開工率, commodity: CN_FUNDAMENTAL, location: CHINA, kind: ratio, unit: pct,
+     frequency: weekly, module: refinery, calendar: CN, provider: cn_vendor,
+     aliases: ["主營煉廠開工率", "中國主營煉廠開工率", "China Major Refinery Utilization"]}

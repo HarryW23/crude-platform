@@ -31,6 +31,13 @@
 - {code: SIG_US_321, name_zh: 美國 3-2-1 裂解, module: refinery, input: CRK_US_321, direction: 1}
 - {code: SIG_ICE_GASOIL_CRACK, name_zh: ICE 柴油裂解, module: refinery, input: CRK_ICE_GASOIL, direction: 1}
 - {code: SIG_SG_MARGIN, name_zh: 新加坡複雜型毛利, module: refinery, input: RM_SG_COMPLEX_MARGIN, direction: 1}
+# 開工與檢修：煉廠多開工 = 多買原油（對原油偏利多）。和五年同期比，去掉季節性
+- {code: SIG_US_REFINERY_RUNS, name_zh: 美國煉廠開工偏離, module: refinery, input: RU_US_UTIL_VS_5Y, direction: 1,
+   lookback_days: 1095, min_points: 52, notes: 開工率高於五年同期越多，原油需求越強}
+- {code: SIG_GLOBAL_OUTAGES, name_zh: 全球煉廠停工偏離, module: refinery, input: RU_GLOBAL_OUTAGES_VS_5Y, direction: -1,
+   lookback_days: 1825, min_points: 24, notes: 停工量高於五年同期越多，原油需求越弱（但裂解偏強）}
+- {code: SIG_CN_TEAPOT_RUNS, name_zh: 山東地煉開工同比, module: refinery, input: RU_CN_TEAPOT_YOY, direction: 1,
+   lookback_days: 1095, min_points: 52, notes: 地煉開工高於去年同期，中國原油進口需求偏強}
 
 # ---------- 超預期（金十財經日曆） ----------
 # EIA 原油庫存「實際 − 公佈時的預期」：累庫比預期多偏利空。從接入金十那天起才開始積累，半年內樣本不足、不出分。
