@@ -116,17 +116,48 @@ def number(text) -> float | None:
 
 
 def parse_time(text) -> datetime | None:
-    """金十的時間（北京時間，例如 2026-11-19 23:30:00）→ 不帶時區的 UTC。"""
-    if not text:
+    """金十的時間 → 不帶時區的 UTC。三種寫法：
+      - 不帶時區的文本（例如 2026-11-19 23:30:00）：按北京時間
+      - 帶時區的 ISO 文本（例如 2026-11-19T11:21:25+08:00）：按它寫的時區
+      - 數字（K 線的 time）：Unix 時間戳，秒；大於 1e11 的按毫秒
+    """
+    if text is None or text == "" or isinstance(text, bool):
         return None
-    raw = str(text).strip().replace("T", " ").replace("/", "-")[:19]
+    utc = ZoneInfo("UTC")
+    if isinstance(text, (int, float)) or (isinstance(text, str) and text.strip().isdigit()):
+        stamp = float(text)
+        if stamp > 1e11:
+            stamp /= 1000
+        try:
+            return datetime.fromtimestamp(stamp, utc).replace(tzinfo=None)
+        except (OverflowError, OSError, ValueError):
+            return None
+    raw = str(text).strip().replace("/", "-")
+    if _TZ_SUFFIX.search(raw):
+        try:
+            return datetime.fromisoformat(raw.replace("Z", "+00:00")).astimezone(utc).replace(tzinfo=None)
+        except ValueError:
+            return None
+    raw = raw.replace("T", " ")[:19]
     for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
         try:
             local = datetime.strptime(raw, fmt).replace(tzinfo=BEIJING)
         except ValueError:
             continue
-        return local.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
+        return local.astimezone(utc).replace(tzinfo=None)
     return None
+
+
+_TZ_SUFFIX = re.compile(r"(Z|[+-]\d{2}:?\d{2})$")
+NEW_YORK = ZoneInfo("America/New_York")
+
+
+def trade_date(utc_naive: datetime) -> date | None:
+    """報價屬於哪個交易日：按紐約日期。外匯、黃金、原油都以紐約下午 5 點為一天的收盤，
+    北京時間早上 06:40 取到的價格 = 紐約前一天收盤後的價格，記在紐約那一天（和 EIA、CME 的日期對齊）。
+    紐約週六、週日沒有正常交易，回傳 None（不記）。"""
+    day = utc_naive.replace(tzinfo=ZoneInfo("UTC")).astimezone(NEW_YORK).date()
+    return None if day.weekday() >= 5 else day
 
 
 def beijing_date(utc_naive: datetime) -> date:
@@ -237,6 +268,16 @@ def flash_text(item: dict) -> str:
     return ""
 
 
+def flash_id(item: dict, when: datetime, text: str) -> str:
+    """快訊的唯一標識。金十的 list_flash 每條只有 content / time / url：有 id 用 id，否則用 url（每條快訊一個詳情頁），
+    都沒有才用時間 + 內容的摘要（內容被對方改過會被當成新的一條）。"""
+    if item.get("id"):
+        return str(item["id"])[:64]
+    if item.get("url"):
+        return "u:" + hashlib.sha256(str(item["url"]).strip().encode()).hexdigest()[:40]
+    return hashlib.sha256(f"{when}|{text}".encode()).hexdigest()[:40]
+
+
 def sync_flash(session: Session, cfg: Config, jin: Jin10) -> dict:
     """同步最新快訊，只收錄命中關鍵詞的。從最新一頁往後翻，遇到已經收錄過的就停（最多 flash_pages 頁）。"""
     from .models import NewsFlash
@@ -256,7 +297,7 @@ def sync_flash(session: Session, cfg: Config, jin: Jin10) -> dict:
             when = parse_time(item.get("time") or item.get("pub_time") or item.get("create_time"))
             if not text or when is None:
                 continue
-            ext_id = str(item.get("id") or hashlib.sha256(f"{when}|{text}".encode()).hexdigest()[:40])[:64]
+            ext_id = flash_id(item, when, text)
             if ext_id in known:                 # 翻到上次收錄過的地方：之後都是舊的
                 reached_known = True
                 continue
@@ -291,15 +332,19 @@ def prune_flash(session: Session, now: datetime | None = None) -> int:
 DAILY_MIN_GAP_HOURS = 20
 
 
-def backfill_klines(session: Session, cfg: Config, jin: Jin10, count: int = 300) -> list[dict]:
-    """用 K 線給登記了 jin10 代碼的序列補歷史。只接受日 K（相鄰兩根的中位間隔不少於 20 小時），否則不寫並說明。"""
+def backfill_klines(session: Session, cfg: Config, jin: Jin10, count: int = 300,
+                    time: str | None = None) -> list[dict]:
+    """用 K 線給登記了 jin10 代碼的序列補歷史。只接受日 K（相鄰兩根的中位間隔不少於 20 小時），否則不寫並說明。
+
+    金十 get_kline 默認回傳 1 分鐘 K 線；time 參數的含義指南沒有寫明，要先用 crudelab jin10 probe 試出來，
+    確認能取日 K 之後再用 --time 傳進來。日 K 的日期用 trade_date（紐約交易日），和每日報價一致。"""
     from .models import Series
     out = []
     for s in session.scalars(select(Series).where(Series.active)):
         code = (s.external_ids or {}).get("jin10")
         if not code:
             continue
-        data = jin.call("get_kline", code=code, count=count)
+        data = jin.call("get_kline", code=code, count=count, **({"time": time} if time else {}))
         payload = data.get("data", data) if isinstance(data, dict) else {}
         bars = [b for b in (payload.get("klines") or []) if isinstance(b, dict)]
         points = sorted((t, v) for t, v in ((parse_time(b.get("time")), number(b.get("close"))) for b in bars)
@@ -310,7 +355,8 @@ def backfill_klines(session: Session, cfg: Config, jin: Jin10, count: int = 300)
         if median is None or median < DAILY_MIN_GAP_HOURS:
             row["note"] = "不是日 K（或根數太少），沒有寫入"
         else:
-            obs = [Obs(s.code, beijing_date(t), v, f"jin10:kline:{code}") for t, v in points]
+            daily = {d: v for d, v in ((trade_date(t), v) for t, v in points) if d is not None}   # 同一天取最後一根
+            obs = [Obs(s.code, d, v, f"jin10:kline:{code}") for d, v in sorted(daily.items())]
             row["written"] = write_observations(session, obs, SOURCE, actor="jin10")["inserted"]
         out.append(row)
     return out

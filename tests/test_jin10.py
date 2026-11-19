@@ -33,7 +33,7 @@ class FakeServer:
         if body["method"] == "tools/list":
             return self.reply(body, {"tools": [{"name": n} for n in self.tools]})
         if body["method"] == "resources/read":
-            return self.reply(body, {"contents": [{"uri": "quote://codes", "text": json.dumps({"data": ["UKOIL"]})}]})
+            return self.reply(body, {"contents": [{"uri": "quote://codes", "text": json.dumps(CODES)}]})
         tool = body["params"]["name"]
         handler = self.tools[tool]
         if handler == "ratelimit":
@@ -53,6 +53,9 @@ class FakeServer:
         return httpx.Response(200, json=message, headers=headers or {})
 
 
+CODES = {"data": [{"code": "UKOIL", "name": "布伦特原油"}, {"code": "USDX", "name": "美元指数"}]}
+
+
 def client_for(server):
     transport = httpx.Client(transport=httpx.MockTransport(server))
     return MCPClient("金十", "https://mcp.example/mcp", TOKEN, client=transport)
@@ -65,7 +68,7 @@ def test_handshake_session_and_structured_content(sse):
     assert client.call("get_quote", {"code": "UKOIL"}) == {"data": {"code": "UKOIL", "close": 82.5}}
     methods = [b["method"] for b, _ in server.requests]
     assert methods == ["initialize", "notifications/initialized", "tools/call"]
-    assert client.read_resource("quote://codes") == {"data": ["UKOIL"]}
+    assert client.read_resource("quote://codes") == CODES
 
 
 def test_errors_are_readable_and_never_leak_the_token():
@@ -160,6 +163,8 @@ def test_probe_command(session, cfg, monkeypatch, capsys):
     assert cli.main(["jin10", "probe"]) == 0
     out = capsys.readouterr().out
     assert "已連接" in out and "EIA原油库存" in out and "第一條的字段：['content', 'id']" in out
+    assert "缺 " in out and "USDCNH" in out                       # 配置裡的代碼不在列表裡會點名
+    assert "time=1d" in out and "翻頁用" in out
     assert TOKEN not in out
     assert cli.main(["jin10", "usage"]) == 0
     assert "list_calendar    1" in capsys.readouterr().out
@@ -239,28 +244,58 @@ def test_flash_job_skips_without_token(session, cfg, settings):
 def test_quote_connector_writes_daily_values(session, cfg):
     from crudelab.connectors.jin10_quotes import Jin10QuoteConnector
     from crudelab.models import Series
-    quotes = {"UKOIL": 82.4, "USOIL": 78.1, "XAUUSD": 2650.0, "USDCNH": 7.25, "EURUSD": 1.05, "USDJPY": 154.2}
+    quotes = {"UKOIL": 82.4, "USOIL": 78.1, "XAUUSD": 2650.0, "USDCNH": 7.25, "EURUSD": 1.05, "USDJPY": 154.2,
+              "USDX": 99.8}
+    stamp = {"t": "2026-11-19T06:35:00+08:00"}                           # 金十真實的寫法：帶時區
     server = FakeServer({"get_quote": lambda a: {"data": {"code": a["code"], "close": str(quotes[a["code"]]),
-                                                          "time": "2026-11-19 06:35:00"}}})
+                                                          "time": stamp["t"]}}})
     connector = Jin10QuoteConnector(cfg, client_for(server))
     obs = connector.fetch(list(session.scalars(select(Series))), None, None)
     got = {o.series_code: (o.obs_date, o.value) for o in obs}
-    assert got["MACRO_XAUUSD"] == (date(2026, 11, 19), 2650.0) and got["JIN10_UKOIL"][1] == 82.4
+    # 北京週四 06:35 = 紐約週三 17:35：是週三收盤後的價格，記在週三（和 EIA、CME 的日期對齊）
+    assert got["MACRO_XAUUSD"] == (date(2026, 11, 18), 2650.0) and got["JIN10_UKOIL"][1] == 82.4
+    assert got["MACRO_USDX"] == (date(2026, 11, 18), 99.8)
     assert "BRENT_M1" not in got                                          # 金十報價不混進期貨結算價
-    assert len(obs) == 6
+    assert len(obs) == 7
+    stamp["t"] = "2026-11-22T06:35:00+08:00"                              # 北京週日早上 = 紐約週六：不記
+    assert connector.fetch(list(session.scalars(select(Series))), None, None) == []
+
+
+def test_times_dates_and_flash_ids():
+    from datetime import datetime
+    assert jin10.parse_time("2026-11-19T11:21:25+08:00") == datetime(2026, 11, 19, 3, 21, 25)
+    assert jin10.parse_time("2026-11-19T03:21:25Z") == datetime(2026, 11, 19, 3, 21, 25)
+    assert jin10.parse_time("2026-11-19 11:21:25") == datetime(2026, 11, 19, 3, 21, 25)     # 不帶時區 = 北京
+    assert jin10.parse_time(1795058460) == datetime(2026, 11, 19, 3, 21)                     # K 線：秒
+    assert jin10.parse_time(1795058460000) == datetime(2026, 11, 19, 3, 21)                  # 毫秒
+    assert jin10.parse_time("1795058460") == datetime(2026, 11, 19, 3, 21)
+    assert jin10.parse_time(True) is None and jin10.parse_time("昨天") is None
+    assert jin10.trade_date(datetime(2026, 11, 19, 3, 21)) == date(2026, 11, 18)            # 紐約週三晚上
+    assert jin10.trade_date(datetime(2026, 11, 21, 18, 0)) is None                           # 紐約週六
+    when = datetime(2026, 11, 19, 3, 0)
+    a = jin10.flash_id({"url": "https://flash.jin10.com/detail/1"}, when, "甲")
+    assert a == jin10.flash_id({"url": "https://flash.jin10.com/detail/1"}, when, "內容改過")   # 同一 url = 同一條
+    assert a != jin10.flash_id({"url": "https://flash.jin10.com/detail/2"}, when, "甲")
+    assert jin10.flash_id({"id": 7}, when, "甲") == "7" and len(jin10.flash_id({}, when, "甲")) == 40
 
 
 def test_backfill_accepts_only_daily_bars(session, cfg):
+    from datetime import UTC, datetime
+    weekdays = [d for d in range(9, 21) if date(2026, 11, d).weekday() < 5]
     def kline(args):
-        if args["code"] == "XAUUSD":                                      # 日 K
-            bars = [{"time": f"2026-11-{d:02d} 00:00:00", "close": 2600 + d} for d in range(10, 19)]
-        else:                                                             # 小時 K：不寫
-            bars = [{"time": f"2026-11-18 {h:02d}:00:00", "close": 80 + h / 10} for h in range(0, 9)]
+        if args["code"] == "XAUUSD":                                      # 日 K：紐約收盤時間的時間戳（秒）
+            bars = [{"time": int(datetime(2026, 11, d, 22, 0, tzinfo=UTC).timestamp()), "close": 2600 + d}
+                    for d in weekdays]
+        else:                                                             # 分鐘 K（金十默認）：不寫
+            bars = [{"time": 1795058460 + 60 * i, "close": 80 + i / 10} for i in range(9)]
         return {"data": {"code": args["code"], "klines": bars}}
-    jin = jin10.Jin10(cfg, client_for(FakeServer({"get_kline": kline})))
-    rows = {r["series"]: r for r in jin10.backfill_klines(session, cfg, jin, count=10)}
-    assert rows["MACRO_XAUUSD"]["written"] == 9 and rows["MACRO_XAUUSD"]["median_gap_hours"] == 24
+    calls = []
+    server = FakeServer({"get_kline": lambda a: calls.append(a) or kline(a)})
+    jin = jin10.Jin10(cfg, client_for(server))
+    rows = {r["series"]: r for r in jin10.backfill_klines(session, cfg, jin, count=10, time="1d")}
+    assert rows["MACRO_XAUUSD"]["written"] == len(weekdays) and rows["MACRO_XAUUSD"]["median_gap_hours"] == 24
     assert rows["JIN10_UKOIL"]["written"] == 0 and "不是日 K" in rows["JIN10_UKOIL"]["note"]
+    assert all(c.get("time") == "1d" for c in calls)
 
 
 def test_quote_job_skips_without_token(session, cfg, settings):

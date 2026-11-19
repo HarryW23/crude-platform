@@ -313,6 +313,7 @@ def _backup_file(settings, cfg, given: str) -> Path:
 def cmd_jin10(args) -> int:
     """金十數據：probe 把真實接口的樣子列出來（用來核對字段和規則）；usage 看今天的用量。不打印 token。"""
     import json as _json
+    from datetime import UTC, datetime, timedelta
 
     from . import jin10
     from .config import load_config
@@ -328,7 +329,7 @@ def cmd_jin10(args) -> int:
             return 1
         try:
             with db.session_scope() as session:
-                rows = jin10.backfill_klines(session, cfg, client, args.count)
+                rows = jin10.backfill_klines(session, cfg, client, args.count, args.time)
         except (MCPError, jin10.Jin10LimitReached) as exc:
             print(f"回填失敗：{exc}", file=sys.stderr)
             return 1
@@ -367,14 +368,31 @@ def cmd_jin10(args) -> int:
             flat = _json.dumps(codes, ensure_ascii=False)
             items = jin10.rows_of(codes) or (codes if isinstance(codes, list) else [])
             print(f"  共約 {len(items)} 個；前幾個：{flat[:300]}")
-            hits = [k for k in ("DXY", "USDX", "美元指数", "US10Y", "美债", "UKOIL", "USOIL", "USDCNH") if k in flat]
-            print(f"  包含：{'、'.join(hits) or '（沒有找到美元指數 / 美債的代碼）'}")
+            listed = {str(r.get("code")) for r in items if isinstance(r, dict)}
+            wanted = sorted({s.jin10 for s in cfg.series.values() if s.jin10})
+            missing = [c for c in wanted if c not in listed]
+            print(f"  配置裡登記的 {len(wanted)} 個代碼：{'全部在列表裡' if not missing else '缺 ' + '、'.join(missing)}")
+            extra = [f"{r.get('code')}={r.get('name')}" for r in items if isinstance(r, dict)
+                     and any(k in str(r.get("name")) + str(r.get("code")) for k in ("债", "債", "利率", "US10", "US02", "Bond"))]
+            print(f"  利率 / 債券類：{'、'.join(extra) or '沒有'}")
         quote = show("報價 UKOIL", lambda: client.call("get_quote", code="UKOIL"))
         if quote is not None:
             print("  " + _json.dumps(quote, ensure_ascii=False)[:400])
-        kline = show("K 線 UKOIL（count=5）", lambda: client.call("get_kline", code="UKOIL", count=5))
-        if kline is not None:
-            print("  " + _json.dumps(kline, ensure_ascii=False)[:600])
+        def bars(args):
+            data = client.call("get_kline", code="UKOIL", count=3, **args)
+            payload = data.get("data", data) if isinstance(data, dict) else {}
+            got = [b for b in (payload.get("klines") or []) if isinstance(b, dict)]
+            times = [jin10.parse_time(b.get("time")) for b in got]
+            shown = "、".join(f"{t:%Y-%m-%d %H:%M}Z" if t else "?" for t in times)
+            return f"{len(got)} 根，時間 {shown or '—'}，收盤 {[b.get('close') for b in got]}"
+        # time 參數的含義指南沒寫：分別試週期寫法和時間點寫法，看回來的 K 線間隔和位置（每種試一次，共 6 次調用）
+        yesterday = int((datetime.now(UTC) - timedelta(days=1)).timestamp())
+        for label, extra_args in (("不傳 time", {}), ("time=1d", {"time": "1d"}), ("time=day", {"time": "day"}),
+                                  ("time=D", {"time": "D"}), (f"time={yesterday}（一天前的秒）", {"time": yesterday}),
+                                  ("time=一天前的日期", {"time": f"{datetime.now(UTC) - timedelta(days=1):%Y-%m-%d}"})):
+            result = show(f"K 線 UKOIL count=3，{label}", lambda a=extra_args: bars(a))
+            if result is not None:
+                print("  " + result)
         calendar = show("財經日曆", lambda: client.call("list_calendar"))
         if calendar is not None:
             rows = jin10.rows_of(calendar)
@@ -390,6 +408,9 @@ def cmd_jin10(args) -> int:
             print(f"  {len(rows)} 條；第一條的字段：{sorted(rows[0]) if rows else '—'}")
             if rows:
                 print("  第一條：" + _json.dumps(rows[0], ensure_ascii=False)[:300])
+            data = flash.get("data") if isinstance(flash, dict) else None
+            keys = sorted(data) if isinstance(data, dict) else type(data).__name__
+            print(f"  data 的字段（翻頁用）：{keys}；外層字段：{sorted(flash) if isinstance(flash, dict) else '—'}")
     finally:
         client.close()
     print("\n把上面的輸出發給負責平台的人即可核對（裡面沒有 token）。")
@@ -722,6 +743,7 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("jin10", help="金十數據：probe 檢測接口 / usage 今天的調用次數 / backfill 用 K 線補報價歷史")
     p.add_argument("action", choices=["probe", "usage", "backfill"])
     p.add_argument("--count", type=int, default=300, help="backfill 時每個品種取多少根 K 線")
+    p.add_argument("--time", default=None, help="backfill 時傳給 get_kline 的 time 參數（先用 probe 確認含義）")
     p.set_defaults(func=cmd_jin10)
     p = sub.add_parser("lseg-rics", help="生成 LSEG 導出腳本用的 RIC 清單（scripts/lseg_rics.txt）")
     p.add_argument("--output", help="寫入這個文件；不給就打印")

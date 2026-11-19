@@ -260,15 +260,19 @@ Windows 把 `.venv/bin/` 換成 `.venv\Scripts\`。
 
 3. 之後定時任務「同步財經日曆」每 2 小時、「同步原油快訊」每 10 分鐘同步一次；`crudelab jin10 usage` 看今天各工具用了幾次。
    快訊只收錄命中原油關鍵詞的（`config/jin10.yaml`），在「地緣事件」頁顯示，點「抽成草稿」才交給大模型，草稿要人確認。快訊保留 90 天。
-4. 報價（匯率、黃金、金十的原油報價）每天早上取一次，品種在 `config/master/series/macro.yaml` 用 `jin10: 代碼` 登記。
-   第一次可以用 K 線補歷史（只接受日 K）：
+4. 報價（美元指數、匯率、黃金、金十的原油報價）每天北京時間早上取一次，品種在 `config/master/series/macro.yaml` 用 `jin10: 代碼` 登記。
+   日期按紐約交易日記：北京早上取到的是紐約前一天收盤後的價格，記在紐約那一天，和 EIA、CME 的日期對齊；紐約週末不記。
+   金十的 UKOIL / USOIL 是它匯總的現貨報價，不是交易所結算價，存成單獨的序列，不混進 Brent / WTI 期貨。
+   金十沒有美債收益率，以後從 FRED 接。
+
+   歷史：金十 `get_kline` 默認給 1 分鐘 K 線，補不了日線歷史；`time` 參數的含義指南沒寫，probe 會試幾種寫法。
+   試出能取日 K 的寫法後再回填（只接受日 K，分鐘 K 不會寫入）：
 
    ```bash
-   .venv/bin/crudelab jin10 backfill
+   .venv/bin/crudelab jin10 backfill --time 試出來的寫法
    ```
 
-   金十的 UKOIL / USOIL 是它匯總的現貨報價，不是交易所結算價，存成單獨的序列，不混進 Brent / WTI 期貨。
-   美元指數的代碼要用 probe 查 `quote://codes` 確認後再加。
+   試不出來的話，歷史只能從每天的報價慢慢積累。
 
 額度：對方每個工具每天 1500 次，`config/jin10.yaml` 再設一個 1000 次的上限，超過就不發請求。
 日曆項目怎麼換算成序列（例如 EIA 原油庫存，万桶 → 千桶）也在 `config/jin10.yaml`；標題寫法要用 probe 的輸出核對。

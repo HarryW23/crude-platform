@@ -1,6 +1,7 @@
 """金十報價 → 序列（每天一個值）。序列在 series.yaml 裡用 jin10: 品種代碼 登記。
 
-每天定時取一次 get_quote，取它的最新價（close）作為當天的值，日期用報價時間的北京日期。
+每天定時取一次 get_quote，取它的最新價（close）。日期用 jin10.trade_date：報價時間的紐約日期
+（北京時間早上取到的是紐約前一天收盤後的價格）；落在紐約週末的報價不記。
 歷史用 crudelab jin10 backfill 從 K 線補（只接受日 K：相鄰兩根相隔不到 20 小時的不要）。
 額度、token、錯誤處理都走 jin10.Jin10。
 """
@@ -53,7 +54,9 @@ class Jin10QuoteConnector(PullConnector):
                 value, when = jin10.number(quote.get("close")), jin10.parse_time(quote.get("time"))
                 if value is None or when is None:
                     raise ConnectorError(f"金十的 {code} 報價裡沒有可用的價格或時間")
-                out.append(Obs(s.code, jin10.beijing_date(when), value, f"jin10:quote:{code}"))
+                day = jin10.trade_date(when)
+                if day is not None:
+                    out.append(Obs(s.code, day, value, f"jin10:quote:{code}"))
         finally:
             client.close()
         return out
