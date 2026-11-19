@@ -89,8 +89,10 @@ def test_csv_and_bad_files(session, settings):
     cols = _cols(preview, "CSV")
     assert cols["LCOc1"]["series_code"] == "BRENT_M1" and cols["LCOc1"]["last_value"] == 1070.5
     assert cols["CLc1"]["n_values"] == 1 and cols["CLc1"]["n_skipped"] == 1
-    with pytest.raises(ImportFlowError, match="不支援"):
+    with pytest.raises(ImportFlowError, match="無法打開"):                 # 壞掉的 .xls：給說明
         preview_file(session, settings, b"x", "old.xls", "reuters_xls")
+    with pytest.raises(ImportFlowError, match="不支援"):
+        preview_file(session, settings, b"x", "notes.docx", "reuters_xls")
     with pytest.raises(ImportFlowError, match="無法打開"):                 # 損壞的文件：給說明，不崩潰
         preview_file(session, settings, b"not really a workbook", "broken.xlsx", "reuters_xls")
     with pytest.raises(ImportFlowError, match="不能用於文件導入"):
@@ -128,3 +130,66 @@ def test_wide_transposed_sheets_are_not_silently_truncated(session, settings, tm
     cut = preview_file(session, settings, path.read_bytes(), "wide.xlsx", "demo")
     assert cut["sheets"][0]["columns"][0]["n_values"] == 99
     assert any("沒有讀入" in w for w in cut["warnings"])
+
+
+
+# ------------------------------ 合併儲存格、舊版 .xls（#45） ------------------------------
+
+def _merged_rows():
+    """「Brent」「WTI」各橫跨三列（合併儲存格），下一行才是 M1、M2、M3。"""
+    return [["日期", "Brent", None, None, "WTI", None, None],
+            [None, "M1", "M2", "M3", "M1", "M2", "M3"],
+            [date(2026, 9, 1), 70.1, 69.5, 69.0, 66.5, 66.1, 65.8],
+            [date(2026, 9, 2), 70.4, 69.8, 69.2, 66.9, 66.4, 66.0]]
+
+
+def test_merged_header_cells_in_xlsx(session, settings, tmp_path):
+    from openpyxl import Workbook
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "價格"
+    for row in _merged_rows():
+        ws.append(row)
+    ws.merge_cells("B1:D1")
+    ws.merge_cells("E1:G1")
+    path = tmp_path / "merged.xlsx"
+    wb.save(path)
+    cols = _cols(preview_file(session, settings, path.read_bytes(), "merged.xlsx", "reuters_xls"), "價格")
+    got = {label: c["series_code"] for label, c in cols.items()}
+    assert got == {"Brent | M1": "BRENT_M1", "Brent | M2": "BRENT_M2", "Brent | M3": "BRENT_M3",
+                   "WTI | M1": "WTI_M1", "WTI | M2": "WTI_M2", "WTI | M3": "WTI_M3"}
+    assert cols["WTI | M3"]["last_value"] == 66.0 and cols["Brent | M1"]["n_values"] == 2
+
+
+def test_legacy_xls_with_dates_merges_and_errors(session, settings, tmp_path):
+    xlwt = pytest.importorskip("xlwt")                       # 只用來在測試裡造 .xls
+    wb = xlwt.Workbook()
+    ws = wb.add_sheet("Prices")
+    day = xlwt.easyxf(num_format_str="YYYY-MM-DD")
+    rows = _merged_rows()
+    ws.write(0, 0, rows[0][0])
+    ws.write_merge(0, 0, 1, 3, "Brent")
+    ws.write_merge(0, 0, 4, 6, "WTI")
+    for j, v in enumerate(rows[1][1:], start=1):
+        ws.write(1, j, v)
+    for i, row in enumerate(rows[2:], start=2):
+        ws.write(i, 0, row[0], day)                            # 真正的日期格（不是文字）
+        for j, v in enumerate(row[1:], start=1):
+            ws.write(i, j, xlwt.Formula("NA()") if (i, j) == (3, 6) else v)   # 一格錯誤值 #N/A：當作沒有值
+    path = tmp_path / "old.xls"
+    wb.save(str(path))
+    preview = preview_file(session, settings, path.read_bytes(), "old.xls", "reuters_xls")
+    cols = _cols(preview, "Prices")
+    assert cols["Brent | M2"]["series_code"] == "BRENT_M2" and cols["Brent | M2"]["first_date"] == "2026-09-01"
+    assert cols["WTI | M3"]["n_values"] == 1 and cols["WTI | M3"]["last_value"] == 65.8
+
+
+def test_header_matching_prefers_the_most_specific_tier():
+    from crudelab.connectors.excel import _match
+    table = {"brent": "DATED_BRENT", "brentm1": "BRENT_M1", "lcoc1": "BRENT_M1", "clc1": "WTI_M1"}
+    resolve = lambda text: table.get(text.lower().replace(" ", "").replace("|", ""))   # noqa: E731
+    assert _match(["Brent", "M1"], "Brent | M1", resolve) == ("BRENT_M1", None)        # 整個表頭最具體
+    assert _match(["標題", "Brent", "M1"], "標題 | Brent | M1", resolve) == ("BRENT_M1", None)   # 相鄰兩行
+    assert _match(["Brent M1", "LCOc1"], "Brent M1 | LCOc1", resolve) == ("BRENT_M1", None)   # 名稱 + RIC
+    code, note = _match(["LCOc1", "CLc1"], "LCOc1 | CLc1", resolve)
+    assert code is None and "多條序列" in note                                             # 衝突：不猜

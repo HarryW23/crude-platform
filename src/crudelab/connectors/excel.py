@@ -1,5 +1,8 @@
 """Excel / CSV 導入：自動識別版式，不要求固定模板。
 
+文件類型：.xlsx / .xlsm（openpyxl）、舊版 .xls（xlrd）、.csv / .txt。
+合併儲存格按 Excel 顯示的樣子展開：合併區域裡每一格都當作有左上角那個值（例如「Brent」橫跨 M1–M12 的表頭）。
+
 能識別三種常見版式：
   wide             一列日期 + 多列數據（最常見；表頭可以有多行，例如名稱一行、RIC 一行）
   wide_transposed  日期橫排在一行，每條序列佔一行
@@ -17,6 +20,7 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime
 from pathlib import Path
+from struct import error as struct_error
 
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
@@ -114,6 +118,7 @@ def read_grids(path: Path) -> tuple[dict[str, list[list]], dict[str, str]]:
             # 文件損壞、其實不是 Excel（只是副檔名對）、或被密碼保護
             raise ValueError("文件無法打開：可能已損壞、不是真正的 Excel 文件，或設了打開密碼") from None
         try:
+            merges = _xlsx_merges(path)
             grids = {}
             for ws in wb.worksheets:
                 rows = []
@@ -123,7 +128,7 @@ def read_grids(path: Path) -> tuple[dict[str, list[list]], dict[str, str]]:
                         break
                     width = max(width, len(row))
                     rows.append(list(row[:MAX_COLS]))
-                grids[ws.title] = rows
+                grids[ws.title] = _fill_merges(rows, merges.get(ws.title, []))
                 if (ws.max_row or len(rows)) > MAX_ROWS or width > MAX_COLS:
                     truncated[ws.title] = (f"這張表有 {ws.max_row or len(rows)} 行 × {width} 列，超過讀取上限"
                                            f"（{MAX_ROWS} 行 × {MAX_COLS} 列），超出的部分沒有讀入")
@@ -149,8 +154,107 @@ def read_grids(path: Path) -> tuple[dict[str, list[list]], dict[str, str]]:
             truncated["CSV"] = f"文件有 {len(rows)} 行，超過讀取上限 {MAX_ROWS} 行，超出的部分沒有讀入"
         return {"CSV": rows[:MAX_ROWS]}, truncated
     if suffix == ".xls":
-        raise ValueError("不支援舊版 .xls，請在 Excel 裡另存為 .xlsx")
+        return _read_xls(path)
     raise ValueError(f"不支援的文件類型：{suffix or '（無副檔名）'}")
+
+
+MAX_MERGED_CELLS = 1_000_000          # 單個合併區域最多展開這麼多格（防止異常文件把內存撐爆）
+
+
+def _fill_merges(grid: list[list], ranges: list[tuple[int, int, int, int]]) -> list[list]:
+    """把合併區域（0 起算的 首行, 首列, 末行, 末列，含兩端）裡的每一格都填成左上角的值。只填讀入的範圍。"""
+    for r0, c0, r1, c1 in ranges:
+        if r0 >= len(grid) or c0 >= MAX_COLS:
+            continue
+        r1, c1 = min(r1, len(grid) - 1), min(c1, MAX_COLS - 1)
+        if (r1 - r0 + 1) * (c1 - c0 + 1) > MAX_MERGED_CELLS:
+            continue
+        top = grid[r0]
+        value = top[c0] if c0 < len(top) else None
+        if value is None:
+            continue
+        for r in range(r0, r1 + 1):
+            row = grid[r]
+            if len(row) <= c1:
+                row.extend([None] * (c1 + 1 - len(row)))
+            for c in range(c0, c1 + 1):
+                if (r, c) != (r0, c0):
+                    row[c] = value
+    return grid
+
+
+def _xlsx_merges(path: Path) -> dict[str, list[tuple[int, int, int, int]]]:
+    """從 xlsx 裡讀各工作表的合併區域。openpyxl 的只讀模式拿不到合併信息，這裡直接流式讀工作表 XML 裡的 mergeCell，
+    不用把整本載入內存。用 openpyxl 自己的 XML 解析入口（裝了 defusedxml 時用它）。讀不到就當沒有合併。"""
+    from openpyxl.utils.cell import range_boundaries
+    from openpyxl.xml.functions import fromstring, iterparse
+    ns_main = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+    ns_rel = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
+    out: dict[str, list[tuple[int, int, int, int]]] = {}
+    try:
+        with zipfile.ZipFile(path) as z:
+            book = fromstring(z.read("xl/workbook.xml"))
+            rels = fromstring(z.read("xl/_rels/workbook.xml.rels"))
+            targets = {r.get("Id"): r.get("Target") for r in rels}
+            for sheet in book.iter(f"{ns_main}sheet"):
+                target = targets.get(sheet.get(f"{ns_rel}id"))
+                if not target:
+                    continue
+                member = target.lstrip("/") if target.startswith("/") else f"xl/{target}"
+                ranges = []
+                with z.open(member) as fh:
+                    for _event, el in iterparse(fh):
+                        if el.tag == f"{ns_main}mergeCell" and el.get("ref"):
+                            c0, r0, c1, r1 = range_boundaries(el.get("ref"))
+                            ranges.append((r0 - 1, c0 - 1, r1 - 1, c1 - 1))
+                        elif el.tag == f"{ns_main}row":
+                            el.clear()                         # 數據行不需要：讀過就丟，保持內存小
+                if ranges:
+                    out[sheet.get("name")] = ranges
+    except (KeyError, ValueError, zipfile.BadZipFile, OSError, SyntaxError):
+        return {}
+    return out
+
+
+def _read_xls(path: Path) -> tuple[dict[str, list[list]], dict[str, str]]:
+    """舊版 .xls（Excel 97–2003）。日期格轉成 datetime，合併儲存格展開。"""
+    import xlrd
+    from xlrd.biffh import XLRDError
+    try:
+        try:
+            book = xlrd.open_workbook(str(path), formatting_info=True, on_demand=True)   # 合併信息要 formatting_info
+        except NotImplementedError:
+            book = xlrd.open_workbook(str(path), on_demand=True)
+    except (XLRDError, OSError, ValueError, AssertionError, IndexError, struct_error):
+        raise ValueError("文件無法打開：可能已損壞、不是真正的 Excel 文件，或設了打開密碼") from None
+    grids, truncated = {}, {}
+    try:
+        for index in range(book.nsheets):
+            sheet = book.sheet_by_index(index)
+            rows = []
+            for r in range(min(sheet.nrows, MAX_ROWS)):
+                row = []
+                for c in range(min(sheet.ncols, MAX_COLS)):
+                    cell = sheet.cell(r, c)
+                    if cell.ctype == xlrd.XL_CELL_DATE:
+                        try:
+                            row.append(xlrd.xldate.xldate_as_datetime(cell.value, book.datemode))
+                        except (ValueError, OverflowError, xlrd.xldate.XLDateError):
+                            row.append(None)
+                    elif cell.ctype in (xlrd.XL_CELL_NUMBER, xlrd.XL_CELL_TEXT):
+                        row.append(cell.value if cell.value != "" else None)
+                    else:                                       # 空白、錯誤值（#N/A）、布林
+                        row.append(None)
+                rows.append(row)
+            merges = [(r0, c0, r1 - 1, c1 - 1) for r0, r1, c0, c1 in getattr(sheet, "merged_cells", [])]
+            grids[sheet.name] = _fill_merges(rows, merges)
+            if sheet.nrows > MAX_ROWS or sheet.ncols > MAX_COLS:
+                truncated[sheet.name] = (f"這張表有 {sheet.nrows} 行 × {sheet.ncols} 列，超過讀取上限"
+                                         f"（{MAX_ROWS} 行 × {MAX_COLS} 列），超出的部分沒有讀入")
+            book.unload_sheet(index)
+    finally:
+        book.release_resources()
+    return grids, truncated
 
 
 def _pad(grid: list[list]) -> list[list]:
@@ -165,11 +269,21 @@ def _header_text(value) -> str | None:
 
 
 def _match(candidates: list[str], label: str, resolver: Resolver) -> tuple[str | None, str | None]:
-    hits = {code for code in (resolver(c) for c in [*candidates, label]) if code}
-    if len(hits) == 1:
-        return hits.pop(), None
-    if len(hits) > 1:
-        return None, "表頭同時對上多條序列：" + "、".join(sorted(hits))
+    """表頭 → 序列。從具體到籠統依次試，哪一層先對上就用哪一層：
+      1. 整個表頭（多行合起來，例如合併儲存格「Brent」+ 下一行「M1」= Brent M1）
+      2. 相鄰兩行合起來（表頭有三行以上時）
+      3. 每一行單獨（例如名稱一行、RIC 一行，各自都能對上同一條序列）
+    同一層對上不止一條序列時不猜，標出來讓人選。"""
+    tiers = [[label]]
+    if len(candidates) > 2:
+        tiers.append([f"{a} {b}" for a, b in zip(candidates, candidates[1:], strict=False)])
+    tiers.append(candidates)
+    for tier in tiers:
+        hits = {code for code in (resolver(c) for c in tier) if code}
+        if len(hits) == 1:
+            return hits.pop(), None
+        if len(hits) > 1:
+            return None, "表頭同時對上多條序列：" + "、".join(sorted(hits))
     return None, None
 
 

@@ -29,7 +29,7 @@ from .schema import JobDef
 from .settings import Settings
 
 ACTOR = "scheduler"
-IMPORTABLE = (".xlsx", ".xlsm", ".csv")
+IMPORTABLE = (".xlsx", ".xlsm", ".xls", ".csv")
 SETTLE_SECONDS = 30           # 文件最後一次修改後過這麼久才導入，避免讀到還沒複製完的文件
 log = logging.getLogger("crudelab.jobs")
 
