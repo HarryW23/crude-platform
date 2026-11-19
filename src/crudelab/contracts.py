@@ -27,7 +27,7 @@ import numpy as np
 import pandas as pd
 
 from .config import Config
-from .schema import CurveDef, RollRule
+from .schema import CurveDef, PricingView, RollRule
 
 
 @dataclass(frozen=True)
@@ -157,6 +157,83 @@ def pinned_series(cfg: Config, code: str, anchor: pd.Timestamp, get) -> pd.Serie
         if hit.any():
             values[hit] = s.reindex(index[hit]).to_numpy(dtype=float)
     return pd.Series(values, index=index, name=code).dropna()
+
+
+# ------------------------------ 計價視角 ------------------------------
+#
+# 現貨升貼水、官價對應的基準不是「當天的 M1」，而是計價月份那個合約（見 schema.PricingView）。
+# 每天的計價月份序號 = 當月序號 + months_ahead（日期 > roll_day 再 + 1）；在曲線上就是 M(計價序號 − M1 序號 + 1)。
+# 計價月份的合約已經到期（序號 < 當天 M1）時，用它到期前最後一天的價格（最後結算價）。只用當天及以前的數據。
+
+def view_target(view: PricingView, day: date) -> int:
+    """某一天的計價月份序號。"""
+    target = ordinal(day.year, day.month) + view.months_ahead
+    return target + 1 if view.roll_day is not None and day.day > view.roll_day else target
+
+
+def view_targets(view: PricingView, index: pd.DatetimeIndex) -> np.ndarray:
+    months = index.year.to_numpy() * 12 + index.month.to_numpy() - 1 + view.months_ahead
+    if view.roll_day is not None:
+        months = months + (index.day.to_numpy() > view.roll_day)
+    return months.astype(int)
+
+
+def view_switch_dates(view: PricingView, start: date, end: date) -> list[date]:
+    """start 到 end 之間計價月份切換的日子（那天起用下一個合約）。"""
+    out, day, prev = [], start, view_target(view, start)
+    while day <= end:
+        target = view_target(view, day)
+        if target != prev:
+            out.append(day)
+        prev = target
+        day += timedelta(days=1)
+    return out
+
+
+def view_months_needed(cfg: Config, view: PricingView) -> list[int]:
+    """計價視角通常會用到曲線上的哪幾個月份（用來列依賴、判斷缺數據）。"""
+    curve = cfg.curves[view.curve]
+    # 當月 M 的某天，M1 至少是 M + months_before 那個合約（它的最後交易日在 M 月）；計價月份最多是 M + months_ahead (+1)
+    top = view.months_ahead + (view.roll_day is not None) - curve.roll.months_before + 1
+    return [n for n in curve.months if n <= max(top, 1)]
+
+
+def view_series(cfg: Config, view: PricingView, get, anchor: pd.Timestamp | None = None) -> tuple[pd.Series, pd.Series]:
+    """計價視角每天的價格，以及每天用的合約序號。get(code) 取原始序列。
+
+    給了 anchor：固定用 anchor 那天的計價合約（算同一合約的漲跌時用，月份切換不算進變化）。
+    """
+    curve = cfg.curves[view.curve]
+    raw = {n: get(f"{curve.code}_M{n}") for n in curve.months}
+    index = pd.DatetimeIndex([])
+    for values in raw.values():
+        index = index.union(values.index)
+    empty = pd.Series(dtype=float, index=pd.DatetimeIndex([]), name=view.code)
+    if len(index) == 0:
+        return empty, pd.Series(dtype=int, index=pd.DatetimeIndex([]))
+    front = front_ordinals(curve.roll, index)
+    targets = (np.full(len(index), view_target(view, anchor.date())) if anchor is not None
+               else view_targets(view, index))
+    need = targets - front + 1
+    values = np.full(len(index), np.nan)
+    for n, series in raw.items():
+        hit = need == n
+        if hit.any():
+            values[hit] = series.reindex(index[hit]).to_numpy(dtype=float)
+    expired = need < 1
+    if expired.any():                                   # 計價合約已到期：用它作為 M1 的最後一個價格
+        m1 = raw.get(1, pd.Series(dtype=float)).reindex(index).to_numpy(dtype=float)
+        final: dict[int, tuple[pd.Timestamp, float]] = {}
+        for ts, o, v in zip(index, front, m1, strict=True):
+            if not np.isnan(v):
+                final[int(o)] = (ts, float(v))          # index 遞增，留下的是這個合約當 M1 的最後一天
+        for i in np.flatnonzero(expired):
+            got = final.get(int(targets[i]))
+            if got is not None and got[0] <= index[i]:
+                values[i] = got[1]
+    out = pd.Series(values, index=index, name=view.code)
+    keep = ~np.isnan(values)
+    return out[keep], pd.Series(targets[keep], index=index[keep])
 
 
 # ------------------------------ 換月調整收益 ------------------------------

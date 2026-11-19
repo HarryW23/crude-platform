@@ -70,13 +70,23 @@ series:
      benchmark: BRENT, aliases: ["Tupi Diff", "Lula Diff"]}
 
   # ---------- 中東官價（月度，亞洲方向，對 阿曼/迪拜 均價的升貼水） ----------
+  # ⚠ 日期記「適用的裝船月」的 1 日，不是公布日：12 月裝船的官價（一般 11 月初公布）記 2026-12-01。
+  #   within_period: 只用於那個月，不沿用到下個月；日期不是 1 日的數據入庫時會被拒絕（防止按公布日錯開一個月）。
   - {code: ARAB_LIGHT_OSP_ASIA, name_zh: 沙特輕質官價（亞洲）, commodity: ARAB_LIGHT, location: MEG, kind: osp, unit: USD/bbl,
-     frequency: monthly, module: spread, benchmark: "OMAN/DUBAI 均價", aliases: ["Arab Light OSP Asia", "沙輕OSP"]}
+     frequency: monthly, within_period: true, module: spread, benchmark: "OMAN/DUBAI 均價", aliases: ["Arab Light OSP Asia", "沙輕OSP"]}
   - {code: ARAB_MEDIUM_OSP_ASIA, name_zh: 沙特中質官價（亞洲）, commodity: ARAB_MEDIUM, location: MEG, kind: osp, unit: USD/bbl,
-     frequency: monthly, module: spread, benchmark: "OMAN/DUBAI 均價", aliases: ["Arab Medium OSP Asia", "沙中OSP"]}
+     frequency: monthly, within_period: true, module: spread, benchmark: "OMAN/DUBAI 均價", aliases: ["Arab Medium OSP Asia", "沙中OSP"]}
   - {code: ARAB_HEAVY_OSP_ASIA, name_zh: 沙特重質官價（亞洲）, commodity: ARAB_HEAVY, location: MEG, kind: osp, unit: USD/bbl,
-     frequency: monthly, module: spread, benchmark: "OMAN/DUBAI 均價", aliases: ["Arab Heavy OSP Asia", "沙重OSP"]}
+     frequency: monthly, within_period: true, module: spread, benchmark: "OMAN/DUBAI 均價", aliases: ["Arab Heavy OSP Asia", "沙重OSP"]}
   - {code: BASRAH_MEDIUM_OSP_ASIA, name_zh: 巴士拉中質官價（亞洲）, commodity: BASRAH_MEDIUM, location: MEG, kind: osp, unit: USD/bbl,
-     frequency: monthly, module: spread, benchmark: "OMAN/DUBAI 均價", aliases: ["Basrah Medium OSP Asia"]}
+     frequency: monthly, within_period: true, module: spread, benchmark: "OMAN/DUBAI 均價", aliases: ["Basrah Medium OSP Asia"]}
   - {code: BASRAH_HEAVY_OSP_ASIA, name_zh: 巴士拉重質官價（亞洲）, commodity: BASRAH_HEAVY, location: MEG, kind: osp, unit: USD/bbl,
-     frequency: monthly, module: spread, benchmark: "OMAN/DUBAI 均價", aliases: ["Basrah Heavy OSP Asia"]}
+     frequency: monthly, within_period: true, module: spread, benchmark: "OMAN/DUBAI 均價", aliases: ["Basrah Heavy OSP Asia"]}
+
+# 計價視角：現貨升貼水對應的不是「當天的 M1」，而是計價月份那個合約（見 schema.PricingView）。
+# 在公式裡和序列一樣使用；每天用哪個合約、合約到期後用結算價，追溯時都看得到。
+views:
+  - {code: DUBAI_LOADING, name_zh: 迪拜掉期（裝船月 = 當月 + 2）, curve: DUBAI_SWAP, months_ahead: 2,
+     notes: 中東、遠東現貨（上扎庫姆、ESPO 等）交易的是兩個月後裝船的貨，升貼水對裝船月的迪拜均價。裝船月 +2 是常見情況，個別油種不同時另設視角}
+  - {code: WTI_TRADE_MONTH, name_zh: WTI（美國現貨交易月對應的交割月）, curve: WTI, months_ahead: 1, roll_day: 25,
+     notes: 美國管道原油的交易月是交割月前兩個月 26 日到前一個月 25 日；升貼水對交割月的 WTI。WTI 合約 20 日左右到期後，到 25 日之前用它的結算價。未計 CMA 均價和 roll 調整}

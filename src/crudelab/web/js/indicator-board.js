@@ -35,6 +35,9 @@ function traceNode(n) {
     line = `<span class="tag">參數</span> ${esc(n.name_zh)} <span class="mono muted">${n.code}</span> = ${value}
       ${n.verified ? "" : '<span class="tag warn">待核對</span>'}
       ${n.valid_from ? `<div class="muted">${n.valid_from === "1900-01-01" ? "自始生效" : n.valid_from + " 起生效"}</div>` : ""}`;
+  } else if (n.kind === "view") {
+    line = `<span class="tag">計價</span> ${esc(n.name_zh)} <span class="mono muted">${n.code}</span> = ${value}
+      <div class="muted">計價合約 ${esc(n.contract ?? "—")}</div>`;
   } else {
     line = `<span class="tag">數據</span> ${esc(n.name_zh)} <span class="mono muted">${n.code}</span> = ${value}` +
       (n.source_code ? `<div class="muted">來源 ${esc(n.source_code)}${n.filename ? "，文件 " + esc(n.filename) : ""}${n.source_ref ? "，位置 " + esc(n.source_ref) : ""}</div>` : "");

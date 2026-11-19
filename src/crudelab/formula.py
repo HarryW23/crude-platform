@@ -22,10 +22,12 @@ FUNCTIONS: dict[str, Callable] = {
     "abs": lambda x: abs(x),
     "yoy": lambda x: x - analytics.year_ago(x),      # 同比變化：減去一年前同期的值
     "seasonal_avg": lambda x, n: analytics.seasonal_stats(x, int(n))["avg"],   # 前 n 年同期均值（n 年不齊則無值）
+    "mtd": lambda x: _month_to_date_mean(x),         # 當月 1 日到當天的平均（月底那天 = 整月均價）
 }
-WINDOW_FUNCTIONS = {"lag", "ma", "diff", "yoy", "seasonal_avg"}    # 會用到更早日期的值
+WINDOW_FUNCTIONS = {"lag", "ma", "diff", "yoy", "seasonal_avg", "mtd"}    # 會用到更早日期的值
 # 每個函數的參數個數（最少, 最多），以及哪些位置必須是正整數常數（期數、年數）
-ARITY = {"lag": (2, 2), "ma": (2, 2), "diff": (1, 2), "abs": (1, 1), "yoy": (1, 1), "seasonal_avg": (2, 2)}
+ARITY = {"lag": (2, 2), "ma": (2, 2), "diff": (1, 2), "abs": (1, 1), "yoy": (1, 1), "seasonal_avg": (2, 2),
+         "mtd": (1, 1)}
 COUNT_ARGS = {"lag": {1}, "ma": {1}, "diff": {1}, "seasonal_avg": {1}}
 _BINOPS = {ast.Add: lambda a, b: a + b, ast.Sub: lambda a, b: a - b, ast.Mult: lambda a, b: a * b,
            ast.Div: lambda a, b: a / b, ast.Pow: lambda a, b: a ** b}
@@ -33,6 +35,15 @@ _BINOPS = {ast.Add: lambda a, b: a + b, ast.Sub: lambda a, b: a - b, ast.Mult: l
 
 class FormulaError(ValueError):
     pass
+
+
+def _month_to_date_mean(x: pd.Series) -> pd.Series:
+    """每天的值 = 同一個自然月裡、到這一天為止所有有值日子的平均。只用當天及以前的數據。"""
+    x = x.dropna()
+    if x.empty:
+        return x
+    months = x.index.to_period("M")
+    return x.groupby(months).cumsum() / x.groupby(months).cumcount().add(1)
 
 
 def parse(formula: str) -> ast.Expression:

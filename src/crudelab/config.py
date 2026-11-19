@@ -57,6 +57,7 @@ from .schema import (
     NotificationsDef,
     ParameterDef,
     PlaybookDef,
+    PricingView,
     ProjectionSettings,
     RefineryModelDef,
     RelationDef,
@@ -108,6 +109,7 @@ class Config:
     jin10: Jin10Settings = field(default_factory=Jin10Settings)
     fair_values: dict[str, FairValueModel] = field(default_factory=dict)
     curves: dict[str, CurveDef] = field(default_factory=dict)          # 期貨曲線：代碼 → 模板
+    views: dict[str, PricingView] = field(default_factory=dict)        # 計價視角：代碼 → 定義（見 schema.PricingView）
 
     @property
     def market_series(self) -> list[str]:
@@ -115,16 +117,20 @@ class Config:
         return [s.code for s in self.series.values() if s.frequency in ("daily", "weekly")]
 
     def has(self, name: str) -> bool:
-        """name 是不是一個能取值的序列或指標。"""
-        return name in self.series or name in self.indicators
+        """name 是不是一個能取值的序列、計價視角或指標。"""
+        return name in self.series or name in self.indicators or name in self.views
 
     def name_of(self, name: str) -> str:
+        if name in self.views:
+            return self.views[name].name_zh
         return self.indicators[name].name_zh if name in self.indicators else self.series[name].name_zh
 
     def frequency_of(self, name: str) -> str:
         """一個序列或指標的頻率。指標取它依賴的序列裡最粗的頻率；只依賴參數的指標算 daily。"""
         if name in self.series:
             return self.series[name].frequency
+        if name in self.views:
+            return "daily"
         if name not in self.indicators:
             return "daily"
         found = [self.frequency_of(n) for n in fx.names(self.indicators[name].formula)]
@@ -139,6 +145,8 @@ class Config:
             return self.series[name].unit
         if name in self.parameters:
             return self.parameters[name].unit
+        if name in self.views:
+            return self.curves[self.views[name].curve].unit
         return self.indicators[name].unit
 
 
@@ -213,12 +221,15 @@ def load_config(config_dir: Path) -> Config:
 
     series: list[SeriesDef] = []
     curves: list[CurveDef] = []
+    views: list[PricingView] = []
     for path in ld.files("master/series"):
         doc = ld.build(SeriesFile, ld.read(path) or {}, path)
         if doc:
             series += [s for curve in doc.curves for s in curve.expand()] + doc.series
             curves += doc.curves
+            views += doc.views
     cfg.curves = ld.keyed(curves, "期貨曲線")
+    cfg.views = ld.keyed(views, "計價視角")
     cfg.series = ld.keyed(series, "序列")
 
     params = [p for path in ld.files("parameters") for p in ld.items(ParameterDef, path)]
@@ -310,7 +321,8 @@ def _validate(cfg: Config) -> list[str]:
             errors.append(f"煉廠模型 {spec.code}：地區 {spec.definition.location} 不在地區字典裡")
 
     # 序列、參數、指標共用一個命名空間（都會出現在公式裡）
-    spaces = (("序列", set(cfg.series)), ("參數", set(cfg.parameters)), ("指標", set(cfg.indicators)))
+    spaces = (("序列", set(cfg.series)), ("參數", set(cfg.parameters)), ("指標", set(cfg.indicators)),
+              ("計價視角", set(cfg.views)))
     for i, (label_a, a) in enumerate(spaces):
         for label_b, b in spaces[i + 1:]:
             errors += [f"{label_a}與{label_b}重名：{name}" for name in sorted(a & b)]
@@ -321,6 +333,13 @@ def _validate(cfg: Config) -> list[str]:
             norm = normalize_alias(alias)
             if norm and owner_of.setdefault(norm, s.code) != s.code:
                 errors.append(f"別名「{alias}」同時指向 {owner_of[norm]} 和 {s.code}")
+
+    for v in cfg.views.values():
+        curve = cfg.curves.get(v.curve)
+        if curve is None:
+            errors.append(f"計價視角 {v.code}：曲線 {v.curve} 不存在")
+        elif curve.roll is None:
+            errors.append(f"計價視角 {v.code}：曲線 {v.curve} 沒有換月規則（roll），不知道每天的 Mn 是哪個月份")
 
     for r in cfg.relations.values():
         for side in (r.y, r.x):
@@ -409,7 +428,7 @@ def _validate_projection(cfg: Config) -> list[str]:
 
 def _validate_indicators(cfg: Config) -> list[str]:
     errors: list[str] = []
-    known = set(cfg.series) | set(cfg.parameters) | set(cfg.indicators)
+    known = set(cfg.series) | set(cfg.parameters) | set(cfg.indicators) | set(cfg.views)
     deps: dict[str, list[str]] = {}
     for ind in cfg.indicators.values():
         owner = f"指標 {ind.code}" + (f"（由模型 {ind.model} 生成）" if ind.model else "")
@@ -458,7 +477,7 @@ def _validate_indicators(cfg: Config) -> list[str]:
     for ind in cfg.indicators.values():
         if ind.code not in deps or not fx.uses_window(ind.formula):
             continue
-        dynamic = [n for n in deps[ind.code] if n in cfg.series or n in cfg.indicators]
+        dynamic = [n for n in deps[ind.code] if n in cfg.series or n in cfg.indicators or n in cfg.views]
         freqs = {cfg.frequency_of(n) for n in dynamic}
         if len(freqs) > 1:
             errors.append(f"指標 {ind.code}：公式用了按期數計算的函數（lag / ma / diff 等），但輸入的頻率不同"

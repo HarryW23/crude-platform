@@ -1,5 +1,6 @@
 from datetime import date, datetime
 
+import pandas as pd
 import pytest
 
 from crudelab.indicators import IndicatorEngine, Scenario
@@ -80,12 +81,28 @@ def test_ffill_bridges_holidays_only_within_limit(session, cfg):
     assert engine.compute("TS_SC_M1_M3").empty             # 沒有 SC_M3
 
 
-def test_monthly_series_stays_valid_between_publications(session, cfg):
-    days = [date(2026, 9, 1), date(2026, 9, 15), date(2026, 9, 30), date(2026, 10, 20)]
-    load(session, {"OMAN_M1": [70, 71, 72, 73], "DUBAI_CASH": [70, 71, 72, 73]}, dates=days)
+def test_osp_priced_on_loading_month_average_and_never_leaks_into_next_month(session, cfg):
+    """沙特官價：本月裝船 = 本月阿曼/迪拜均價（月初至今）+ 本月官價。9 月的官價不會用到 10 月。"""
+    days = [date(2026, 9, 1), date(2026, 9, 15), date(2026, 9, 30), date(2026, 10, 2), date(2026, 10, 20)]
+    load(session, {"OMAN_M1": [70, 71, 72, 80, 81], "DUBAI_CASH": [70, 71, 72, 80, 81]}, dates=days)
     load(session, {"ARAB_LIGHT_OSP_ASIA": [2.5]}, dates=[date(2026, 9, 1)])
+    engine = IndicatorEngine(session, cfg)
+    out = engine.compute("OUT_ARAB_LIGHT")
+    assert list(out.index.date) == days[:3]                # 10 月還沒有官價：沒有值，不沿用 9 月的
+    assert list(out) == [72.5, 73.0, 73.5]                 # 9/30 = 9 月均價 71 + 2.5 = 實際結算價
+    load(session, {"ARAB_LIGHT_OSP_ASIA": [-1.0]}, dates=[date(2026, 10, 1)])
     out = IndicatorEngine(session, cfg).compute("OUT_ARAB_LIGHT")
-    assert list(out) == [72.5, 73.5, 74.5]                 # 9/1 的官價沿用 35 天，10/20 已過期
+    assert out[pd.Timestamp(2026, 10, 20)] == pytest.approx(80.5 - 1.0)    # 10 月重新從 1 日起算均價
+    tree = IndicatorEngine(session, cfg).trace("OUT_ARAB_LIGHT", date(2026, 10, 20))
+    osp = next(c for c in tree["children"] if c["code"] == "ARAB_LIGHT_OSP_ASIA")
+    assert osp["value"] == -1.0 and osp["obs_date"] == "2026-10-01"
+
+
+def test_osp_must_be_dated_on_its_loading_month(session, cfg):
+    from crudelab.ingest import IngestError, Obs, write_observations
+    with pytest.raises(IngestError, match="裝船月"):
+        write_observations(session, [Obs("ARAB_LIGHT_OSP_ASIA", date(2026, 11, 5), 2.5)], "demo")   # 公布日
+    assert write_observations(session, [Obs("ARAB_LIGHT_OSP_ASIA", date(2026, 12, 1), 2.5)], "demo")["inserted"] == 1
 
 
 def test_scenario_overrides_without_saving(session, cfg):

@@ -81,6 +81,15 @@ class SeriesDef(Strict):
     cftc: CftcRef | None = None                          # 由 CFTC 公開報告自動取數
     jin10: str | None = Field(default=None, pattern=r"^[A-Z0-9._]{2,20}$")   # 金十報價的品種代碼（quote://codes）
     notes: str | None = None
+    # 只在它所屬的期間內有效：月度值只用於那個月，不沿用到下個月；日期必須記在期間第一天（入庫時檢查）。
+    # 用於「對某個月生效」的數據，例如官價：12 月裝船的官價記在 2026-12-01，只用於 12 月，不是公布日。
+    within_period: bool = False
+
+    @model_validator(mode="after")
+    def _period(self) -> SeriesDef:
+        if self.within_period and self.frequency not in ("monthly", "quarterly"):
+            raise ValueError(f"序列 {self.code}：within_period 只用於月度或季度序列")
+        return self
 
     @property
     def resolved_valid_days(self) -> int:
@@ -143,9 +152,27 @@ class CurveDef(Strict):
                 for n in self.months]
 
 
+class PricingView(Strict):
+    """計價視角：在某條期貨 / 掉期曲線上，每天取「計價月份」那個合約的價格。
+
+    計價月份 = 當天所在月份 + months_ahead；給了 roll_day 時，當天日期大於 roll_day 再加一個月。
+      - 中東現貨按裝船月的迪拜均價計價，現貨交易的是兩個月後裝船的貨：DUBAI_SWAP，months_ahead 2
+      - 美國管道原油按交割月計價，交易月是「交割月前兩個月 26 日 → 前一個月 25 日」：WTI，months_ahead 1，roll_day 25
+    計價月份的合約已經到期（例如 WTI 在 20 日左右到期、交易月到 25 日）時，用它的最後結算價。
+    曲線必須有換月規則（roll），否則不知道每天的 Mn 是哪個月份。
+    """
+    code: str = Code
+    name_zh: str
+    curve: str
+    months_ahead: int = Field(ge=0, le=11)
+    roll_day: int | None = Field(default=None, ge=1, le=28)
+    notes: str | None = None
+
+
 class SeriesFile(Strict):
     curves: list[CurveDef] = []
     series: list[SeriesDef] = []
+    views: list[PricingView] = []
 
 
 # ------------------------------ 參數 ------------------------------

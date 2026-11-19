@@ -44,7 +44,7 @@ def sync_to_db(session: Session, cfg: Config) -> dict[str, int]:
         benchmark=s.benchmark, module=s.module, external_ids={**({"eia": s.eia_id} if s.eia_id else {}),
                       **({"cftc": s.cftc.model_dump()} if s.cftc else {}),
                       **({"jin10": s.jin10} if s.jin10 else {})},
-        notes=s.notes, active=True) for s in cfg.series.values()])
+        notes=s.notes, active=True, within_period=s.within_period) for s in cfg.series.values()])
     session.flush()
     for row in session.scalars(select(Series).where(Series.code.not_in(list(cfg.series)))):
         row.active = False

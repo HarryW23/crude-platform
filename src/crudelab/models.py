@@ -34,6 +34,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    false,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -106,6 +107,7 @@ class Series(Base):
     external_ids: Mapped[dict] = mapped_column(JSON)                 # {"eia": "PET.…"}
     notes: Mapped[str | None] = mapped_column(Text)
     active: Mapped[bool] = mapped_column(Boolean, default=True)      # 已從配置移除的序列置為 False，數據保留
+    within_period: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())   # 見 SeriesDef
 
 
 class SeriesAlias(Base):

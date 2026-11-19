@@ -91,6 +91,10 @@ def _leaves(cfg: Config, code: str, seen: dict[str, set[str]]) -> set[str]:
                 out |= _leaves(cfg, name, seen)
             elif name in cfg.series:
                 out.add(name)
+            elif name in cfg.views:                     # 計價視角：用到曲線上的幾個月份
+                from .contracts import view_months_needed
+                view = cfg.views[name]
+                out |= {f"{view.curve}_M{n}" for n in view_months_needed(cfg, view)}
         seen[code] = out
     return seen[code]
 
@@ -136,7 +140,9 @@ def render(cfg: Config) -> str:
             by_module = used[s.code]
             usage = "、".join(f"{MODULES[m]} {len(c)}" for m, c in by_module.items()) or "（目前沒有指標用到）"
             extra = f"　`{s.eia_id}`" if s.eia_id else ""
-            lines.append(f"| `{s.code}`{extra} | {s.name_zh} | {s.unit} | {FREQUENCIES[s.frequency]} | {usage} |")
+            freq = FREQUENCIES[s.frequency] + ("（只對當期生效：日期記適用期間的 1 日，例如官價記裝船月）"
+                                               if s.within_period else "")
+            lines.append(f"| `{s.code}`{extra} | {s.name_zh} | {s.unit} | {freq} | {usage} |")
         lines.append("")
 
     missing = [p for p in cfg.parameters.values() if not p.seed_versions]

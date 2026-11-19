@@ -145,14 +145,42 @@ class IndicatorEngine:
         """換月調整後的價格（比例調整，最新值等於原始值）和沒能調整的換月次數。非曲線序列原樣返回。"""
         return contracts.adjusted_prices(self.cfg, code, self.series_values)
 
+    def view_values(self, code: str) -> pd.Series:
+        """計價視角的值。固定合約視圖下，固定用錨定日那天的計價合約。"""
+        values, _ = contracts.view_series(self.cfg, self.cfg.views[code], self._raw, anchor=self._pin)
+        return self._shifted(code, values)
+
+    def views_used(self, code: str) -> list[str]:
+        """名字（指標）直接或間接用到的計價視角。"""
+        if code in self.cfg.views:
+            return [code]
+        if code not in self.cfg.indicators:
+            return []
+        found: list[str] = []
+        for name in fx.names(self.cfg.indicators[code].formula):
+            found += self.views_used(name)
+        return list(dict.fromkeys(found))
+
+    def _direct_series(self, code: str) -> list[str]:
+        """指標直接用到的序列（不含經計價視角間接用到的曲線月份：那些不按曲線換月，而按計價月份切換）。"""
+        found: list[str] = []
+        for name in fx.names(self.cfg.indicators[code].formula):
+            if name in self.cfg.indicators:
+                found += self._direct_series(name)
+            elif name in self.cfg.series:
+                found.append(name)
+        return list(dict.fromkeys(found))
+
     def rolled_curves(self, code: str) -> list[str]:
-        """名字（序列或指標）依賴的、有換月規則的曲線。"""
-        names = self.dependencies(code)[0] if code in self.cfg.indicators else [code]
+        """名字（序列或指標）直接依賴的、有換月規則的曲線。"""
+        names = self._direct_series(code) if code in self.cfg.indicators else [code]
         found = [m.curve.code for m in (contracts.member(self.cfg, n) for n in names) if m is not None]
         return list(dict.fromkeys(found))
 
     def values(self, name: str) -> pd.Series:
-        """一個序列或指標的值。"""
+        """一個序列、計價視角或指標的值。"""
+        if name in self.cfg.views:
+            return self.view_values(name)
         return self.compute(name) if name in self.cfg.indicators else self.series_values(name)
 
     def _all_points(self) -> pd.DataFrame:
@@ -174,6 +202,9 @@ class IndicatorEngine:
                     params += sub_params
                 elif name in self.cfg.series:
                     series.append(name)
+                elif name in self.cfg.views:
+                    view = self.cfg.views[name]
+                    series += [f"{view.curve}_M{n}" for n in contracts.view_months_needed(self.cfg, view)]
                 else:
                     params.append(name)
             self._deps[code] = (list(dict.fromkeys(series)), list(dict.fromkeys(params)))
@@ -206,6 +237,9 @@ class IndicatorEngine:
             elif name in self.cfg.series:
                 env[name] = self.series_values(name)
                 tolerance[name] = max(ind.ffill_limit, self.cfg.series[name].resolved_valid_days)
+            elif name in self.cfg.views:
+                env[name] = self.view_values(name)
+                tolerance[name] = ind.ffill_limit
             else:
                 env[name] = self.parameter_values(name)
 
@@ -222,6 +256,8 @@ class IndicatorEngine:
             for name, values in env.items():
                 if name in self._step:
                     aligned[name] = values.reindex(index, method="ffill")
+                elif name in self.cfg.series and self.cfg.series[name].within_period:
+                    aligned[name] = _within_period(values, index, self.cfg.series[name].frequency)
                 elif tolerance[name]:
                     aligned[name] = values.reindex(index, method="ffill",
                                                    tolerance=pd.Timedelta(days=tolerance[name]))
@@ -281,7 +317,7 @@ class IndicatorEngine:
         """
         last, end = float(values.iloc[-1]), values.index[-1]
         curves = self.rolled_curves(code)
-        out: dict = {"roll_adjusted": bool(curves), "chg_unadjusted": []}
+        out: dict = {"roll_adjusted": bool(curves) or bool(self.views_used(code)), "chg_unadjusted": []}
         pinned = None
         for key, back in (("chg_1d", 1), ("chg_5d", 5), ("chg_20d", 20)):
             if len(values) <= back:
@@ -290,6 +326,9 @@ class IndicatorEngine:
             out[key] = last - float(values.iloc[-1 - back])
             rolled = [c for c in curves
                       if contracts.rolls_between(self.cfg.curves[c].roll, start.date(), end.date())]
+            rolled += [v for v in self.views_used(code)                 # 計價月份切換了（例如跨月）
+                       if contracts.view_target(self.cfg.views[v], start.date())
+                       != contracts.view_target(self.cfg.views[v], end.date())]
             if not rolled:
                 continue
             if pinned is None:
@@ -308,11 +347,12 @@ class IndicatorEngine:
             return self._trace_parameter(name, on)
         if name in self.cfg.series:
             return self._trace_series(name, on, _tolerance)
+        if name in self.cfg.views:
+            return self._trace_view(name, on)
         ind = self.cfg.indicators[name]
         node = {"kind": "indicator", "code": name, "name_zh": ind.name_zh, "unit": ind.unit,
                 "formula": ind.formula, "value": self.value_at(name, on),
-                "children": [self.trace(child, on, max(ind.ffill_limit, self.cfg.series[child].resolved_valid_days)
-                                        if child in self.cfg.series else ind.ffill_limit)
+                "children": [self.trace(child, on, self._trace_tolerance(ind, child))
                              for child in fx.names(ind.formula)]}
         if fx.uses_window(ind.formula):
             node["note"] = "公式含 lag / ma / diff，結果還用到了更早日期的值，下面只列出當天的輸入"
@@ -331,6 +371,28 @@ class IndicatorEngine:
                     version_note=past["note"].iloc[-1])
         return node
 
+    def _trace_tolerance(self, ind, child: str) -> int:
+        if child in self.cfg.series:
+            return max(ind.ffill_limit, self.cfg.series[child].resolved_valid_days)
+        return ind.ffill_limit
+
+    def _trace_view(self, code: str, on: date) -> dict:
+        view = self.cfg.views[code]
+        values, targets = contracts.view_series(self.cfg, view, self._raw)
+        ts = pd.Timestamp(on)
+        target = contracts.view_target(view, on)
+        node = {"kind": "view", "code": code, "name_zh": view.name_zh, "unit": self.cfg.unit_of(code),
+                "value": float(values[ts]) if ts in values.index else None,
+                "contract": contracts.contract_label(target), "curve": view.curve}
+        front = contracts.front_ordinal(self.cfg.curves[view.curve].roll, on)
+        n = target - front + 1
+        if n >= 1:
+            node["children"] = [self._trace_series(f"{view.curve}_M{n}", on, 0)]
+            node["note"] = f"計價月份 {contracts.contract_label(target)}，當天是曲線上的 M{n}"
+        else:
+            node["note"] = f"計價月份 {contracts.contract_label(target)} 的合約已到期，用它的最後結算價"
+        return node
+
     def _trace_series(self, code: str, on: date, tolerance: int) -> dict:
         s = self.cfg.series[code]
         node = {"kind": "series", "code": code, "name_zh": s.name_zh, "unit": s.unit, "value": None}
@@ -338,7 +400,11 @@ class IndicatorEngine:
         part = points[points["series_code"] == code]
         dates = pd.to_datetime(part["obs_date"])
         ts = pd.Timestamp(on)
-        part = part[(dates <= ts) & (dates >= ts - pd.Timedelta(days=tolerance))]
+        if s.within_period:                       # 只在所屬期間有效：取當天所在期間的那個值
+            start = pd.Timestamp(_period_start(on, s.frequency))
+            part = part[dates == start]
+        else:
+            part = part[(dates <= ts) & (dates >= ts - pd.Timedelta(days=tolerance))]
         if part.empty:
             node["note"] = "這一天沒有數據"
             return node
@@ -350,3 +416,19 @@ class IndicatorEngine:
         if row["obs_date"] != on:
             node["note"] = f"當天無值，沿用 {row['obs_date'].isoformat()} 的值"
         return node
+
+
+def _period_start(day: date, frequency: str) -> date:
+    if frequency == "quarterly":
+        return date(day.year, (day.month - 1) // 3 * 3 + 1, 1)
+    return date(day.year, day.month, 1)
+
+
+def _within_period(values: pd.Series, index: pd.DatetimeIndex, frequency: str) -> pd.Series:
+    """只在所屬期間有效的序列（例如官價）對齊到日期索引：每天取它所在月 / 季那一期的值，不沿用到下一期。"""
+    if values.empty:
+        return pd.Series(np.nan, index=index)
+    freq = "Q" if frequency == "quarterly" else "M"
+    by_period = pd.Series(values.to_numpy(dtype=float), index=values.index.to_period(freq))
+    by_period = by_period[~by_period.index.duplicated(keep="last")]
+    return pd.Series(by_period.reindex(index.to_period(freq)).to_numpy(), index=index)

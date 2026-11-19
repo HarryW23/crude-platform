@@ -36,6 +36,12 @@ class IngestError(ValueError):
     pass
 
 
+def _period_start(day: date, frequency: str) -> bool:
+    if frequency == "quarterly":
+        return day.day == 1 and day.month in (1, 4, 7, 10)
+    return day.day == 1
+
+
 def write_observations(session: Session, observations: list[Obs], source_code: str, *,
                        batch_id: int | None = None, actor: str = "local",
                        now: datetime | None = None) -> dict[str, int]:
@@ -47,9 +53,16 @@ def write_observations(session: Session, observations: list[Obs], source_code: s
     stats = {"inserted": 0, "updated": 0, "unchanged": 0}
     if not codes:
         return stats
-    known = set(session.scalars(select(Series.code).where(Series.code.in_(codes), Series.active)))
-    if codes - known:
-        raise IngestError(f"未知的序列代碼：{', '.join(sorted(codes - known))}")
+    rows = {r.code: r for r in session.scalars(select(Series).where(Series.code.in_(codes), Series.active))}
+    if codes - set(rows):
+        raise IngestError(f"未知的序列代碼：{', '.join(sorted(codes - set(rows)))}")
+    for o in observations:                       # 只在期間內有效的序列（例如官價）：日期必須是期間第一天
+        row = rows[o.series_code]
+        if row.within_period and not _period_start(o.obs_date, row.frequency):
+            first = "季度第一天（1/4/7/10 月 1 日）" if row.frequency == "quarterly" else "當月 1 日"
+            raise IngestError(f"{o.series_code} 的日期 {o.obs_date} 不對：這條序列的值只對一個期間生效，"
+                              f"日期要記在它適用的那個期間的{first}（例如官價記裝船月，12 月裝船 → 2026-12-01），"
+                              "不要用公布日期")
 
     latest: dict[tuple[str, date], Obs] = {}
     for o in observations:

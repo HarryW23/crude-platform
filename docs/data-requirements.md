@@ -70,7 +70,7 @@
 | `BRENT_M11` | 布倫特期貨 M11 | USD/bbl | 日 | （目前沒有指標用到） |
 | `BRENT_M12` | 布倫特期貨 M12 | USD/bbl | 日 | 地域價差 3 |
 | `WTI_M1` | WTI 期貨 M1 | USD/bbl | 日 | 煉廠 3、地域價差 10 |
-| `WTI_M2` | WTI 期貨 M2 | USD/bbl | 日 | 地域價差 1 |
+| `WTI_M2` | WTI 期貨 M2 | USD/bbl | 日 | 地域價差 5 |
 | `WTI_M3` | WTI 期貨 M3 | USD/bbl | 日 | 地域價差 1 |
 | `WTI_M4` | WTI 期貨 M4 | USD/bbl | 日 | （目前沒有指標用到） |
 | `WTI_M5` | WTI 期貨 M5 | USD/bbl | 日 | （目前沒有指標用到） |
@@ -126,7 +126,7 @@
 | `CAL_EIA_DISTILLATE_SURPRISE` | EIA 餾分油庫存超預期 | kb | 周 | （目前沒有指標用到） |
 | `CAL_API_CRUDE_SURPRISE` | API 原油庫存超預期 | kb | 周 | （目前沒有指標用到） |
 | `DUBAI_SWAP_M1` | 迪拜掉期 M1 | USD/bbl | 日 | 煉廠 9、地域價差 11 |
-| `DUBAI_SWAP_M2` | 迪拜掉期 M2 | USD/bbl | 日 | （目前沒有指標用到） |
+| `DUBAI_SWAP_M2` | 迪拜掉期 M2 | USD/bbl | 日 | 煉廠 1、地域價差 4 |
 | `DUBAI_SWAP_M3` | 迪拜掉期 M3 | USD/bbl | 日 | 地域價差 1 |
 | `DUBAI_SWAP_M4` | 迪拜掉期 M4 | USD/bbl | 日 | （目前沒有指標用到） |
 | `DUBAI_SWAP_M5` | 迪拜掉期 M5 | USD/bbl | 日 | （目前沒有指標用到） |
@@ -183,11 +183,11 @@
 
 | 代碼 | 名稱 | 單位 | 頻率 | 用到它的指標 |
 |---|---|---|---|---|
-| `ARAB_LIGHT_OSP_ASIA` | 沙特輕質官價（亞洲） | USD/bbl | 月 | 地域價差 3 |
-| `ARAB_MEDIUM_OSP_ASIA` | 沙特中質官價（亞洲） | USD/bbl | 月 | 煉廠 1、地域價差 3 |
-| `ARAB_HEAVY_OSP_ASIA` | 沙特重質官價（亞洲） | USD/bbl | 月 | 地域價差 1 |
-| `BASRAH_MEDIUM_OSP_ASIA` | 巴士拉中質官價（亞洲） | USD/bbl | 月 | 地域價差 2 |
-| `BASRAH_HEAVY_OSP_ASIA` | 巴士拉重質官價（亞洲） | USD/bbl | 月 | （目前沒有指標用到） |
+| `ARAB_LIGHT_OSP_ASIA` | 沙特輕質官價（亞洲） | USD/bbl | 月（只對當期生效：日期記適用期間的 1 日，例如官價記裝船月） | 地域價差 3 |
+| `ARAB_MEDIUM_OSP_ASIA` | 沙特中質官價（亞洲） | USD/bbl | 月（只對當期生效：日期記適用期間的 1 日，例如官價記裝船月） | 煉廠 1、地域價差 3 |
+| `ARAB_HEAVY_OSP_ASIA` | 沙特重質官價（亞洲） | USD/bbl | 月（只對當期生效：日期記適用期間的 1 日，例如官價記裝船月） | 地域價差 1 |
+| `BASRAH_MEDIUM_OSP_ASIA` | 巴士拉中質官價（亞洲） | USD/bbl | 月（只對當期生效：日期記適用期間的 1 日，例如官價記裝船月） | 地域價差 2 |
+| `BASRAH_HEAVY_OSP_ASIA` | 巴士拉重質官價（亞洲） | USD/bbl | 月（只對當期生效：日期記適用期間的 1 日，例如官價記裝船月） | （目前沒有指標用到） |
 
 ### 油輪運價（波羅的海交易所 TD 航線）
 

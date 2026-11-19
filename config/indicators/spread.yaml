@@ -1,11 +1,19 @@
 # 模組一：地域價差。
 # 指標全部由「公式 + 參數」構成，載入時會做量綱檢查（聲明的 unit 必須等於公式推導出的單位）。
 #   formula      可用 + - * / ** 與括號；名字可以是 序列代碼 / 參數 key / 其他指標代碼
-#                函數：lag(x, n) 滯後 n 期、ma(x, n) n 期均值、diff(x, n) n 期變化、abs(x)
+#                函數：lag(x, n) 滯後 n 期、ma(x, n) n 期均值、diff(x, n) n 期變化、abs(x)、
+#                      mtd(x) 當月 1 日到當天的平均（月底那天 = 整月均價）
+#                名字也可以是計價視角（config/master/series/crude.yaml 的 views）
 #   group        前台分組
 #   ffill_limit  輸入缺值時最多沿用幾天（處理各市場假期不一致），缺省 0 = 不沿用
 #   hidden       中間量，不在列表顯示
-# 簡化之處：升貼水和官價的計價期一律用 M1 或當日現貨近似，沒有按實際計價月份對齊。
+#
+# 現貨絕對價的計價規則（基準 + 升貼水，基準按各油種實際的計價期取）：
+#   中東官價（沙特、巴士拉，亞洲）  裝船月的 阿曼/迪拜 均價 + 該月官價。本月裝船：月中用月初至今的均價，月底即實際結算價
+#   中東、遠東現貨（上扎庫姆、ESPO）  裝船月（當月 + 2）的迪拜掉期 + 升貼水       → 計價視角 DUBAI_LOADING
+#   北海、西非、地中海（對即期 Brent） 當天的即期 Brent + 升貼水（升貼水本身就是對即期 Brent 評估的）
+#   美國（WTI 休斯頓、Mars、WCS）     交易月對應交割月的 WTI + 升貼水              → 計價視角 WTI_TRADE_MONTH
+#   Tupi 到中國                       Brent M1 + 到岸升貼水（近似：未按到港月對齊）
 
 # ---------- 基準價差 ----------
 - {code: SPR_BRENT_WTI, name_zh: Brent − WTI, module: spread, group: 基準價差, unit: USD/bbl,
@@ -75,19 +83,21 @@
 - {code: CRV_SC_FLY, name_zh: SC 曲率, module: spread, group: 曲線形態, unit: CNY/bbl,
    formula: "SC_M1 - 2 * SC_M6 + SC_M12"}
 
-# ---------- 現貨絕對價（基準 + 升貼水，裝港價） ----------
+# ---------- 現貨絕對價（基準 + 升貼水，裝港價；計價規則見文件開頭） ----------
 - {code: OMAN_DUBAI_AVG, name_zh: 阿曼/迪拜均價, module: spread, group: 現貨絕對價, unit: USD/bbl, hidden: true,
    formula: "(OMAN_M1 + DUBAI_CASH) / 2"}
-- {code: OUT_ARAB_LIGHT, name_zh: 沙特輕質, module: spread, group: 現貨絕對價, unit: USD/bbl,
-   formula: "OMAN_DUBAI_AVG + ARAB_LIGHT_OSP_ASIA"}
-- {code: OUT_ARAB_MEDIUM, name_zh: 沙特中質, module: spread, group: 現貨絕對價, unit: USD/bbl,
-   formula: "OMAN_DUBAI_AVG + ARAB_MEDIUM_OSP_ASIA"}
-- {code: OUT_BASRAH_MEDIUM, name_zh: 巴士拉中質, module: spread, group: 現貨絕對價, unit: USD/bbl,
-   formula: "OMAN_DUBAI_AVG + BASRAH_MEDIUM_OSP_ASIA"}
+- {code: OMAN_DUBAI_MTD, name_zh: 阿曼/迪拜當月均價（月初至今）, module: spread, group: 現貨絕對價, unit: USD/bbl,
+   hidden: true, formula: "mtd(OMAN_DUBAI_AVG)"}
+- {code: OUT_ARAB_LIGHT, name_zh: 沙特輕質（本月裝船）, module: spread, group: 現貨絕對價, unit: USD/bbl,
+   formula: "OMAN_DUBAI_MTD + ARAB_LIGHT_OSP_ASIA", notes: 本月阿曼/迪拜均價（月中為月初至今）+ 本月裝船的官價}
+- {code: OUT_ARAB_MEDIUM, name_zh: 沙特中質（本月裝船）, module: spread, group: 現貨絕對價, unit: USD/bbl,
+   formula: "OMAN_DUBAI_MTD + ARAB_MEDIUM_OSP_ASIA", notes: 本月阿曼/迪拜均價（月中為月初至今）+ 本月裝船的官價}
+- {code: OUT_BASRAH_MEDIUM, name_zh: 巴士拉中質（本月裝船）, module: spread, group: 現貨絕對價, unit: USD/bbl,
+   formula: "OMAN_DUBAI_MTD + BASRAH_MEDIUM_OSP_ASIA", notes: 本月阿曼/迪拜均價（月中為月初至今）+ 本月裝船的官價}
 - {code: OUT_UPPER_ZAKUM, name_zh: 上扎庫姆, module: spread, group: 現貨絕對價, unit: USD/bbl,
-   formula: "DUBAI_SWAP_M1 + UPPER_ZAKUM_DIFF"}
+   formula: "DUBAI_LOADING + UPPER_ZAKUM_DIFF", notes: 裝船月（當月 + 2）的迪拜掉期 + 現貨升貼水}
 - {code: OUT_ESPO, name_zh: ESPO, module: spread, group: 現貨絕對價, unit: USD/bbl,
-   formula: "DUBAI_SWAP_M1 + ESPO_DIFF"}
+   formula: "DUBAI_LOADING + ESPO_DIFF", notes: 裝船月（當月 + 2）的迪拜掉期 + 現貨升貼水}
 - {code: OUT_URALS, name_zh: 烏拉爾, module: spread, group: 現貨絕對價, unit: USD/bbl,
    formula: "DATED_BRENT + URALS_DIFF"}
 - {code: OUT_FORTIES, name_zh: 福蒂斯, module: spread, group: 現貨絕對價, unit: USD/bbl,
@@ -97,11 +107,11 @@
 - {code: OUT_BONNY_LIGHT, name_zh: 邦尼輕質, module: spread, group: 現貨絕對價, unit: USD/bbl,
    formula: "DATED_BRENT + BONNY_LIGHT_DIFF"}
 - {code: OUT_WTI_MEH, name_zh: WTI 休斯頓, module: spread, group: 現貨絕對價, unit: USD/bbl,
-   formula: "WTI_M1 + WTI_MEH_DIFF"}
+   formula: "WTI_TRADE_MONTH + WTI_MEH_DIFF", notes: 交易月對應交割月的 WTI + 升貼水}
 - {code: OUT_MARS, name_zh: Mars, module: spread, group: 現貨絕對價, unit: USD/bbl,
-   formula: "WTI_M1 + MARS_DIFF"}
+   formula: "WTI_TRADE_MONTH + MARS_DIFF", notes: 交易月對應交割月的 WTI + 升貼水}
 - {code: OUT_WCS, name_zh: WCS（哈迪斯蒂）, module: spread, group: 現貨絕對價, unit: USD/bbl,
-   formula: "WTI_M1 + WCS_HARDISTY_DIFF"}
+   formula: "WTI_TRADE_MONTH + WCS_HARDISTY_DIFF", notes: 交易月對應交割月的 WTI + 升貼水}
 
 # ---------- 品質價差 ----------
 - {code: QS_MARS_MEH, name_zh: Mars − WTI 休斯頓（酸甜價差）, module: spread, group: 品質價差, unit: USD/bbl,
