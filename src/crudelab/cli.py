@@ -313,7 +313,7 @@ def _backup_file(settings, cfg, given: str) -> Path:
 def cmd_jin10(args) -> int:
     """金十數據：probe 把真實接口的樣子列出來（用來核對字段和規則）；usage 看今天的用量。不打印 token。"""
     import json as _json
-    from datetime import UTC, datetime, timedelta
+    from datetime import UTC, datetime
 
     from . import jin10
     from .config import load_config
@@ -329,15 +329,16 @@ def cmd_jin10(args) -> int:
             return 1
         try:
             with db.session_scope() as session:
-                rows = jin10.backfill_klines(session, cfg, client, args.count, args.time)
+                result = jin10.backfill_closes(session, cfg, client, args.days)
         except (MCPError, jin10.Jin10LimitReached) as exc:
             print(f"回填失敗：{exc}", file=sys.stderr)
             return 1
         finally:
             client.close()
-        for r in rows:
-            gap = "—" if r["median_gap_hours"] is None else f"{r['median_gap_hours']:.0f} 小時"
-            print(f"  {r['series']:<16} {r['code']:<8} {r['bars']} 根，間隔 {gap}，新增 {r['written']}　{r.get('note', '')}")
+        print(f"紐約交易日 {result['first']} → {result['last']}，調用 get_kline {result['calls']} 次（口徑：紐約 16:59 的收盤價）")
+        for r in result["rows"]:
+            print(f"  {r['series']:<16} {r['code']:<8} 取到 {r['closes']}/{r['days']} 天，休市 {r['no_trading']} 天，"
+                  f"新增 {r['written']}")
         return 0
     if args.action == "usage":
         tools = ("list_calendar", "list_flash", "search_flash", "get_quote", "get_kline", "quote://codes")
@@ -378,21 +379,15 @@ def cmd_jin10(args) -> int:
         quote = show("報價 UKOIL", lambda: client.call("get_quote", code="UKOIL"))
         if quote is not None:
             print("  " + _json.dumps(quote, ensure_ascii=False)[:400])
-        def bars(args):
-            data = client.call("get_kline", code="UKOIL", count=3, **args)
-            payload = data.get("data", data) if isinstance(data, dict) else {}
-            got = [b for b in (payload.get("klines") or []) if isinstance(b, dict)]
-            times = [jin10.parse_time(b.get("time")) for b in got]
-            shown = "、".join(f"{t:%Y-%m-%d %H:%M}Z" if t else "?" for t in times)
-            return f"{len(got)} 根，時間 {shown or '—'}，收盤 {[b.get('close') for b in got]}"
-        # time 參數的含義指南沒寫：分別試週期寫法和時間點寫法，看回來的 K 線間隔和位置（每種試一次，共 6 次調用）
-        yesterday = int((datetime.now(UTC) - timedelta(days=1)).timestamp())
-        for label, extra_args in (("不傳 time", {}), ("time=1d", {"time": "1d"}), ("time=day", {"time": "day"}),
-                                  ("time=D", {"time": "D"}), (f"time={yesterday}（一天前的秒）", {"time": yesterday}),
-                                  ("time=一天前的日期", {"time": f"{datetime.now(UTC) - timedelta(days=1):%Y-%m-%d}"})):
-            result = show(f"K 線 UKOIL count=3，{label}", lambda a=extra_args: bars(a))
-            if result is not None:
-                print("  " + result)
+        def close_check():
+            day = jin10.completed_trade_days(datetime.now(UTC).replace(tzinfo=None), 1)[0]
+            got = jin10.close_on(client, "UKOIL", day)
+            if got is None:
+                return f"紐約 {day} 沒有取到收盤價（可能休市）"
+            return f"紐約 {day} 16:59 的 K 線：{got[1]:%Y-%m-%d %H:%M}Z，收盤 {got[0]}"
+        result = show("收盤價 UKOIL（get_kline，time = 紐約 16:59 的秒）", close_check)
+        if result is not None:
+            print("  " + result)
         calendar = show("財經日曆", lambda: client.call("list_calendar"))
         if calendar is not None:
             rows = jin10.rows_of(calendar)
@@ -740,10 +735,9 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("run-job", help="立即運行一個定時任務；不給名字則列出全部")
     p.add_argument("code", nargs="?")
     p.set_defaults(func=cmd_run_job)
-    p = sub.add_parser("jin10", help="金十數據：probe 檢測接口 / usage 今天的調用次數 / backfill 用 K 線補報價歷史")
+    p = sub.add_parser("jin10", help="金十數據：probe 檢測接口 / usage 今天的調用次數 / backfill 補報價歷史收盤價")
     p.add_argument("action", choices=["probe", "usage", "backfill"])
-    p.add_argument("--count", type=int, default=300, help="backfill 時每個品種取多少根 K 線")
-    p.add_argument("--time", default=None, help="backfill 時傳給 get_kline 的 time 參數（先用 probe 確認含義）")
+    p.add_argument("--days", type=int, default=60, help="backfill 補最近多少個紐約交易日（每品種每天調用一次 get_kline）")
     p.set_defaults(func=cmd_jin10)
     p = sub.add_parser("lseg-rics", help="生成 LSEG 導出腳本用的 RIC 清單（scripts/lseg_rics.txt）")
     p.add_argument("--output", help="寫入這個文件；不給就打印")

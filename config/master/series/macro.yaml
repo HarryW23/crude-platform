@@ -1,13 +1,11 @@
-# 宏觀與跨資產：匯率、黃金，以及金十的原油報價。來自金十（MCP），每天北京時間早上取一次收盤後的報價。
+# 宏觀與跨資產：匯率、黃金，以及金十的原油報價。來自金十（MCP），每個紐約交易日取一個收盤價（紐約 16:59 那根 1 分鐘 K 線，見 jin10.py）。
 #   jin10   金十的品種代碼（crudelab jin10 probe 會列出 quote://codes，可以在那裡核對或找新的代碼）
 #
 # ⚠ 金十的 UKOIL / USOIL 是它匯總的現貨報價，不是交易所的期貨結算價：存成單獨的序列，
-#   不混進 BRENT_M1 / WTI_M1（否則曲線、月差、回測的口徑會亂）。只用來看盤中 / 收盤前的大致位置。
-# 美元指數：金十代碼是 USDX（probe 在 quote://codes 裡確認過）。美債收益率金十沒有，以後走 FRED。
+#   不混進 BRENT_M1 / WTI_M1（否則曲線、月差、回測的口徑會亂）。只用來看紐約下午 5 點的大致位置。
+# 美元指數、美債收益率：金十的品種列表裡沒有（probe 核對過），以後從 FRED 等其他來源接。
 
 series:
-  - {code: MACRO_USDX, name_zh: 美元指數, commodity: FX, location: GLOBAL, kind: fx, unit: idx, module: common,
-     jin10: USDX, aliases: [USDX, DXY, 美元指数]}
   - {code: MACRO_USDCNH, name_zh: 美元兌離岸人民幣, commodity: FX, location: GLOBAL, kind: fx, unit: CNY/USD, module: common,
      jin10: USDCNH, aliases: [USDCNH, 美元兑离岸人民币]}
   - {code: MACRO_EURUSD, name_zh: 歐元兌美元, commodity: FX, location: GLOBAL, kind: fx, unit: USD/EUR, module: common,

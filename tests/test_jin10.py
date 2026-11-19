@@ -154,7 +154,7 @@ def test_job_without_token_is_skipped(session, cfg, settings, client):
 def test_probe_command(session, cfg, monkeypatch, capsys):
     from crudelab import cli
     server = FakeServer({"get_quote": lambda a: {"data": {"code": "UKOIL", "close": 82.5}},
-                         "get_kline": lambda a: {"data": {"code": "UKOIL", "klines": []}},
+                         "get_kline": minute_klines,
                          "list_calendar": lambda a: {"data": calendar_rows()},
                          "list_flash": lambda a: {"data": {"items": [{"id": 1, "content": "沙特宣布延长减产"}],
                                                            "has_more": False}}})
@@ -164,7 +164,7 @@ def test_probe_command(session, cfg, monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "已連接" in out and "EIA原油库存" in out and "第一條的字段：['content', 'id']" in out
     assert "缺 " in out and "USDCNH" in out                       # 配置裡的代碼不在列表裡會點名
-    assert "time=1d" in out and "翻頁用" in out
+    assert "16:59 的 K 線" in out and "翻頁用" in out
     assert TOKEN not in out
     assert cli.main(["jin10", "usage"]) == 0
     assert "list_calendar    1" in capsys.readouterr().out
@@ -241,24 +241,52 @@ def test_flash_job_skips_without_token(session, cfg, settings):
 
 # ------------------------------ 報價 ------------------------------
 
-def test_quote_connector_writes_daily_values(session, cfg):
+BASE = {"UKOIL": 82.0, "USOIL": 78.0, "XAUUSD": 2650.0, "USDCNH": 7.25, "EURUSD": 1.05, "USDJPY": 154.0}
+HOLIDAY = date(2026, 11, 26)                                             # 感恩節：當天沒有 K 線
+
+
+def minute_klines(args):
+    """模擬金十 get_kline：1 分鐘 K 線，回傳截止到 time（秒）的最後 count 根；假期那天整天沒有 K 線。"""
+    from datetime import UTC, datetime, timedelta
+    end = datetime.fromtimestamp(args.get("time") or 1795058460, UTC).replace(second=0)
+    bars, t = [], end
+    while len(bars) < args.get("count", 3):
+        if jin10.trade_date(t.replace(tzinfo=None)) not in (None, HOLIDAY):
+            bars.append({"time": int(t.timestamp()), "close": f"{BASE[args['code']] + t.day / 100:.4f}"})
+            t -= timedelta(minutes=1)
+        else:
+            t -= timedelta(hours=1)
+    return {"data": {"code": args["code"], "klines": bars}}
+
+
+def test_close_on_uses_new_york_1659_and_skips_holidays(cfg):
+    from datetime import datetime
+    calls = []
+    jin = jin10.Jin10(cfg, client_for(FakeServer({"get_kline": lambda a: calls.append(a) or minute_klines(a)})))
+    value, when = jin10.close_on(jin, "UKOIL", date(2026, 11, 18))
+    assert when == datetime(2026, 11, 18, 21, 59) and value == 82.18             # 冬令時：紐約 16:59 = UTC 21:59
+    assert calls[0]["time"] == jin10.close_stamp(date(2026, 11, 18)) and isinstance(calls[0]["time"], int)
+    assert jin10.close_on(jin, "UKOIL", HOLIDAY) is None                          # 假期：拿到的是前一天的 K 線，不記
+    assert jin10.close_stamp(date(2026, 7, 1)) == int(datetime(2026, 7, 1, 20, 59).timestamp()
+                                                      - datetime(1970, 1, 1).timestamp())   # 夏令時：UTC 20:59
+    days = jin10.completed_trade_days(datetime(2026, 11, 23, 22, 30), 3)          # 紐約週一 17:30
+    assert days == [date(2026, 11, 19), date(2026, 11, 20), date(2026, 11, 23)]
+    assert jin10.completed_trade_days(datetime(2026, 11, 23, 21, 0), 1) == [date(2026, 11, 20)]   # 週一還沒收盤
+
+
+def test_quote_connector_writes_daily_closes(session, cfg):
+    from datetime import datetime
+
     from crudelab.connectors.jin10_quotes import Jin10QuoteConnector
     from crudelab.models import Series
-    quotes = {"UKOIL": 82.4, "USOIL": 78.1, "XAUUSD": 2650.0, "USDCNH": 7.25, "EURUSD": 1.05, "USDJPY": 154.2,
-              "USDX": 99.8}
-    stamp = {"t": "2026-11-19T06:35:00+08:00"}                           # 金十真實的寫法：帶時區
-    server = FakeServer({"get_quote": lambda a: {"data": {"code": a["code"], "close": str(quotes[a["code"]]),
-                                                          "time": stamp["t"]}}})
-    connector = Jin10QuoteConnector(cfg, client_for(server))
+    server = FakeServer({"get_kline": minute_klines})
+    connector = Jin10QuoteConnector(cfg, client_for(server), now=datetime(2026, 11, 27, 22, 30))   # 紐約週五收盤後
     obs = connector.fetch(list(session.scalars(select(Series))), None, None)
-    got = {o.series_code: (o.obs_date, o.value) for o in obs}
-    # 北京週四 06:35 = 紐約週三 17:35：是週三收盤後的價格，記在週三（和 EIA、CME 的日期對齊）
-    assert got["MACRO_XAUUSD"] == (date(2026, 11, 18), 2650.0) and got["JIN10_UKOIL"][1] == 82.4
-    assert got["MACRO_USDX"] == (date(2026, 11, 18), 99.8)
-    assert "BRENT_M1" not in got                                          # 金十報價不混進期貨結算價
-    assert len(obs) == 7
-    stamp["t"] = "2026-11-22T06:35:00+08:00"                              # 北京週日早上 = 紐約週六：不記
-    assert connector.fetch(list(session.scalars(select(Series))), None, None) == []
+    got = {(o.series_code, o.obs_date): o.value for o in obs}
+    assert got[("MACRO_XAUUSD", date(2026, 11, 27))] == 2650.27
+    assert ("MACRO_XAUUSD", HOLIDAY) not in got and ("MACRO_XAUUSD", date(2026, 11, 25)) in got   # 跳過感恩節
+    assert not any(code == "BRENT_M1" for code, _ in got)                 # 金十報價不混進期貨結算價
+    assert len(obs) == 6 * 2
 
 
 def test_times_dates_and_flash_ids():
@@ -279,23 +307,27 @@ def test_times_dates_and_flash_ids():
     assert jin10.flash_id({"id": 7}, when, "甲") == "7" and len(jin10.flash_id({}, when, "甲")) == 40
 
 
-def test_backfill_accepts_only_daily_bars(session, cfg):
-    from datetime import UTC, datetime
-    weekdays = [d for d in range(9, 21) if date(2026, 11, d).weekday() < 5]
-    def kline(args):
-        if args["code"] == "XAUUSD":                                      # 日 K：紐約收盤時間的時間戳（秒）
-            bars = [{"time": int(datetime(2026, 11, d, 22, 0, tzinfo=UTC).timestamp()), "close": 2600 + d}
-                    for d in weekdays]
-        else:                                                             # 分鐘 K（金十默認）：不寫
-            bars = [{"time": 1795058460 + 60 * i, "close": 80 + i / 10} for i in range(9)]
-        return {"data": {"code": args["code"], "klines": bars}}
+def test_backfill_closes_checks_budget_first(session, cfg):
+    from datetime import datetime
     calls = []
-    server = FakeServer({"get_kline": lambda a: calls.append(a) or kline(a)})
-    jin = jin10.Jin10(cfg, client_for(server))
-    rows = {r["series"]: r for r in jin10.backfill_klines(session, cfg, jin, count=10, time="1d")}
-    assert rows["MACRO_XAUUSD"]["written"] == len(weekdays) and rows["MACRO_XAUUSD"]["median_gap_hours"] == 24
-    assert rows["JIN10_UKOIL"]["written"] == 0 and "不是日 K" in rows["JIN10_UKOIL"]["note"]
-    assert all(c.get("time") == "1d" for c in calls)
+    jin = jin10.Jin10(cfg, client_for(FakeServer({"get_kline": lambda a: calls.append(a) or minute_klines(a)})))
+    now = datetime(2026, 11, 27, 22, 30)
+    result = jin10.backfill_closes(session, cfg, jin, days=10, now=now)
+    rows = {r["series"]: r for r in result["rows"]}
+    assert result["calls"] == 60 == len(calls) and result["last"] == date(2026, 11, 27)
+    assert rows["MACRO_XAUUSD"]["closes"] == 9 and rows["MACRO_XAUUSD"]["no_trading"] == 1
+    assert rows["MACRO_XAUUSD"]["written"] == 9
+    session.commit()
+    again = jin10.backfill_closes(session, cfg, jin, days=10, now=now)    # 再跑一次：不重複寫
+    assert all(r["written"] == 0 for r in again["rows"])
+    session.commit()
+    import dataclasses
+    small = dataclasses.replace(cfg, jin10=cfg.jin10.model_copy(update={"max_calls_per_tool_per_day": 150}))
+    # 已用 120 次，只剩 30 次
+    before = len(calls)
+    with pytest.raises(jin10.Jin10LimitReached, match="最多可以補 5 天"):
+        jin10.backfill_closes(session, small, jin, days=10, now=now)
+    assert len(calls) == before                                           # 額度不夠：一次都不調用
 
 
 def test_quote_job_skips_without_token(session, cfg, settings):

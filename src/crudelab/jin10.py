@@ -153,9 +153,8 @@ NEW_YORK = ZoneInfo("America/New_York")
 
 
 def trade_date(utc_naive: datetime) -> date | None:
-    """報價屬於哪個交易日：按紐約日期。外匯、黃金、原油都以紐約下午 5 點為一天的收盤，
-    北京時間早上 06:40 取到的價格 = 紐約前一天收盤後的價格，記在紐約那一天（和 EIA、CME 的日期對齊）。
-    紐約週六、週日沒有正常交易，回傳 None（不記）。"""
+    """一個時刻屬於哪個交易日：按紐約日期（外匯、黃金、原油都以紐約下午 5 點收盤，和 EIA、CME 的日期對齊）。
+    紐約週六、週日沒有正常交易，回傳 None。"""
     day = utc_naive.replace(tzinfo=ZoneInfo("UTC")).astimezone(NEW_YORK).date()
     return None if day.weekday() >= 5 else day
 
@@ -327,36 +326,88 @@ def prune_flash(session: Session, now: datetime | None = None) -> int:
     return session.execute(delete(NewsFlash).where(NewsFlash.time < cutoff)).rowcount or 0
 
 
-# ------------------------------ K 線回填 ------------------------------
+# ------------------------------ 每日收盤價（報價和回填共用） ------------------------------
+#
+# 金十 get_kline 只給 1 分鐘 K 線；time 參數是 Unix 秒，回傳「截止到這個時刻」的最後 count 根（probe 實測）。
+# 所以每個品種、每個交易日只要一次調用就能取到收盤價。口徑統一為：
+#     紐約時間 16:59 開始的那根 1 分鐘 K 線的收盤價（= 紐約下午 5 點的價格）
+# 外匯、黃金以紐約下午 5 點換日；原油期貨 17:00–18:00 休市，這個時刻也正好在休市前。
+# 每天定時拉取和歷史回填都用這個定義，所以幾點運行都不影響數值，歷史和每日數據是同一個口徑。
 
-DAILY_MIN_GAP_HOURS = 20
+CLOSE_AT = (16, 59)                   # 紐約時間
+CLOSE_MAX_STALE_HOURS = 6             # 取到的 K 線比收盤時刻早超過 6 小時 = 那天沒有正常交易（假期），不記
 
 
-def backfill_klines(session: Session, cfg: Config, jin: Jin10, count: int = 300,
-                    time: str | None = None) -> list[dict]:
-    """用 K 線給登記了 jin10 代碼的序列補歷史。只接受日 K（相鄰兩根的中位間隔不少於 20 小時），否則不寫並說明。
+def close_stamp(day: date) -> int:
+    """day 這個紐約交易日的收盤時刻（Unix 秒）。夏令時由時區庫處理。"""
+    return int(datetime(day.year, day.month, day.day, *CLOSE_AT, tzinfo=NEW_YORK).timestamp())
 
-    金十 get_kline 默認回傳 1 分鐘 K 線；time 參數的含義指南沒有寫明，要先用 crudelab jin10 probe 試出來，
-    確認能取日 K 之後再用 --time 傳進來。日 K 的日期用 trade_date（紐約交易日），和每日報價一致。"""
+
+def completed_trade_days(now_utc: datetime, n: int) -> list[date]:
+    """到 now 為止最近 n 個已經收盤的紐約工作日，由舊到新。"""
+    day = now_utc.replace(tzinfo=ZoneInfo("UTC")).astimezone(NEW_YORK).date()
+    out: list[date] = []
+    while len(out) < n:
+        if day.weekday() < 5 and close_stamp(day) + 60 <= now_utc.replace(tzinfo=ZoneInfo("UTC")).timestamp():
+            out.append(day)
+        day -= timedelta(days=1)
+    return out[::-1]
+
+
+def close_on(jin: Jin10, code: str, day: date) -> tuple[float, datetime] | None:
+    """某品種某個紐約交易日的收盤價和那根 K 線的時間（UTC）。那天沒有交易（假期）回傳 None。"""
+    stamp = close_stamp(day)
+    data = jin.call("get_kline", code=code, time=stamp, count=3)
+    payload = data.get("data", data) if isinstance(data, dict) else {}
+    bars = []
+    for b in payload.get("klines") or []:
+        if isinstance(b, dict):
+            when, value = parse_time(b.get("time")), number(b.get("close"))
+            if when is not None and value is not None:
+                bars.append((when, value))
+    limit = datetime.fromtimestamp(stamp, ZoneInfo("UTC")).replace(tzinfo=None)
+    usable = [b for b in bars if b[0] <= limit]
+    if not usable:
+        return None
+    when, value = max(usable)
+    if trade_date(when) != day or (limit - when).total_seconds() > CLOSE_MAX_STALE_HOURS * 3600:
+        return None
+    return value, when
+
+
+def quote_series(session: Session) -> list:
     from .models import Series
-    out = []
-    for s in session.scalars(select(Series).where(Series.active)):
-        code = (s.external_ids or {}).get("jin10")
-        if not code:
-            continue
-        data = jin.call("get_kline", code=code, count=count, **({"time": time} if time else {}))
-        payload = data.get("data", data) if isinstance(data, dict) else {}
-        bars = [b for b in (payload.get("klines") or []) if isinstance(b, dict)]
-        points = sorted((t, v) for t, v in ((parse_time(b.get("time")), number(b.get("close"))) for b in bars)
-                        if t is not None and v is not None)
-        gaps = sorted((b[0] - a[0]).total_seconds() / 3600 for a, b in zip(points, points[1:], strict=False))
-        median = gaps[len(gaps) // 2] if gaps else None
-        row = {"series": s.code, "code": code, "bars": len(points), "median_gap_hours": median, "written": 0}
-        if median is None or median < DAILY_MIN_GAP_HOURS:
-            row["note"] = "不是日 K（或根數太少），沒有寫入"
-        else:
-            daily = {d: v for d, v in ((trade_date(t), v) for t, v in points) if d is not None}   # 同一天取最後一根
-            obs = [Obs(s.code, d, v, f"jin10:kline:{code}") for d, v in sorted(daily.items())]
+    return [s for s in session.scalars(select(Series).where(Series.active).order_by(Series.code))
+            if (s.external_ids or {}).get("jin10")]
+
+
+def backfill_closes(session: Session, cfg: Config, jin: Jin10, days: int, now: datetime | None = None) -> dict:
+    """給登記了 jin10 代碼的序列補最近 days 個交易日的收盤價。每品種每天一次 get_kline。
+    調用前先算總次數：超過今天剩下的額度就不開始，並說明可以補多少天。
+    和 sync_calendar 一樣：調用前 session 不能有未提交的寫入。"""
+    series = quote_series(session)
+    trade_days = completed_trade_days(now or utcnow(), days)
+    need = len(series) * len(trade_days)
+    left = cfg.jin10.max_calls_per_tool_per_day - used_today("get_kline")
+    if need > left:
+        raise Jin10LimitReached(f"要調用 get_kline {need} 次（{len(series)} 個品種 × {len(trade_days)} 天），"
+                                f"今天只剩 {left} 次；最多可以補 {max(left // max(len(series), 1), 0)} 天，或明天再補")
+    # 先把所有調用做完、再一次寫入：調用記錄走另一個會話，這個會話在調用期間不能有未提交的寫入（SQLite 會鎖）
+    rows, collected = [], []
+    for s in series:
+        code = s.external_ids["jin10"]
+        obs, holidays = [], 0
+        for day in trade_days:
+            got = close_on(jin, code, day)
+            if got is None:
+                holidays += 1
+                continue
+            obs.append(Obs(s.code, day, got[0], f"jin10:close:{code}"))
+        collected.append(obs)
+        rows.append({"series": s.code, "code": code, "days": len(trade_days), "closes": len(obs),
+                     "no_trading": holidays, "written": 0})
+    for row, obs in zip(rows, collected, strict=True):
+        if obs:
             row["written"] = write_observations(session, obs, SOURCE, actor="jin10")["inserted"]
-        out.append(row)
-    return out
+    return {"calls": need, "first": trade_days[0] if trade_days else None,
+            "last": trade_days[-1] if trade_days else None, "rows": rows}

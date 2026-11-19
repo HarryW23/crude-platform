@@ -29,8 +29,6 @@
    notes: 兩個合約規模相同（1000 桶），可以直接相加}
 
 # ---------- 宏觀與跨資產（金十報價） ----------
-- {code: MAC_DXY, name_zh: 美元指數, module: positioning, group: 宏觀, unit: idx, formula: "MACRO_USDX",
-   notes: 美元走強通常壓制以美元計價的原油}
 - {code: MAC_USD_EUR, name_zh: 歐元兌美元, module: positioning, group: 宏觀, unit: USD/EUR, formula: "MACRO_EURUSD",
    notes: 歐元升 ≈ 美元弱，通常對以美元計價的原油偏利多}
 - {code: MAC_USD_JPY, name_zh: 美元兌日元, module: positioning, group: 宏觀, unit: JPY/USD, formula: "MACRO_USDJPY"}

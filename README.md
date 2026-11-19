@@ -135,7 +135,7 @@ Windows 把 `.venv/bin/` 換成 `.venv\Scripts\`。
 | `crudelab backtest` | 回測信號和推演區間 |
 | `crudelab backup` / `backup list` / `backup verify 文件` | 立即備份 / 列出備份 / 校驗一份備份 |
 | `crudelab restore 文件 --yes` | 從備份恢復（先自動備份現在的數據） |
-| `crudelab jin10 probe` / `usage` / `backfill` | 金十：檢測接口並列出數據的真實樣子 / 今天的調用次數 / 用 K 線補報價歷史 |
+| `crudelab jin10 probe` / `usage` / `backfill` | 金十：檢測接口並列出數據的真實樣子 / 今天的調用次數 / 補報價歷史收盤價 |
 | `crudelab llm models` / `llm use deepseek --model 型號 --thinking on` | 查能用的模型 / 選擇型號和思考模式（和後台同一個設定） |
 | `crudelab llm status` / `llm test` / `llm reset` | 大模型的配置和用量 / 連通測試 / 解除自動暫停 |
 | `crudelab local list` / `local set 名字 值` / `local unset 名字` | 這台機器自己的設定（不含密鑰），更新代碼不受影響 |
@@ -260,19 +260,17 @@ Windows 把 `.venv/bin/` 換成 `.venv\Scripts\`。
 
 3. 之後定時任務「同步財經日曆」每 2 小時、「同步原油快訊」每 10 分鐘同步一次；`crudelab jin10 usage` 看今天各工具用了幾次。
    快訊只收錄命中原油關鍵詞的（`config/jin10.yaml`），在「地緣事件」頁顯示，點「抽成草稿」才交給大模型，草稿要人確認。快訊保留 90 天。
-4. 報價（美元指數、匯率、黃金、金十的原油報價）每天北京時間早上取一次，品種在 `config/master/series/macro.yaml` 用 `jin10: 代碼` 登記。
-   日期按紐約交易日記：北京早上取到的是紐約前一天收盤後的價格，記在紐約那一天，和 EIA、CME 的日期對齊；紐約週末不記。
+4. 報價（匯率、黃金、金十的原油報價）每個紐約交易日記一個收盤價，品種在 `config/master/series/macro.yaml` 用 `jin10: 代碼` 登記。
+   口徑：**紐約時間 16:59 那根 1 分鐘 K 線的收盤價**（金十 `get_kline` 的 `time` 是 Unix 秒，回傳截止到那一刻的 K 線）。
+   日期是紐約交易日，和 EIA、CME 對齊；假期沒有 K 線就不記。定時任務每次補最近 3 個交易日，電腦關了一兩天也不會漏。
    金十的 UKOIL / USOIL 是它匯總的現貨報價，不是交易所結算價，存成單獨的序列，不混進 Brent / WTI 期貨。
-   金十沒有美債收益率，以後從 FRED 接。
+   金十沒有美元指數和美債收益率，以後從其他來源接。
 
-   歷史：金十 `get_kline` 默認給 1 分鐘 K 線，補不了日線歷史；`time` 參數的含義指南沒寫，probe 會試幾種寫法。
-   試出能取日 K 的寫法後再回填（只接受日 K，分鐘 K 不會寫入）：
+   歷史用同一個口徑補，每個品種每天調用一次（6 個品種補 60 天 = 360 次，額度不夠會先說明、不會開始）：
 
    ```bash
-   .venv/bin/crudelab jin10 backfill --time 試出來的寫法
+   .venv/bin/crudelab jin10 backfill --days 60
    ```
-
-   試不出來的話，歷史只能從每天的報價慢慢積累。
 
 額度：對方每個工具每天 1500 次，`config/jin10.yaml` 再設一個 1000 次的上限，超過就不發請求。
 日曆項目怎麼換算成序列（例如 EIA 原油庫存，万桶 → 千桶）也在 `config/jin10.yaml`；標題寫法要用 probe 的輸出核對。
