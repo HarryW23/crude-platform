@@ -272,6 +272,10 @@ Windows 把 `.venv/bin/` 換成 `.venv\Scripts\`。
    .venv/bin/crudelab jin10 backfill --days 60
    ```
 
+簡繁體：金十的內容和搜索都是簡體，所以 `config/jin10.yaml` 裡的快訊關鍵詞和日曆規則要寫簡體。
+打不出簡體也沒關係：照常寫繁體，運行 `crudelab check`，它會指出哪些寫成了繁體並給出簡體寫法，複製過去即可。
+兩岸叫法不同的詞（例如 日圓 → 日元）在同一個文件的 `term_overrides` 裡登記，兩邊都可以寫繁體。
+
 額度：對方每個工具每天 1500 次，`config/jin10.yaml` 再設一個 1000 次的上限，超過就不發請求。
 日曆項目怎麼換算成序列（例如 EIA 原油庫存，万桶 → 千桶）也在 `config/jin10.yaml`；標題寫法要用 probe 的輸出核對。
 

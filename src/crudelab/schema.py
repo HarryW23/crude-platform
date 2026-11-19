@@ -549,6 +549,7 @@ class Jin10Settings(Strict):
     calendar_rules: list[CalendarRule] = []
     flash_keywords: list[str] = []
     flash_pages: int = Field(default=3, ge=1, le=10)
+    term_overrides: dict[str, str] = {}      # 繁→簡逐字轉不出來的用詞（例如 日圓 → 日元），見 zh.py
 
 
 # ------------------------------ 備份 ------------------------------

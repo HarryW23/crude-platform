@@ -267,6 +267,12 @@ def flash_text(item: dict) -> str:
     return ""
 
 
+def flash_hits(cfg: Config, text: str) -> list[str]:
+    """快訊命中了哪些關鍵詞（不分大小寫）。關鍵詞要寫簡體：金十的內容是簡體（crudelab check 會檢查）。"""
+    low = text.lower()
+    return [k for k in cfg.jin10.flash_keywords if k.lower() in low]
+
+
 def flash_id(item: dict, when: datetime, text: str) -> str:
     """快訊的唯一標識。金十的 list_flash 每條只有 content / time / url：有 id 用 id，否則用 url（每條快訊一個詳情頁），
     都沒有才用時間 + 內容的摘要（內容被對方改過會被當成新的一條）。"""
@@ -303,7 +309,7 @@ def sync_flash(session: Session, cfg: Config, jin: Jin10) -> dict:
             if ext_id in seen_now:
                 continue
             seen_now.add(ext_id)
-            hit = [k for k in cfg.jin10.flash_keywords if k.lower() in text.lower()]
+            hit = flash_hits(cfg, text)
             if not hit or not keywords:
                 continue
             new_rows.append(NewsFlash(source=SOURCE, ext_id=ext_id, time=when, content=text[:4000],

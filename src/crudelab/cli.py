@@ -55,6 +55,17 @@ def cmd_check(_args) -> int:
           f"{len(cfg.indicators)} 個指標，{len(cfg.refineries)} 個煉廠模型，"
           f"{len(cfg.balances)} 張平衡表，{len(cfg.relations)} 個關係模型，"
           f"{len(cfg.signals)} 個信號，{len(cfg.playbooks)} 個事件預案")
+    from . import zh
+    rules = cfg.jin10.calendar_rules
+    issues = zh.traditional_issues({"config/jin10.yaml 快訊關鍵詞 flash_keywords": cfg.jin10.flash_keywords,
+                                    "config/jin10.yaml 日曆規則 match": [r.match for r in rules],
+                                    "config/jin10.yaml 日曆規則 require": [r.require for r in rules if r.require]},
+                                   cfg.jin10.term_overrides)
+    if issues:
+        print("\n金十的內容是簡體，下面這些寫成了繁體，會匹配不到（把右邊的寫法複製過去即可）：", file=sys.stderr)
+        for line in issues:
+            print("  " + line, file=sys.stderr)
+        return 1
     return 0
 
 
@@ -406,6 +417,28 @@ def cmd_jin10(args) -> int:
             data = flash.get("data") if isinstance(flash, dict) else None
             keys = sorted(data) if isinstance(data, dict) else type(data).__name__
             print(f"  data 的字段（翻頁用）：{keys}；外層字段：{sorted(flash) if isinstance(flash, dict) else '—'}")
+            # 用平台的關鍵詞篩一遍這頁快訊（不再調用金十）
+            hits = [(jin10.flash_hits(cfg, jin10.flash_text(r)), jin10.flash_text(r)) for r in rows]
+            matched = [(h, t) for h, t in hits if h]
+            print(f"  按 config/jin10.yaml 的關鍵詞篩選：{len(rows)} 條裡命中 {len(matched)} 條")
+            for h, t in matched[:8]:
+                print(f"    [{'、'.join(h)}] {t[:60]}")
+            counts: dict[str, int] = {}
+            for h, _ in matched:
+                for k in h:
+                    counts[k] = counts.get(k, 0) + 1
+            if counts:
+                print("  各關鍵詞命中次數：" + "、".join(f"{k} {n}" for k, n in sorted(counts.items(), key=lambda x: -x[1])))
+
+        # 簡繁對比：同一個詞用簡體和繁體各搜一次，看金十的搜索認不認繁體（共 2 次調用）
+        from . import zh
+        word_tw = "歐佩克"
+        word_cn = zh.to_simplified(word_tw, cfg.jin10.term_overrides)
+        for word, label in ((word_cn, "簡體"), (word_tw, "繁體")):
+            found = show(f"search_flash（{label}：{word}）", lambda w=word: client.call("search_flash", keyword=w))
+            if found is not None:
+                rows = jin10.rows_of(found)
+                print(f"  {len(rows)} 條" + (f"；第一條：{jin10.flash_text(rows[0])[:60]}" if rows else ""))
     finally:
         client.close()
     print("\n把上面的輸出發給負責平台的人即可核對（裡面沒有 token）。")

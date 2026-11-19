@@ -157,7 +157,8 @@ def test_probe_command(session, cfg, monkeypatch, capsys):
                          "get_kline": minute_klines,
                          "list_calendar": lambda a: {"data": calendar_rows()},
                          "list_flash": lambda a: {"data": {"items": [{"id": 1, "content": "沙特宣布延长减产"}],
-                                                           "has_more": False}}})
+                                                           "has_more": False}},
+                         "search_flash": lambda a: {"data": {"items": []}}})
     monkeypatch.setenv("JIN10_TOKEN", TOKEN)
     monkeypatch.setattr(jin10, "MCPClient", lambda *args, **kw: client_for(server))
     assert cli.main(["jin10", "probe"]) == 0
@@ -333,3 +334,57 @@ def test_backfill_closes_checks_budget_first(session, cfg):
 def test_quote_job_skips_without_token(session, cfg, settings):
     result = jobs.run_now(cfg, settings, "PULL_JIN10_QUOTES")
     assert result["status"] == "skipped" and "JIN10_TOKEN" in result["message"]
+
+
+# ------------------------------ 簡繁 ------------------------------
+
+def test_to_simplified_and_overrides():
+    from crudelab import zh
+    assert zh.to_simplified("歐佩克減產") == "欧佩克减产"
+    assert zh.to_simplified("欧佩克减产") == "欧佩克减产"                 # 已經是簡體：不變
+    assert zh.to_simplified("EIA原油庫存(萬桶)") == "EIA原油库存(万桶)"
+    assert zh.to_simplified("日圓走弱") == "日圆走弱"                     # 逐字轉換轉不出用詞
+    assert zh.to_simplified("日圓走弱", {"日圓": "日元"}) == "日元走弱"    # 替換表兩邊寫繁體也行
+    issues = zh.traditional_issues({"關鍵詞": ["原油", "歐佩克", "WTI"]})
+    assert issues == ["關鍵詞：歐佩克 → 應寫成 欧佩克"]
+
+
+def test_check_flags_traditional_keywords(cfg, monkeypatch, capsys):
+    import dataclasses
+
+    from crudelab import cli, config
+    rules = [r.model_copy(update={"require": "萬桶"}) for r in cfg.jin10.calendar_rules[:1]]
+    bad = dataclasses.replace(cfg, jin10=cfg.jin10.model_copy(update={
+        "flash_keywords": ["原油", "歐佩克", "日圓"], "calendar_rules": rules}))
+    monkeypatch.setattr(config, "load_config", lambda *_: bad)
+    assert cli.main(["check"]) == 1
+    err = capsys.readouterr().err
+    assert "歐佩克 → 應寫成 欧佩克" in err and "日圓 → 應寫成 日元" in err and "萬桶 → 應寫成 万桶" in err
+    assert "原油 →" not in err
+    monkeypatch.setattr(config, "load_config", lambda *_: cfg)            # 現在的配置全是簡體
+    assert cli.main(["check"]) == 0
+
+
+def test_probe_reports_keyword_hits_and_script_search(session, cfg, monkeypatch, capsys):
+    from crudelab import cli
+    searched = []
+
+    def search(args):
+        searched.append(args["keyword"])
+        hit = {"content": "欧佩克+会议推迟", "time": "2026-11-19T10:00:00+08:00"}
+        items = [hit] if args["keyword"] == "欧佩克" else []
+        return {"data": {"items": items}}
+    server = FakeServer({"get_quote": lambda a: {"data": {"code": "UKOIL", "close": "82.5"}},
+                         "get_kline": minute_klines, "list_calendar": lambda a: {"data": calendar_rows()},
+                         "list_flash": lambda a: {"data": {"items": [
+                             {"content": "沙特宣布延长原油减产", "time": "2026-11-19T10:00:00+08:00", "url": "u1"},
+                             {"content": "火山引擎上线新模型", "time": "2026-11-19T10:01:00+08:00", "url": "u2"}],
+                             "has_more": False, "next_cursor": None}},
+                         "search_flash": search})
+    monkeypatch.setenv("JIN10_TOKEN", TOKEN)
+    monkeypatch.setattr(jin10, "MCPClient", lambda *args, **kw: client_for(server))
+    assert cli.main(["jin10", "probe"]) == 0
+    out = capsys.readouterr().out
+    assert "2 條裡命中 1 條" in out and "沙特" in out and "火山引擎" not in out.split("命中 1 條")[1]
+    assert searched == ["欧佩克", "歐佩克"]
+    assert "search_flash（簡體：欧佩克）\n  1 條" in out and "search_flash（繁體：歐佩克）\n  0 條" in out
