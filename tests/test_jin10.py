@@ -481,3 +481,27 @@ def test_backfill_stops_when_jin10_has_no_older_minute_bars(session, cfg):
     assert rows["JIN10_UKOIL"]["closes"] == 2 and rows["JIN10_UKOIL"]["earliest"] == date(2026, 11, 17)
     assert rows["JIN10_UKOIL"]["stopped_at"] == date(2026, 11, 10)        # 11-16 … 11-10 連續 5 天沒有
     assert len(calls) == result["calls"] == 6 * 7                         # 而不是 6 × 60 = 360
+
+
+def test_quote_pull_skips_days_it_already_has(session, cfg):
+    """每 3 小時跑一次：已經取到收盤價的日子不再調用金十；舊版本寫的盤中報價（jin10:quote:）照樣會被更正。"""
+    from datetime import datetime
+
+    from crudelab.connectors.jin10_quotes import Jin10QuoteConnector
+    from crudelab.ingest import Obs, write_observations
+    from crudelab.models import Series
+    write_observations(session, [Obs("MACRO_XAUUSD", date(2026, 11, 25), 2600.0, "jin10:quote:XAUUSD")], "jin10")
+    session.commit()
+    calls = []
+    server = FakeServer({"get_kline": lambda a: calls.append(a) or minute_klines(a)})
+    now = datetime(2026, 11, 27, 22, 30)
+    connector = Jin10QuoteConnector(cfg, client_for(server), now=now)
+    obs = connector.fetch(list(session.scalars(select(Series))), None, None)
+    assert len(calls) == 6 * 3 and len(obs) == 6 * 2                     # 3 天裡 1 天感恩節
+    stats = write_observations(session, obs, "jin10")
+    session.commit()
+    assert stats["updated"] == 1                                          # 盤中報價被收盤價更正
+    calls.clear()
+    again = Jin10QuoteConnector(cfg, client_for(server), now=now).fetch(
+        list(session.scalars(select(Series))), None, None)
+    assert again == [] and len(calls) == 6                                # 只剩感恩節那天還在試

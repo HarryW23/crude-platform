@@ -347,7 +347,7 @@ def prune_flash(session: Session, now: datetime | None = None) -> int:
 # 每天定時拉取和歷史回填都用這個定義，所以幾點運行都不影響數值，歷史和每日數據是同一個口徑。
 
 CLOSE_AT = (16, 59)                   # 紐約時間
-STOP_AFTER_MISSES = 5                 # 回填時連續 5 個交易日取不到 = 超出金十保存的範圍（實測只保存一兩天的分鐘線）
+STOP_AFTER_MISSES = 5                 # 回填時連續 5 個交易日取不到 = 超出金十保存的範圍（實測只保存 1 個交易日）
 CLOSE_MAX_STALE_HOURS = 6             # 取到的 K 線比收盤時刻早超過 6 小時 = 那天沒有正常交易（假期），不記
 
 
@@ -400,7 +400,7 @@ def backfill_closes(session: Session, cfg: Config, jin: Jin10, days: int, now: d
 
     - 調用前先算總次數：超過今天剩下的額度就不開始，並說明可以補多少天
     - 每補完一個品種就寫入並提交：中途中斷（Ctrl+C、斷網），已經補完的品種不會白做
-    - 從最近一天往前補，連續 STOP_AFTER_MISSES 個交易日取不到就停：金十的分鐘線只保存一兩天（2026-11 實測），
+    - 從最近一天往前補，連續 STOP_AFTER_MISSES 個交易日取不到就停：金十的分鐘線只保存最近 1 個交易日（2026-11 實測），
       再往前問只會浪費額度和時間（每次約 1.6 秒）
     - progress(event, info) 用來給人看進度：("plan", {...}) 開始前一次、("day", {...}) 每次調用後、
       ("series", row) 每個品種寫完後

@@ -1,8 +1,9 @@
 """金十報價 → 序列（每個交易日一個值）。序列在 series.yaml 裡用 jin10: 品種代碼 登記。
 
 值的定義見 jin10.py「每日收盤價」：紐約時間 16:59 那根 1 分鐘 K 線的收盤價，日期是紐約交易日。
-每次拉取最近 CATCH_UP_DAYS 個已收盤的交易日：電腦關了一天也能補上；已經有的值不會重複寫入。
-金十只保存一兩天的分鐘線（實測），關機更久中間就會缺，更早的歷史也補不了，要從其他來源導入。
+每 3 小時運行一次（config/schedule.yaml），看最近 CATCH_UP_DAYS 個已收盤的交易日；已經取到收盤價的日子跳過，
+不調用金十，所以平時幾乎不費額度。舊版本寫過的盤中報價（jin10:quote:）不算取到，會被收盤價更正。
+金十只保存最近 1 個交易日的分鐘線（實測）：平台連續一天多沒開，那幾天就永久缺了，歷史也補不了，要從其他來源導入。
 額度、token、錯誤處理都走 jin10.Jin10。
 """
 from __future__ import annotations
@@ -44,11 +45,15 @@ class Jin10QuoteConnector(PullConnector):
         except jin10.Jin10NotReady as exc:
             raise ConnectorNotReady(str(exc)) from None
         days = jin10.completed_trade_days(self._now or utcnow(), CATCH_UP_DAYS)
+        wanted = self.supported(series)
+        have = _have_closes([s.code for s in wanted], days[0]) if days else set()
         out: list[Obs] = []
         try:
-            for s in self.supported(series):
+            for s in wanted:
                 code = s.external_ids["jin10"]
                 for day in days:
+                    if (s.code, day) in have:                     # 已經取到收盤價：不再調用
+                        continue
                     try:
                         got = jin10.close_on(client, code, day)
                     except jin10.Jin10LimitReached as exc:
@@ -60,3 +65,18 @@ class Jin10QuoteConnector(PullConnector):
         finally:
             client.close()
         return out
+
+
+def _have_closes(codes: list[str], since: date) -> set[tuple[str, date]]:
+    """這些序列從 since 起已經有收盤價（source_ref 是 jin10:close:）的日子。用單獨的只讀會話查。"""
+    from sqlalchemy import select
+
+    from .. import db
+    from ..models import Observation
+    if not codes:
+        return set()
+    with db.session_scope() as session:
+        rows = session.execute(select(Observation.series_code, Observation.obs_date)
+                               .where(Observation.series_code.in_(codes), Observation.obs_date >= since,
+                                      Observation.source_ref.like("jin10:close:%")))
+        return {(code, day) for code, day in rows}
