@@ -408,6 +408,10 @@ class SignalDef(Strict):
     weight: float = Field(default=1.0, ge=0)   # 初始權重；之後是參數 W_{code}（可按回測結果採用新版本）
     # none：和回看期均值比；linear：和回看期的線性趨勢比（有趨勢的指標用，否則 z 會長期偏一邊）
     detrend: Literal["none", "linear"] = "none"
+    # value：看 input（序列或指標）相對自身歷史的位置（預設）
+    # fair_value：input 是公允價值模型代碼（fair_value.yaml），z = 價格偏離公允價值的標準差數；direction 一般是 −1
+    #             （價格高於公允價值看空）。lookback_days / min_points / detrend 不用（窗口在模型裡設）
+    source: Literal["value", "fair_value"] = "value"
     notes: str | None = None
 
     @property

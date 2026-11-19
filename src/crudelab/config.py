@@ -383,7 +383,10 @@ def _validate(cfg: Config) -> list[str]:
                 errors.append(f"關係模型 {r.code}：{side} 既不是序列也不是指標")
 
     for s in cfg.signals.values():
-        if not cfg.has(s.input):
+        if s.source == "fair_value":
+            if s.input not in cfg.fair_values:
+                errors.append(f"信號 {s.code}：{s.input} 不是公允價值模型（fair_value.yaml）")
+        elif not cfg.has(s.input):
             errors.append(f"信號 {s.code}：{s.input} 既不是序列也不是指標")
     for pb in cfg.playbooks.values():
         errors += [f"事件預案 {pb.code}：{i.target} 既不是序列也不是指標" for i in pb.impacts if not cfg.has(i.target)]

@@ -121,6 +121,9 @@ def _observation_scores(engine: IndicatorEngine, cfg: Config, dates: pd.Datetime
     out, exact = {}, set()
     engines: dict = {}
     for code, s in cfg.signals.items():
+        if s.source == "fair_value":                 # 在 run() 裡按每個日期的擬合結果填（fair_value_scores）
+            out[code] = pd.Series(np.nan, index=dates)
+            continue
         lag = cfg.backtest.publication_lag_days[cfg.frequency_of(s.input)]
         approx = _known_scores(cfg, s, engine.values(s.input), dates, lag)
         deps = engine.dependencies(s.input)[0] if s.input in cfg.indicators else [s.input]
@@ -143,6 +146,18 @@ def _observation_scores(engine: IndicatorEngine, cfg: Config, dates: pd.Datetime
         if dates[0] >= first_covered:
             exact.add(code)
     return pd.DataFrame(out, index=dates), exact
+
+
+def fair_value_scores(cfg: Config, fits: dict[str, dict], dates: pd.DatetimeIndex) -> dict[str, pd.Series]:
+    """公允價值信號在每個評估日的分數：用那一天的擬合（只用當時已知的數據），公式同 signals.fair_value_signal。"""
+    out = {}
+    for code, s in cfg.signals.items():
+        if s.source != "fair_value":
+            continue
+        z = pd.Series({t: (fits.get(s.input, {}).get(t).z if fits.get(s.input, {}).get(t) else None) for t in dates},
+                      dtype=float).reindex(dates)
+        out[code] = (z * s.direction / 2).clip(-1, 1)
+    return out
 
 
 def _observation_volatility(prices: pd.Series, cfg: Config, dates: pd.DatetimeIndex) -> pd.Series:
@@ -405,6 +420,9 @@ def run(session: Session, cfg: Config, options: Options) -> dict:
             fits[code] = {t: fair_value.fit_at(frame, t, model) for t in dates}
     else:
         scores, vol, fits = _vintage(session, cfg, dates, anchor)
+    if options.mode == "observation":
+        for code, values in fair_value_scores(cfg, fits, dates).items():
+            scores[code] = values
     modules, overall = aggregate(cfg, engine, scores)
     fwd = forward_returns(prices, dates, horizons)
 
@@ -415,10 +433,13 @@ def run(session: Session, cfg: Config, options: Options) -> dict:
     coarse = {"monthly", "quarterly"}
     signal_rows = []
     for code, s in cfg.signals.items():
+        fv = cfg.fair_values.get(s.input) if s.source == "fair_value" else None
+        approx_inputs = [f.input for f in fv.factors] if fv else [s.input]
         signal_rows.append({
-            "code": code, "name_zh": s.name_zh, "module": s.module, "input": s.input,
-            "input_name": cfg.name_of(s.input), "direction": s.direction,
-            "approx": options.mode == "observation" and cfg.frequency_of(s.input) in coarse and code not in exact,
+            "code": code, "name_zh": s.name_zh, "module": s.module, "input": s.input, "source": s.source,
+            "input_name": fv.name_zh if fv else cfg.name_of(s.input), "direction": s.direction,
+            "approx": options.mode == "observation" and code not in exact
+            and any(cfg.frequency_of(i) in coarse for i in approx_inputs),
             "vintage_exact": code in exact,
             "scored": int(scores[code].notna().sum()), "by_horizon": by_horizon(scores[code])})
     module_rows = [{"module": m, "name_zh": signals.MODULE_NAMES[m], "scored": int(modules[m].notna().sum()),
@@ -437,6 +458,9 @@ def run(session: Session, cfg: Config, options: Options) -> dict:
     calibration = calibrate(cfg, engine, scores, fwd, horizons, step)
     for row in signal_rows:                           # 輸入有沒有明顯趨勢：最近一個評估日、回看期內斜率的 t 值
         sdef = cfg.signals[row["code"]]
+        if sdef.source == "fair_value":
+            row.update(detrend="none", trend_t=None, trending_share=None)
+            continue
         frame = signals.rolling_scores(engine.values(sdef.input), sdef.lookback_days, sdef.min_points,
                                        sdef.direction, sdef.detrend)
         trend = frame["trend_t"].dropna()

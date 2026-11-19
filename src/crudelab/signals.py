@@ -91,8 +91,32 @@ def rolling_scores(values: pd.Series, lookback_days: int, min_points: int, direc
                          "trend_t": trend_t})
 
 
+def fair_value_signal(engine: IndicatorEngine, code: str, today: pd.Timestamp) -> dict:
+    """公允價值偏離作為信號：score = clip(z × direction / 2, −1, 1)，z = 價格偏離公允價值的標準差數。
+    和回測裡「偏離作為信號」的算法相同。擬合日期離今天太久（日度 STALE_DAYS）不出分。"""
+    from . import fair_value
+    s = engine.cfg.signals[code]
+    model = engine.cfg.fair_values[s.input]
+    out = {"code": s.code, "name_zh": s.name_zh, "module": s.module, "input": s.input, "source": s.source,
+           "input_name": model.name_zh, "unit": "σ", "direction": s.direction, "weight": _weight(engine, s, today),
+           "weight_parameter": s.weight_parameter, "detrend": "none", "notes": s.notes, "status": "missing",
+           "n": 0, "date": None, "value": None, "mean": None, "std": None, "z": None, "score": None, "trend_t": None}
+    fit = fair_value.current(engine, engine.cfg, s.input, on=today.date())
+    out.update(n=fit.n, date=fit.date, value=fit.deviation_pct)
+    if fit.z is None:
+        out["status"] = "insufficient" if fit.date else "missing"
+        return out
+    if fit.date and (today - pd.Timestamp(fit.date)).days > STALE_DAYS["daily"]:
+        out["status"] = "stale"
+        return out
+    out.update(status="ok", z=float(fit.z), score=_clip(float(fit.z) * s.direction / 2))
+    return out
+
+
 def data_signal(engine: IndicatorEngine, code: str, today: pd.Timestamp) -> dict:
     s = engine.cfg.signals[code]
+    if s.source == "fair_value":
+        return fair_value_signal(engine, code, today)
     out = {"code": s.code, "name_zh": s.name_zh, "module": s.module, "input": s.input,
            "input_name": engine.cfg.name_of(s.input), "unit": engine.cfg.unit_of(s.input),
            "direction": s.direction, "weight": _weight(engine, s, today), "weight_parameter": s.weight_parameter,

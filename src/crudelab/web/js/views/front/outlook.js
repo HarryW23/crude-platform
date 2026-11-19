@@ -65,7 +65,7 @@ export async function render(main) {
       ? `<table><tr><th>事件</th><th>開始</th><th class="n">方向判斷</th><th>分數</th></tr>${m.signals.map((s) =>
           `<tr><td>${esc(s.name_zh)}</td><td>${s.date}</td><td class="n">${signed(s.bias, 0)}</td><td>${scoreBar(s.score)}</td></tr>`).join("")}</table>`
       : `<div class="scroll"><table><tr><th>信號</th><th>日期</th><th class="n">最新值</th><th class="n">回看期均值</th><th class="n">z</th><th>方向</th><th>分數</th><th class="n">樣本</th>${track.run ? `<th>歷史表現（${esc(hName)}）</th>` : ""}</tr>
-          ${m.signals.map((s) => `<tr><td>${esc(s.name_zh)}<div class="mono muted">${s.input}</div></td><td class="nw">${s.date ?? ""}</td>
+          ${m.signals.map((s) => `<tr><td>${esc(s.name_zh)}${s.weight === 0 ? ' <span class="tag" title="權重 0：只計算、不參與模組分數。回測確認有預測力後，可在後台參數頁採用校準權重">不計入</span>' : ""}<div class="mono muted">${s.input}</div></td><td class="nw">${s.date ?? ""}</td>
             <td class="n">${num(s.value)}</td><td class="n">${num(s.mean)}</td><td class="n">${s.z == null ? "" : signed(s.z)}</td>
             <td class="nw">${s.direction > 0 ? "高 = 利多" : "高 = 利空"}</td>
             <td>${s.status === "ok" ? scoreBar(s.score) : `<span class="tag warn" title="${s.status === "stale" ? "最新值太舊（超過按頻率的期限），不計入分數" : ""}">${{ missing: "缺數據", stale: `數據太舊（${s.date}）`, insufficient: "樣本不足" }[s.status] ?? s.status}</span>`}</td><td class="n">${s.n}</td>

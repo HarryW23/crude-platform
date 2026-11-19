@@ -5,6 +5,7 @@
 #   lookback_days  回看多少天；min_points 樣本少於這個數就不出分
 #   weight     在模組內的初始權重。之後是參數 W_{code}（後台「參數」頁的「信號權重」組），帶生效日期和版本記錄；
 #              回測會按預測力給出建議權重，逐步前推檢驗變好時可以在參數頁一鍵採用。0 = 不參與合成
+#   source     value（預設）看 input 的歷史位置 / fair_value：input 是公允價值模型，看價格偏離公允價值幾個標準差
 #   detrend    none（預設）和回看期均值比 / linear 和回看期的線性趨勢比。回測頁會標出輸入「有趨勢」的信號，
 #              確認趨勢有經濟含義（不只是價格的隨機遊走）再改成 linear
 # 地緣模組的信號來自事件庫（各事件的方向判斷），不在這裡定義。
@@ -29,6 +30,11 @@
    lookback_days: 1825, min_points: 24, notes: 供應過剩越大越利空}
 - {code: SIG_US_DEMAND, name_zh: 美國成品油需求同比, module: balance, input: DEM_US_TOTAL_YOY, direction: 1,
    lookback_days: 1095}
+
+# 公允價值偏離：價格高於基本面公允價值看空。初始權重 0（只計算、不參與合成）：等回測的權重校準
+# 確認它有預測力、並在逐步前推檢驗裡讓綜合分數變好，再在後台參數頁採用校準權重（#52）
+- {code: SIG_BRENT_FAIR_VALUE, name_zh: Brent 偏離公允價值, module: balance, source: fair_value, input: BRENT_FV,
+   direction: -1, weight: 0, notes: 價格比公允價值高出越多標準差越偏空；權重由回測校準}
 
 # ---------- 煉廠：利潤高，煉廠有動力多買原油 ----------
 - {code: SIG_US_321, name_zh: 美國 3-2-1 裂解, module: refinery, input: CRK_US_321, direction: 1}
