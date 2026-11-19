@@ -461,5 +461,23 @@ def test_backfill_cli_prints_plan_and_rows(session, cfg, monkeypatch, capsys):
     monkeypatch.setattr(jin10, "MCPClient", lambda *args, **kw: client_for(server))
     assert cli.main(["jin10", "backfill", "--days", "3"]) == 0
     out = capsys.readouterr().out
-    assert "6 個品種 × 3 天 = 調用 get_kline 18 次" in out and out.count("✓ ") == 6 and "完成，用時" in out
+    assert "6 個品種 × 3 天 = 最多調用 get_kline 18 次" in out and out.count("✓ ") == 6 and "完成，用時" in out
     assert cli.main(["jin10", "backfill", "--days", "0"]) == 1
+
+
+def test_backfill_stops_when_jin10_has_no_older_minute_bars(session, cfg):
+    """實測：金十只保存一兩天的分鐘線。往前連續 5 個交易日取不到就停，不把 60 天的額度都用掉。"""
+    from datetime import datetime
+    now = datetime(2026, 11, 19, 8, 0)                                    # 北京週四下午
+    oldest = jin10.close_stamp(date(2026, 11, 17))                         # 只保存到紐約週二
+    calls = []
+
+    def kline(args):
+        calls.append(args)
+        return minute_klines(args) if args["time"] >= oldest else {"data": {"code": args["code"], "klines": []}}
+    jin = jin10.Jin10(cfg, client_for(FakeServer({"get_kline": kline})))
+    result = jin10.backfill_closes(session, cfg, jin, days=60, now=now)
+    rows = {r["series"]: r for r in result["rows"]}
+    assert rows["JIN10_UKOIL"]["closes"] == 2 and rows["JIN10_UKOIL"]["earliest"] == date(2026, 11, 17)
+    assert rows["JIN10_UKOIL"]["stopped_at"] == date(2026, 11, 10)        # 11-16 … 11-10 連續 5 天沒有
+    assert len(calls) == result["calls"] == 6 * 7                         # 而不是 6 × 60 = 360

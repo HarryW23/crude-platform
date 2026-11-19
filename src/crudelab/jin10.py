@@ -347,6 +347,7 @@ def prune_flash(session: Session, now: datetime | None = None) -> int:
 # 每天定時拉取和歷史回填都用這個定義，所以幾點運行都不影響數值，歷史和每日數據是同一個口徑。
 
 CLOSE_AT = (16, 59)                   # 紐約時間
+STOP_AFTER_MISSES = 5                 # 回填時連續 5 個交易日取不到 = 超出金十保存的範圍（實測只保存一兩天的分鐘線）
 CLOSE_MAX_STALE_HOURS = 6             # 取到的 K 線比收盤時刻早超過 6 小時 = 那天沒有正常交易（假期），不記
 
 
@@ -399,6 +400,8 @@ def backfill_closes(session: Session, cfg: Config, jin: Jin10, days: int, now: d
 
     - 調用前先算總次數：超過今天剩下的額度就不開始，並說明可以補多少天
     - 每補完一個品種就寫入並提交：中途中斷（Ctrl+C、斷網），已經補完的品種不會白做
+    - 從最近一天往前補，連續 STOP_AFTER_MISSES 個交易日取不到就停：金十的分鐘線只保存一兩天（2026-11 實測），
+      再往前問只會浪費額度和時間（每次約 1.6 秒）
     - progress(event, info) 用來給人看進度：("plan", {...}) 開始前一次、("day", {...}) 每次調用後、
       ("series", row) 每個品種寫完後
     和 sync_calendar 一樣：調用前 session 不能有未提交的寫入（調用記錄走另一個會話，SQLite 會鎖）。
@@ -414,24 +417,31 @@ def backfill_closes(session: Session, cfg: Config, jin: Jin10, days: int, now: d
     session.commit()                         # 前面只有讀；確保調用期間這個會話沒有掛著的事務
     report("plan", {"calls": need, "series": len(series), "days": len(trade_days), "left": left,
                     "first": trade_days[0] if trade_days else None, "last": trade_days[-1] if trade_days else None})
-    rows = []
+    rows, calls = [], 0
     for n, s in enumerate(series, 1):
         code = s.external_ids["jin10"]
-        obs, holidays = [], 0
-        for i, day in enumerate(trade_days, 1):
+        obs, missing, streak, stopped_at = [], 0, 0, None
+        for i, day in enumerate(reversed(trade_days), 1):          # 從最近一天往前補
             got = close_on(jin, code, day)
+            calls += 1
             if got is None:
-                holidays += 1
+                missing += 1
+                streak += 1
             else:
                 obs.append(Obs(s.code, day, got[0], f"jin10:close:{code}"))
+                streak = 0
             report("day", {"series": s.code, "n": n, "of": len(series), "i": i, "days": len(trade_days)})
-        row = {"series": s.code, "code": code, "days": len(trade_days), "closes": len(obs), "no_trading": holidays,
-               "earliest": obs[0].obs_date if obs else None, "written": 0, "corrected": 0}
+            if streak >= STOP_AFTER_MISSES:                        # 連續一段都沒有：超出金十保存的範圍，不再白白調用
+                stopped_at = day
+                break
+        obs.sort(key=lambda o: o.obs_date)
+        row = {"series": s.code, "code": code, "days": len(trade_days), "closes": len(obs), "no_trading": missing,
+               "earliest": obs[0].obs_date if obs else None, "stopped_at": stopped_at, "written": 0, "corrected": 0}
         if obs:
             stats = write_observations(session, obs, SOURCE, actor="jin10")
             row["written"], row["corrected"] = stats["inserted"], stats["updated"]   # 更正 = 舊版本寫過不同的值
         session.commit()
         rows.append(row)
         report("series", row)
-    return {"calls": need, "first": trade_days[0] if trade_days else None,
+    return {"calls": calls, "first": trade_days[0] if trade_days else None,
             "last": trade_days[-1] if trade_days else None, "rows": rows}

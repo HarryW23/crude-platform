@@ -354,8 +354,9 @@ def cmd_jin10(args) -> int:
         def progress(event, info):
             if event == "plan":
                 print(f"紐約交易日 {info['first']} → {info['last']}：{info['series']} 個品種 × {info['days']} 天 = "
-                      f"調用 get_kline {info['calls']} 次（今天還剩 {info['left']} 次）。")
-                print("每次調用大約 0.5–1 秒，請稍候；每補完一個品種會寫入並打印一行，中途按 Ctrl+C 中斷不會丟失已完成的。")
+                      f"最多調用 get_kline {info['calls']} 次（今天還剩 {info['left']} 次）。")
+                print(f"從最近一天往前補，連續 {jin10.STOP_AFTER_MISSES} 個交易日取不到就停（超出金十保存的範圍）。"
+                      "每次調用約 1–2 秒；每補完一個品種寫入並打印一行，按 Ctrl+C 中斷不會丟失已完成的。")
             elif event == "day" and interactive:
                 print(f"\r  正在補 {info['series']}（第 {info['n']}/{info['of']} 個品種）："
                       f"{info['i']}/{info['days']} 天，已用 {_time.monotonic() - started:.0f} 秒", end="", flush=True)
@@ -364,7 +365,8 @@ def cmd_jin10(args) -> int:
                 print(("\r\033[K" if interactive else "") +
                       f"  ✓ {r['series']:<16} {r['code']:<8} 取到 {r['closes']}/{r['days']} 天"
                       f"（最早 {r['earliest'] or '—'}），沒取到 {r['no_trading']} 天，"
-                      f"新增 {r['written']}，更正 {r['corrected']}", flush=True)
+                      f"新增 {r['written']}，更正 {r['corrected']}"
+                      + (f"；{r['stopped_at']} 之前金十沒有數據，停止" if r["stopped_at"] else ""), flush=True)
         try:
             with db.session_scope() as session:
                 jin10.backfill_closes(session, cfg, client, args.days, progress=progress)
@@ -377,7 +379,7 @@ def cmd_jin10(args) -> int:
         finally:
             client.close()
         print(f"完成，用時 {_time.monotonic() - started:.0f} 秒。")
-        print("沒取到 = 那天休市，或者早於金十保存的分鐘數據。連續一大段沒取到，通常是後者：更早的歷史從金十補不了。")
+        print("金十只保存最近一兩天的分鐘線：更早的歷史從金十補不了，要從其他來源導入（見 README「金十數據」）。")
         return 0
     if args.action == "usage":
         tools = ("list_calendar", "list_flash", "search_flash", "get_quote", "get_kline", "quote://codes")
@@ -425,6 +427,18 @@ def cmd_jin10(args) -> int:
                 return f"紐約 {day} 沒有取到收盤價（可能休市）"
             return f"紐約 {day} 16:59 的 K 線：{got[1]:%Y-%m-%d %H:%M}Z，收盤 {got[0]}"
         result = show("收盤價 UKOIL（get_kline，time = 紐約 16:59 的秒）", close_check)
+        if result is not None:
+            print("  " + result)
+
+        def depth_check():
+            # 金十的分鐘線保存多久：往前試幾個交易日（共 5 次調用）
+            days = jin10.completed_trade_days(datetime.now(UTC).replace(tzinfo=None), 10)[::-1]
+            marks = []
+            for back in (1, 2, 3, 5, 10):
+                day = days[back - 1]
+                marks.append(f"{back} 天前（{day}）{'有' if jin10.close_on(client, 'UKOIL', day) else '沒有'}")
+            return "、".join(marks)
+        result = show("分鐘線保存深度 UKOIL（往前試 1、2、3、5、10 個交易日）", depth_check)
         if result is not None:
             print("  " + result)
         calendar = show("財經日曆", lambda: client.call("list_calendar"))
