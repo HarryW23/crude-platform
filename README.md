@@ -138,6 +138,7 @@ Windows 把 `.venv/bin/` 換成 `.venv\Scripts\`。
 | `crudelab llm status` / `llm test` / `llm reset` | 大模型的配置和用量 / 連通測試 / 解除自動暫停 |
 | `crudelab local list` / `local set 名字 值` / `local unset 名字` | 這台機器自己的設定（不含密鑰），更新代碼不受影響 |
 | `pytest` / `ruff check src tests` | 測試 / 代碼檢查 |
+| `CRUDELAB_E2E=1 pytest tests/e2e` | 瀏覽器巡檢：打開前後台每一頁，檢查腳本錯誤、錯誤提示、橫向滾動（要先 `pip install -e ".[e2e]"` 和 `playwright install chromium`；CI 每次提交自動跑） |
 
 ## 回測
 

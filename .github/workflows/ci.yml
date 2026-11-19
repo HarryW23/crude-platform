@@ -16,3 +16,16 @@ jobs:
       - run: ruff check src tests scripts
       - run: crudelab check
       - run: pytest -q
+  e2e:
+    # 瀏覽器巡檢：用演示數據啟動前台和後台，逐頁打開（淺色 / 深色），檢查腳本錯誤、錯誤提示、橫向滾動
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev,e2e]"
+      - run: python -m playwright install --with-deps chromium
+      - run: pytest -q tests/e2e
+        env:
+          CRUDELAB_E2E: "1"

@@ -1,6 +1,6 @@
 [project]
 name = "crudelab"
-version = "0.25.0"
+version = "0.26.0"
 description = "原油研究平台：數據 → 指標 → 模型 → 推演 → 報告"
 requires-python = ">=3.11"
 dependencies = [
@@ -20,6 +20,7 @@ dependencies = [
 postgres = ["psycopg[binary]>=3.1"]
 anthropic = ["anthropic>=1.0"]
 dev = ["pytest>=8.0", "ruff>=0.6"]
+e2e = ["playwright>=1.45"]           # 瀏覽器巡檢（tests/e2e），CI 單獨一步運行
 
 [project.scripts]
 crudelab = "crudelab.cli:main"
