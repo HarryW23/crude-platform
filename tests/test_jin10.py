@@ -232,3 +232,37 @@ def test_flash_extract_to_drafts(session, cfg, sites, monkeypatch):
 def test_flash_job_skips_without_token(session, cfg, settings):
     result = jobs.run_now(cfg, settings, "SYNC_JIN10_FLASH")
     assert result["status"] == "skipped" and "JIN10_TOKEN" in result["message"]
+
+
+# ------------------------------ 報價 ------------------------------
+
+def test_quote_connector_writes_daily_values(session, cfg):
+    from crudelab.connectors.jin10_quotes import Jin10QuoteConnector
+    from crudelab.models import Series
+    quotes = {"UKOIL": 82.4, "USOIL": 78.1, "XAUUSD": 2650.0, "USDCNH": 7.25, "EURUSD": 1.05, "USDJPY": 154.2}
+    server = FakeServer({"get_quote": lambda a: {"data": {"code": a["code"], "close": str(quotes[a["code"]]),
+                                                          "time": "2026-11-19 06:35:00"}}})
+    connector = Jin10QuoteConnector(cfg, client_for(server))
+    obs = connector.fetch(list(session.scalars(select(Series))), None, None)
+    got = {o.series_code: (o.obs_date, o.value) for o in obs}
+    assert got["MACRO_XAUUSD"] == (date(2026, 11, 19), 2650.0) and got["JIN10_UKOIL"][1] == 82.4
+    assert "BRENT_M1" not in got                                          # 金十報價不混進期貨結算價
+    assert len(obs) == 6
+
+
+def test_backfill_accepts_only_daily_bars(session, cfg):
+    def kline(args):
+        if args["code"] == "XAUUSD":                                      # 日 K
+            bars = [{"time": f"2026-11-{d:02d} 00:00:00", "close": 2600 + d} for d in range(10, 19)]
+        else:                                                             # 小時 K：不寫
+            bars = [{"time": f"2026-11-18 {h:02d}:00:00", "close": 80 + h / 10} for h in range(0, 9)]
+        return {"data": {"code": args["code"], "klines": bars}}
+    jin = jin10.Jin10(cfg, client_for(FakeServer({"get_kline": kline})))
+    rows = {r["series"]: r for r in jin10.backfill_klines(session, cfg, jin, count=10)}
+    assert rows["MACRO_XAUUSD"]["written"] == 9 and rows["MACRO_XAUUSD"]["median_gap_hours"] == 24
+    assert rows["JIN10_UKOIL"]["written"] == 0 and "不是日 K" in rows["JIN10_UKOIL"]["note"]
+
+
+def test_quote_job_skips_without_token(session, cfg, settings):
+    result = jobs.run_now(cfg, settings, "PULL_JIN10_QUOTES")
+    assert result["status"] == "skipped" and "JIN10_TOKEN" in result["message"]

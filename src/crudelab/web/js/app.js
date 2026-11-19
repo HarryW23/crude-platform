@@ -4,7 +4,7 @@ import { loadSite, SITE } from "./site.js";
 import { currentZone, errorBox, esc, setZone, ZONES } from "./ui.js";
 
 const PAGES = {
-  front: [["overview", "總覽"], ["spreads", "地域價差"], ["balance", "供需平衡"], ["refinery", "煉廠盈利"], ["positioning", "資金持倉"],
+  front: [["overview", "總覽"], ["spreads", "地域價差"], ["balance", "供需平衡"], ["refinery", "煉廠盈利"], ["positioning", "資金與宏觀"],
           ["events", "地緣事件"], ["calendar", "財經日曆"], ["outlook", "推演"], ["journal", "觀點覆盤"], ["backtest", "回測"], ["reports", "報告"],
           ["chat", "問答"]],
   admin: [["import", "數據導入"], ["series", "序列"], ["indicators", "指標"], ["params", "參數"],

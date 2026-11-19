@@ -27,3 +27,14 @@
 - {code: POS_CRUDE_MM_NET, name_zh: 原油管理基金淨多頭合計（WTI + Brent）, module: positioning, group: 管理基金淨多頭,
    unit: lots, formula: "POS_WTI_MM_NET + POS_BRENT_MM_NET",
    notes: 兩個合約規模相同（1000 桶），可以直接相加}
+
+# ---------- 宏觀與跨資產（金十報價） ----------
+- {code: MAC_USD_EUR, name_zh: 歐元兌美元, module: positioning, group: 宏觀, unit: USD/EUR, formula: "MACRO_EURUSD",
+   notes: 歐元升 ≈ 美元弱，通常對以美元計價的原油偏利多}
+- {code: MAC_USD_JPY, name_zh: 美元兌日元, module: positioning, group: 宏觀, unit: JPY/USD, formula: "MACRO_USDJPY"}
+- {code: MAC_USD_CNH, name_zh: 美元兌離岸人民幣, module: positioning, group: 宏觀, unit: CNY/USD, formula: "MACRO_USDCNH"}
+- {code: MAC_CNH_CNY, name_zh: 離岸減在岸人民幣, module: positioning, group: 宏觀, unit: CNY/USD,
+   formula: "MACRO_USDCNH - USDCNY", ffill_limit: 3, notes: 為正 = 離岸人民幣更弱，市場對人民幣的預期偏弱}
+- {code: MAC_GOLD, name_zh: 現貨黃金, module: positioning, group: 宏觀, unit: USD/oz, formula: "MACRO_XAUUSD"}
+- {code: MAC_OIL_GOLD, name_zh: 油金比（每桶布倫特值多少盎司黃金）, module: positioning, group: 宏觀, unit: oz/bbl,
+   formula: "JIN10_UKOIL / MACRO_XAUUSD", notes: 每桶原油值多少盎司黃金；走低 = 原油相對避險資產變弱}

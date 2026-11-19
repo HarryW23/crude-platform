@@ -1,4 +1,4 @@
-# 品種字典。category: crude 原油 / product 成品油 / chem 化工品 / freight 運費 / fx 匯率 / fundamental 基本面
+# 品種字典。category: crude 原油 / product 成品油 / chem 化工品 / freight 運費 / fx 匯率 / fundamental 基本面 / metals 金屬
 # 原油
 - {code: BRENT,         name_zh: 布倫特,           category: crude}
 - {code: WTI,           name_zh: WTI,              category: crude}
@@ -46,5 +46,6 @@
 # 其他
 - {code: FREIGHT_DIRTY, name_zh: 原油油輪運費,     category: freight}
 - {code: FX,            name_zh: 匯率,             category: fx}
+- {code: GOLD,          name_zh: 黃金,             category: metals}
 - {code: US_FUNDAMENTAL, name_zh: 美國周度基本面,  category: fundamental}
 - {code: GLOBAL_FUNDAMENTAL, name_zh: 全球供需,     category: fundamental}

@@ -45,7 +45,7 @@ class LocationDef(Strict):
 class CommodityDef(Strict):
     code: str = Code
     name_zh: str
-    category: Literal["crude", "product", "chem", "freight", "fx", "fundamental"]
+    category: Literal["crude", "product", "chem", "freight", "fx", "fundamental", "metals"]
 
 
 class SourceDef(Strict):
@@ -79,6 +79,7 @@ class SeriesDef(Strict):
     aliases: list[str] = []
     eia_id: str | None = None
     cftc: CftcRef | None = None                          # 由 CFTC 公開報告自動取數
+    jin10: str | None = Field(default=None, pattern=r"^[A-Z0-9._]{2,20}$")   # 金十報價的品種代碼（quote://codes）
     notes: str | None = None
 
     @property

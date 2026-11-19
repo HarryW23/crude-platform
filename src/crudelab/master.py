@@ -42,7 +42,8 @@ def sync_to_db(session: Session, cfg: Config) -> dict[str, int]:
         code=s.code, name_zh=s.name_zh, commodity_code=s.commodity, location_code=s.location, kind=s.kind,
         unit_code=s.unit, frequency=s.frequency, valid_days=s.resolved_valid_days, contract=s.contract,
         benchmark=s.benchmark, module=s.module, external_ids={**({"eia": s.eia_id} if s.eia_id else {}),
-                      **({"cftc": s.cftc.model_dump()} if s.cftc else {})},
+                      **({"cftc": s.cftc.model_dump()} if s.cftc else {}),
+                      **({"jin10": s.jin10} if s.jin10 else {})},
         notes=s.notes, active=True) for s in cfg.series.values()])
     session.flush()
     for row in session.scalars(select(Series).where(Series.code.not_in(list(cfg.series)))):

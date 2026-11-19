@@ -72,7 +72,11 @@ def _fail_pull(monkeypatch):
     class Broken:
         def fetch(self, *a):
             raise ConnectorError("EIA 回報錯誤 500")
-    monkeypatch.setattr(jobs, "get_connector", lambda code: Broken())
+    class Fine:
+        def fetch(self, *a):
+            return []
+    # 只讓 EIA 失敗：其他到點的拉取任務（例如金十報價）正常，通知數才可控
+    monkeypatch.setattr(jobs, "get_connector", lambda code: Broken() if code == "eia" else Fine())
 
 
 def _ok_pull(monkeypatch):

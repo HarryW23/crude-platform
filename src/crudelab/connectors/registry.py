@@ -3,10 +3,12 @@ from __future__ import annotations
 from .base import PullConnector
 from .cftc import CFTCConnector
 from .eia import EIAConnector
+from .jin10_quotes import Jin10QuoteConnector
 from .reserved import CNVendorConnector, KplerConnector, ReutersAPIConnector
 
 _REGISTRY: dict[str, type[PullConnector]] = {
-    cls.code: cls for cls in (EIAConnector, CFTCConnector, KplerConnector, ReutersAPIConnector, CNVendorConnector)
+    cls.code: cls for cls in (EIAConnector, CFTCConnector, Jin10QuoteConnector, KplerConnector, ReutersAPIConnector,
+                              CNVendorConnector)
 }
 
 

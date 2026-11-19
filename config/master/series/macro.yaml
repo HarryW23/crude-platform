@@ -1,0 +1,20 @@
+# 宏觀與跨資產：匯率、黃金，以及金十的原油報價。來自金十（MCP），每天北京時間早上取一次收盤後的報價。
+#   jin10   金十的品種代碼（crudelab jin10 probe 會列出 quote://codes，可以在那裡核對或找新的代碼）
+#
+# ⚠ 金十的 UKOIL / USOIL 是它匯總的現貨報價，不是交易所的期貨結算價：存成單獨的序列，
+#   不混進 BRENT_M1 / WTI_M1（否則曲線、月差、回測的口徑會亂）。只用來看盤中 / 收盤前的大致位置。
+# 美元指數：金十的代碼要接上後用 probe 查（可能是 USDX 或 DXY），確認後在這裡加一條 jin10: 代碼 的序列即可。
+
+series:
+  - {code: MACRO_USDCNH, name_zh: 美元兌離岸人民幣, commodity: FX, location: GLOBAL, kind: fx, unit: CNY/USD, module: common,
+     jin10: USDCNH, aliases: [USDCNH, 美元兑离岸人民币]}
+  - {code: MACRO_EURUSD, name_zh: 歐元兌美元, commodity: FX, location: GLOBAL, kind: fx, unit: USD/EUR, module: common,
+     jin10: EURUSD, aliases: [EURUSD, 欧元兑美元]}
+  - {code: MACRO_USDJPY, name_zh: 美元兌日元, commodity: FX, location: GLOBAL, kind: fx, unit: JPY/USD, module: common,
+     jin10: USDJPY, aliases: [USDJPY, 美元兑日元]}
+  - {code: MACRO_XAUUSD, name_zh: 現貨黃金, commodity: GOLD, location: GLOBAL, kind: spot, unit: USD/oz, module: common,
+     jin10: XAUUSD, aliases: [XAUUSD, 现货黄金]}
+  - {code: JIN10_UKOIL, name_zh: 布倫特原油報價（金十）, commodity: BRENT, location: NWE, kind: spot, unit: USD/bbl,
+     module: common, jin10: UKOIL, notes: 金十匯總的現貨報價，不是 ICE 結算價}
+  - {code: JIN10_USOIL, name_zh: WTI 原油報價（金十）, commodity: WTI, location: CUSHING, kind: spot, unit: USD/bbl,
+     module: common, jin10: USOIL, notes: 金十匯總的現貨報價，不是 NYMEX 結算價}

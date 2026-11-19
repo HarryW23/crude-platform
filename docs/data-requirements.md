@@ -2,7 +2,7 @@
 
 > 這份文檔由 `crudelab data-needs --output docs/data-requirements.md` 從 `config/` 生成。不要手改；改了配置後重新生成。
 
-系統目前定義了 **152 條序列**，供 126 個指標、5 個煉廠模型、2 張平衡表使用。下面按「從哪裡取得」分組。任何序列都可以用 Excel 導入或在後台手動錄入，接口只是省去人工。
+系統目前定義了 **158 條序列**，供 132 個指標、5 個煉廠模型、2 張平衡表使用。下面按「從哪裡取得」分組。任何序列都可以用 Excel 導入或在後台手動錄入，接口只是省去人工。
 
 ## 一覽
 
@@ -11,10 +11,10 @@
 | EIA（美國能源信息署）公開數據 | 24 | 接口自動取數：後台「數據源」頁點「立即取數」，或 `crudelab pull eia` | `EIA_API_KEY`，在 eia.gov/opendata 免費申請 | 接口已寫好，**沒有用真實密鑰調用過** |
 | 國際交易所期貨結算價（ICE、NYMEX、DME / IFAD） | 33 | 路透終端導出 Excel 後在後台導入 | 路透 / LSEG 訂閱；之後可接 LSEG API（`LSEG_*`） | Excel 導入可用；API 預留 |
 | 國內交易所期貨結算價（INE、上期所、大商所、鄭商所） | 19 | 路透或 Wind 導出 Excel 後導入 | 路透 / Wind 等任一行情訂閱 | Excel 導入可用 |
-| 報價機構的現貨評估價（Platts、Argus 等） | 54 | 路透終端導出 Excel 後導入 | 路透訂閱 **加** 對應報價機構的授權 | Excel 導入可用 |
+| 報價機構的現貨評估價（Platts、Argus 等） | 57 | 路透終端導出 Excel 後導入 | 路透訂閱 **加** 對應報價機構的授權 | Excel 導入可用 |
 | 產油國官方售價（沙特、伊拉克等） | 5 | 每月公佈一次，手動錄入或隨 Excel 導入 | 公開信息，路透有轉載 | 手動 / Excel |
 | 油輪運價（波羅的海交易所 TD 航線） | 4 | 路透終端導出 Excel 後導入 | 路透訂閱（含波羅的海交易所數據） | Excel 導入可用 |
-| 匯率 | 1 | 路透導出 Excel 後導入 | 任一行情訂閱 | Excel 導入可用 |
+| 匯率 | 4 | 路透導出 Excel 後導入 | 任一行情訂閱 | Excel 導入可用 |
 | 國內現貨價（隆眾、卓創、金聯創等） | 8 | 資訊商網站或終端導出 Excel 後導入 | 國內資訊商訂閱；之後可接其 API（`CN_VENDOR_API_KEY`） | Excel 導入可用；API 預留 |
 | 機構月報（IEA、OPEC） | 4 | 從月報的表格整理成 Excel 後導入 | IEA 月報需訂閱；OPEC 月報公開 | Excel 導入可用 |
 
@@ -153,6 +153,9 @@
 | `MARS_DIFF` | Mars 升貼水 | USD/bbl | 日 | 地域價差 2 |
 | `WCS_HARDISTY_DIFF` | WCS（哈迪斯蒂）升貼水 | USD/bbl | 日 | 地域價差 1 |
 | `TUPI_CHINA_DIFF` | Tupi 到中國升貼水（到岸） | USD/bbl | 日 | 地域價差 1 |
+| `MACRO_XAUUSD` | 現貨黃金 | USD/oz | 日 | 資金持倉 2 |
+| `JIN10_UKOIL` | 布倫特原油報價（金十） | USD/bbl | 日 | 資金持倉 1 |
+| `JIN10_USOIL` | WTI 原油報價（金十） | USD/bbl | 日 | （目前沒有指標用到） |
 | `CFTC_WTI_MM_LONG` | WTI 管理基金多頭 | lots | 周 | 資金持倉 5 |
 | `CFTC_WTI_MM_SHORT` | WTI 管理基金空頭 | lots | 周 | 資金持倉 5 |
 | `CFTC_WTI_OI` | WTI 總持倉量 | lots | 周 | 資金持倉 1 |
@@ -201,7 +204,10 @@ WS 點折成 美元/桶 還需要 Worldscale 每年的基準費率，見下面�
 
 | 代碼 | 名稱 | 單位 | 頻率 | 用到它的指標 |
 |---|---|---|---|---|
-| `USDCNY` | 美元兌人民幣（1 美元合多少人民幣） | CNY/USD | 日 | 煉廠 6、地域價差 4 |
+| `MACRO_USDCNH` | 美元兌離岸人民幣 | CNY/USD | 日 | 資金持倉 2 |
+| `MACRO_EURUSD` | 歐元兌美元 | USD/EUR | 日 | 資金持倉 1 |
+| `MACRO_USDJPY` | 美元兌日元 | JPY/USD | 日 | 資金持倉 1 |
+| `USDCNY` | 美元兌人民幣（1 美元合多少人民幣） | CNY/USD | 日 | 資金持倉 1、煉廠 6、地域價差 4 |
 
 ### 國內現貨價（隆眾、卓創、金聯創等）
 

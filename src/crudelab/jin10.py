@@ -129,6 +129,10 @@ def parse_time(text) -> datetime | None:
     return None
 
 
+def beijing_date(utc_naive: datetime) -> date:
+    return utc_naive.replace(tzinfo=ZoneInfo("UTC")).astimezone(BEIJING).date()
+
+
 def _clip(value, size: int = 64) -> str | None:
     if value is None or value == "":
         return None
@@ -190,7 +194,7 @@ def _write_surprises(session: Session, cfg: Config, events: list[CalendarEvent])
             continue
         for rule in cfg.jin10.calendar_rules:
             if rule.match in event.title and (rule.require is None or rule.require in event.title):
-                day = event.pub_time.replace(tzinfo=ZoneInfo("UTC")).astimezone(BEIJING).date()
+                day = beijing_date(event.pub_time)
                 observations.append(Obs(rule.series, day, value * rule.scale, f"jin10:calendar:{event.key[:12]}"))
                 break
     if observations:
@@ -280,3 +284,33 @@ def prune_flash(session: Session, now: datetime | None = None) -> int:
     from .models import NewsFlash
     cutoff = (now or utcnow()) - timedelta(days=FLASH_KEEP_DAYS)
     return session.execute(delete(NewsFlash).where(NewsFlash.time < cutoff)).rowcount or 0
+
+
+# ------------------------------ K 線回填 ------------------------------
+
+DAILY_MIN_GAP_HOURS = 20
+
+
+def backfill_klines(session: Session, cfg: Config, jin: Jin10, count: int = 300) -> list[dict]:
+    """用 K 線給登記了 jin10 代碼的序列補歷史。只接受日 K（相鄰兩根的中位間隔不少於 20 小時），否則不寫並說明。"""
+    from .models import Series
+    out = []
+    for s in session.scalars(select(Series).where(Series.active)):
+        code = (s.external_ids or {}).get("jin10")
+        if not code:
+            continue
+        data = jin.call("get_kline", code=code, count=count)
+        payload = data.get("data", data) if isinstance(data, dict) else {}
+        bars = [b for b in (payload.get("klines") or []) if isinstance(b, dict)]
+        points = sorted((t, v) for t, v in ((parse_time(b.get("time")), number(b.get("close"))) for b in bars)
+                        if t is not None and v is not None)
+        gaps = sorted((b[0] - a[0]).total_seconds() / 3600 for a, b in zip(points, points[1:], strict=False))
+        median = gaps[len(gaps) // 2] if gaps else None
+        row = {"series": s.code, "code": code, "bars": len(points), "median_gap_hours": median, "written": 0}
+        if median is None or median < DAILY_MIN_GAP_HOURS:
+            row["note"] = "不是日 K（或根數太少），沒有寫入"
+        else:
+            obs = [Obs(s.code, beijing_date(t), v, f"jin10:kline:{code}") for t, v in points]
+            row["written"] = write_observations(session, obs, SOURCE, actor="jin10")["inserted"]
+        out.append(row)
+    return out

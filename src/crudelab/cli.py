@@ -320,6 +320,24 @@ def cmd_jin10(args) -> int:
     settings = get_settings()
     db.init_engine(settings)
     cfg = load_config(settings.config_dir)
+    if args.action == "backfill":
+        try:
+            client = jin10.Jin10(cfg)
+        except jin10.Jin10NotReady as exc:
+            print(exc, file=sys.stderr)
+            return 1
+        try:
+            with db.session_scope() as session:
+                rows = jin10.backfill_klines(session, cfg, client, args.count)
+        except (MCPError, jin10.Jin10LimitReached) as exc:
+            print(f"回填失敗：{exc}", file=sys.stderr)
+            return 1
+        finally:
+            client.close()
+        for r in rows:
+            gap = "—" if r["median_gap_hours"] is None else f"{r['median_gap_hours']:.0f} 小時"
+            print(f"  {r['series']:<16} {r['code']:<8} {r['bars']} 根，間隔 {gap}，新增 {r['written']}　{r.get('note', '')}")
+        return 0
     if args.action == "usage":
         tools = ("list_calendar", "list_flash", "search_flash", "get_quote", "get_kline", "quote://codes")
         print(f"今天（北京時間 {jin10.beijing_today()}）各工具的調用次數，上限 {cfg.jin10.max_calls_per_tool_per_day}：")
@@ -701,8 +719,9 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("run-job", help="立即運行一個定時任務；不給名字則列出全部")
     p.add_argument("code", nargs="?")
     p.set_defaults(func=cmd_run_job)
-    p = sub.add_parser("jin10", help="金十數據：probe 檢測接口並列出真實的數據樣子 / usage 今天的調用次數")
-    p.add_argument("action", choices=["probe", "usage"])
+    p = sub.add_parser("jin10", help="金十數據：probe 檢測接口 / usage 今天的調用次數 / backfill 用 K 線補報價歷史")
+    p.add_argument("action", choices=["probe", "usage", "backfill"])
+    p.add_argument("--count", type=int, default=300, help="backfill 時每個品種取多少根 K 線")
     p.set_defaults(func=cmd_jin10)
     p = sub.add_parser("lseg-rics", help="生成 LSEG 導出腳本用的 RIC 清單（scripts/lseg_rics.txt）")
     p.add_argument("--output", help="寫入這個文件；不給就打印")
