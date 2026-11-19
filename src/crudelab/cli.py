@@ -336,24 +336,47 @@ def cmd_jin10(args) -> int:
         if not 1 <= args.days <= 2000:
             print("--days 要在 1 到 2000 之間", file=sys.stderr)
             return 1
+        from .master import sync_to_db
+        with db.session_scope() as session:              # 先把配置裡的序列同步進數據庫（剛更新、還沒啟動過也能用）
+            sync_to_db(session, cfg)
+            if not jin10.quote_series(session):
+                print("配置裡沒有登記 jin10 代碼的序列（config/master/series/macro.yaml），沒有可以補的。", file=sys.stderr)
+                return 1
         try:
             client = jin10.Jin10(cfg)
         except jin10.Jin10NotReady as exc:
             print(exc, file=sys.stderr)
             return 1
+        import time as _time
+        started = _time.monotonic()
+        interactive = sys.stdout.isatty()
+
+        def progress(event, info):
+            if event == "plan":
+                print(f"紐約交易日 {info['first']} → {info['last']}：{info['series']} 個品種 × {info['days']} 天 = "
+                      f"調用 get_kline {info['calls']} 次（今天還剩 {info['left']} 次）。")
+                print("每次調用大約 0.5–1 秒，請稍候；每補完一個品種會寫入並打印一行，中途按 Ctrl+C 中斷不會丟失已完成的。")
+            elif event == "day" and interactive:
+                print(f"\r  正在補 {info['series']}（第 {info['n']}/{info['of']} 個品種）："
+                      f"{info['i']}/{info['days']} 天，已用 {_time.monotonic() - started:.0f} 秒", end="", flush=True)
+            elif event == "series":
+                r = info
+                print(("\r\033[K" if interactive else "") +
+                      f"  ✓ {r['series']:<16} {r['code']:<8} 取到 {r['closes']}/{r['days']} 天"
+                      f"（最早 {r['earliest'] or '—'}），沒取到 {r['no_trading']} 天，"
+                      f"新增 {r['written']}，更正 {r['corrected']}", flush=True)
         try:
             with db.session_scope() as session:
-                result = jin10.backfill_closes(session, cfg, client, args.days)
+                jin10.backfill_closes(session, cfg, client, args.days, progress=progress)
+        except KeyboardInterrupt:
+            print("\n已中斷：前面打 ✓ 的品種已經寫入；再運行一次會跳過已有的值（但仍會調用金十）。", file=sys.stderr)
+            return 130
         except (MCPError, jin10.Jin10LimitReached) as exc:
-            print(f"回填失敗：{exc}", file=sys.stderr)
+            print(f"\n回填失敗：{exc}（前面打 ✓ 的品種已經寫入）", file=sys.stderr)
             return 1
         finally:
             client.close()
-        print(f"紐約交易日 {result['first']} → {result['last']}，調用 get_kline {result['calls']} 次（口徑：紐約 16:59 的收盤價）")
-        for r in result["rows"]:
-            print(f"  {r['series']:<16} {r['code']:<8} 取到 {r['closes']}/{r['days']} 天"
-                  f"（最早 {r['earliest'] or '—'}），沒取到 {r['no_trading']} 天，"
-                  f"新增 {r['written']}，更正 {r['corrected']}")
+        print(f"完成，用時 {_time.monotonic() - started:.0f} 秒。")
         print("沒取到 = 那天休市，或者早於金十保存的分鐘數據。連續一大段沒取到，通常是後者：更早的歷史從金十補不了。")
         return 0
     if args.action == "usage":

@@ -393,10 +393,17 @@ def quote_series(session: Session) -> list:
             if (s.external_ids or {}).get("jin10")]
 
 
-def backfill_closes(session: Session, cfg: Config, jin: Jin10, days: int, now: datetime | None = None) -> dict:
+def backfill_closes(session: Session, cfg: Config, jin: Jin10, days: int, now: datetime | None = None,
+                    progress=None) -> dict:
     """給登記了 jin10 代碼的序列補最近 days 個交易日的收盤價。每品種每天一次 get_kline。
-    調用前先算總次數：超過今天剩下的額度就不開始，並說明可以補多少天。
-    和 sync_calendar 一樣：調用前 session 不能有未提交的寫入。"""
+
+    - 調用前先算總次數：超過今天剩下的額度就不開始，並說明可以補多少天
+    - 每補完一個品種就寫入並提交：中途中斷（Ctrl+C、斷網），已經補完的品種不會白做
+    - progress(event, info) 用來給人看進度：("plan", {...}) 開始前一次、("day", {...}) 每次調用後、
+      ("series", row) 每個品種寫完後
+    和 sync_calendar 一樣：調用前 session 不能有未提交的寫入（調用記錄走另一個會話，SQLite 會鎖）。
+    """
+    report = progress or (lambda event, info: None)
     series = quote_series(session)
     trade_days = completed_trade_days(now or utcnow(), days)
     need = len(series) * len(trade_days)
@@ -404,24 +411,27 @@ def backfill_closes(session: Session, cfg: Config, jin: Jin10, days: int, now: d
     if need > left:
         raise Jin10LimitReached(f"要調用 get_kline {need} 次（{len(series)} 個品種 × {len(trade_days)} 天），"
                                 f"今天只剩 {left} 次；最多可以補 {max(left // max(len(series), 1), 0)} 天，或明天再補")
-    # 先把所有調用做完、再一次寫入：調用記錄走另一個會話，這個會話在調用期間不能有未提交的寫入（SQLite 會鎖）
-    rows, collected = [], []
-    for s in series:
+    session.commit()                         # 前面只有讀；確保調用期間這個會話沒有掛著的事務
+    report("plan", {"calls": need, "series": len(series), "days": len(trade_days), "left": left,
+                    "first": trade_days[0] if trade_days else None, "last": trade_days[-1] if trade_days else None})
+    rows = []
+    for n, s in enumerate(series, 1):
         code = s.external_ids["jin10"]
         obs, holidays = [], 0
-        for day in trade_days:
+        for i, day in enumerate(trade_days, 1):
             got = close_on(jin, code, day)
             if got is None:
                 holidays += 1
-                continue
-            obs.append(Obs(s.code, day, got[0], f"jin10:close:{code}"))
-        collected.append(obs)
-        rows.append({"series": s.code, "code": code, "days": len(trade_days), "closes": len(obs),
-                     "no_trading": holidays, "earliest": obs[0].obs_date if obs else None,
-                     "written": 0, "corrected": 0})
-    for row, obs in zip(rows, collected, strict=True):
+            else:
+                obs.append(Obs(s.code, day, got[0], f"jin10:close:{code}"))
+            report("day", {"series": s.code, "n": n, "of": len(series), "i": i, "days": len(trade_days)})
+        row = {"series": s.code, "code": code, "days": len(trade_days), "closes": len(obs), "no_trading": holidays,
+               "earliest": obs[0].obs_date if obs else None, "written": 0, "corrected": 0}
         if obs:
             stats = write_observations(session, obs, SOURCE, actor="jin10")
             row["written"], row["corrected"] = stats["inserted"], stats["updated"]   # 更正 = 舊版本寫過不同的值
+        session.commit()
+        rows.append(row)
+        report("series", row)
     return {"calls": need, "first": trade_days[0] if trade_days else None,
             "last": trade_days[-1] if trade_days else None, "rows": rows}

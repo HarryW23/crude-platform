@@ -426,3 +426,40 @@ def test_migration_rekeys_flashes_by_url_and_merges_duplicates(tmp_path):
     assert got[0][2] is not None and got[0][3] == 2                               # 留下抽取過草稿的那條
     assert got[1][0] == jin10.flash_id({"url": "https://flash.jin10.com/detail/2"}, when, "")
     assert got[2][0] == "oldhash3"
+
+
+def test_backfill_reports_progress_and_keeps_finished_series_on_interrupt(session, cfg):
+    from datetime import datetime
+
+    from crudelab.models import Observation
+    first_code = jin10.quote_series(session)[0].external_ids["jin10"]
+    calls = []
+
+    def kline(args):
+        calls.append(args)
+        if args["code"] != first_code and len(calls) > 7:                # 第二個品種補到一半：模擬 Ctrl+C
+            raise KeyboardInterrupt
+        return minute_klines(args)
+    events = []
+    jin = jin10.Jin10(cfg, client_for(FakeServer({"get_kline": kline})))
+    with pytest.raises(KeyboardInterrupt):
+        jin10.backfill_closes(session, cfg, jin, days=5, now=datetime(2026, 11, 27, 22, 30),
+                              progress=lambda e, info: events.append((e, info)))
+    session.rollback()
+    kinds = [e for e, _ in events]
+    assert kinds[0] == "plan" and events[0][1]["calls"] == 30 and kinds.count("day") == 7
+    assert kinds.count("series") == 1                                    # 第一個品種寫完並打印了
+    first = events[[e for e, _ in events].index("series")][1]["series"]
+    kept = session.scalars(select(Observation).where(Observation.series_code == first)).all()
+    assert len(kept) == 4                                                # 已提交：中斷也不會丟（5 天裡 1 天感恩節）
+
+
+def test_backfill_cli_prints_plan_and_rows(session, cfg, monkeypatch, capsys):
+    from crudelab import cli
+    server = FakeServer({"get_kline": minute_klines})
+    monkeypatch.setenv("JIN10_TOKEN", TOKEN)
+    monkeypatch.setattr(jin10, "MCPClient", lambda *args, **kw: client_for(server))
+    assert cli.main(["jin10", "backfill", "--days", "3"]) == 0
+    out = capsys.readouterr().out
+    assert "6 個品種 × 3 天 = 調用 get_kline 18 次" in out and out.count("✓ ") == 6 and "完成，用時" in out
+    assert cli.main(["jin10", "backfill", "--days", "0"]) == 1
