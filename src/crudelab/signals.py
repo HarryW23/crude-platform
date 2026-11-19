@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from datetime import date
 
+import numpy as np
 import pandas as pd
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -53,29 +54,77 @@ def _clip(value: float) -> float:
     return max(-1.0, min(1.0, value))
 
 
+def rolling_scores(values: pd.Series, lookback_days: int, min_points: int, direction: int,
+                   detrend: str = "none") -> pd.DataFrame:
+    """每個數據日期上的信號分數。signals.data_signal 也用它（取最後一行），兩邊的算法只有這一份。
+
+    回看窗口是 [當天 − lookback_days, 當天]，兩端都含（closed="both"）。
+      detrend = none    z = (值 − 窗口均值) / 窗口標準差
+      detrend = linear  在窗口內對時間做最小二乘直線，z = 值偏離直線的幅度 / 殘差標準差（自由度 n − 2）
+    trend_t：窗口內直線斜率的 t 值（兩種方式都算，用來判斷要不要去趨勢：|t| > 2 說明趨勢明顯）。
+    """
+    columns = ["value", "mean", "std", "n", "z", "score", "trend_t"]
+    if values.empty:
+        return pd.DataFrame(columns=columns, index=pd.DatetimeIndex([]))
+    s = values.sort_index().astype(float)
+    x = pd.Series((s.index - s.index[0]).days.astype(float), index=s.index)
+    roll = lambda v: v.rolling(f"{lookback_days}D", closed="both").sum()      # noqa: E731
+    n = s.rolling(f"{lookback_days}D", closed="both").count()
+    sx, sy, sxx, sxy, syy = roll(x), roll(s), roll(x * x), roll(x * s), roll(s * s)
+    cxx = sxx - sx * sx / n
+    cxy = sxy - sx * sy / n
+    cyy = (syy - sy * sy / n).clip(lower=0)
+    slope = (cxy / cxx).where(cxx > 0)
+    sse = (cyy - slope * cxy).clip(lower=0)
+    resid_std = np.sqrt(sse / (n - 2)).where(n > 2)
+    trend_t = (slope / (resid_std / np.sqrt(cxx))).where((resid_std > 0) & (cxx > 0))
+    if detrend == "linear":
+        center = sy / n + slope * (x - sx / n)                # 直線在當天的值
+        std = resid_std
+    else:
+        window = s.rolling(f"{lookback_days}D", closed="both")
+        center, std = window.mean(), window.std()
+    usable = (n >= min_points) & (std > 0)
+    z = ((s - center) / std).where(usable)
+    score = (z / 2).clip(-1, 1) * direction
+    return pd.DataFrame({"value": s, "mean": center, "std": std, "n": n, "z": z, "score": score,
+                         "trend_t": trend_t})
+
+
 def data_signal(engine: IndicatorEngine, code: str, today: pd.Timestamp) -> dict:
     s = engine.cfg.signals[code]
     out = {"code": s.code, "name_zh": s.name_zh, "module": s.module, "input": s.input,
            "input_name": engine.cfg.name_of(s.input), "unit": engine.cfg.unit_of(s.input),
-           "direction": s.direction, "weight": s.weight, "notes": s.notes,
+           "direction": s.direction, "weight": _weight(engine, s, today), "weight_parameter": s.weight_parameter,
+           "detrend": s.detrend, "notes": s.notes,
            "status": "missing", "n": 0, "date": None, "value": None, "mean": None, "std": None, "z": None,
-           "score": None}
+           "score": None, "trend_t": None}
     values = engine.values(s.input)
     values = values[values.index <= today]
     if values.empty:
         return out
-    window = values[values.index >= values.index[-1] - pd.Timedelta(days=s.lookback_days)]
-    out.update(n=len(window), date=values.index[-1].date().isoformat(), value=float(values.iloc[-1]))
+    last = rolling_scores(values, s.lookback_days, s.min_points, s.direction, s.detrend).iloc[-1]
+    out.update(n=int(last["n"]), date=values.index[-1].date().isoformat(), value=float(values.iloc[-1]),
+               trend_t=_num(last["trend_t"]))
     if (today - values.index[-1]).days > stale_days(engine, s.input):
         out["status"] = "stale"
         return out
-    std = float(window.std()) if len(window) > 1 else 0.0
-    if len(window) < s.min_points or std == 0:
+    if pd.isna(last["z"]):
         out["status"] = "insufficient"
         return out
-    z = (float(values.iloc[-1]) - float(window.mean())) / std
-    out.update(status="ok", mean=float(window.mean()), std=std, z=z, score=_clip(z / 2) * s.direction)
+    out.update(status="ok", mean=float(last["mean"]), std=float(last["std"]), z=float(last["z"]),
+               score=float(last["score"]))
     return out
+
+
+def _num(value) -> float | None:
+    return None if value is None or pd.isna(value) else float(value)
+
+
+def _weight(engine: IndicatorEngine, s, today: pd.Timestamp) -> float:
+    """信號權重：參數 W_{code} 當天生效的版本；參數還沒有版本時用配置裡的初始值。"""
+    value = engine.value_at(s.weight_parameter, today.date()) if s.weight_parameter in engine.cfg.parameters else None
+    return s.weight if value is None else float(value)
 
 
 def active_events(session: Session) -> list[Event]:

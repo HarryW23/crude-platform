@@ -392,6 +392,7 @@ class SignalDef(Strict):
     """一個方向信號：看某個序列或指標的最新值相對自身歷史偏高還是偏低。
 
     z = (最新值 − 回看期均值) / 回看期標準差；score = clip(z / 2, −1, 1) × direction。
+    detrend = linear 時改成和回看期的線性趨勢比：z = 最新值偏離趨勢線的幅度 / 殘差標準差。
     direction = +1 表示數值越高對油價越利多，−1 表示越高越利空。
     """
     code: str = Code
@@ -401,8 +402,14 @@ class SignalDef(Strict):
     direction: Literal[1, -1]
     lookback_days: int = Field(default=730, ge=30)
     min_points: int = Field(default=30, ge=10)
-    weight: float = Field(default=1.0, gt=0)
+    weight: float = Field(default=1.0, ge=0)   # 初始權重；之後是參數 W_{code}（可按回測結果採用新版本）
+    # none：和回看期均值比；linear：和回看期的線性趨勢比（有趨勢的指標用，否則 z 會長期偏一邊）
+    detrend: Literal["none", "linear"] = "none"
     notes: str | None = None
+
+    @property
+    def weight_parameter(self) -> str:
+        return f"W_{self.code}"
 
 
 # ------------------------------ 地緣：事件預案 ------------------------------
@@ -596,6 +603,7 @@ class BacktestSettings(Strict):
     neutral_band: float = Field(default=0.15, gt=0, lt=1)    # 分數絕對值小於它算「中性」，不計入命中率
     min_effective_samples: int = Field(default=30, ge=5)      # 有效樣本少於它就標為樣本不足
     vintage_max_dates: int = Field(default=400, ge=10)        # 按入庫時間回測最多評估多少個日期（每個日期都要重算一遍）
+    calibration_horizon: str = "M1"                           # 用哪個期限的預測力校準權重（見 backtest.calibrate）
 
 
 # ------------------------------ 大模型的調用限制 ------------------------------

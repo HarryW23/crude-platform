@@ -8,8 +8,9 @@ export async function render(main) {
   main.innerHTML = `<h2>參數</h2>
     <p class="sub">公式和模型裡用到的所有常數。每個值都帶生效日期：填了生效日期，只影響那天之後的計算，歷史結果不變；不填則視為更正目前的值。所有改動都保留。</p>
     <div class="row" style="margin-bottom:14px"><input id="q" placeholder="搜尋" size="20" aria-label="搜尋">
-      <label><input type="checkbox" id="todo"> 只看待處理（缺值或待核對）</label></div><div id="editor"></div><div id="list"></div>`;
+      <label><input type="checkbox" id="todo"> 只看待處理（缺值或待核對）</label></div><div id="calib"></div><div id="editor"></div><div id="list"></div>`;
   const $ = (id) => main.querySelector("#" + id);
+  calibration($("calib"), () => render(main));
 
   const draw = () => {
     const q = $("q").value.toLowerCase(), todo = $("todo").checked;
@@ -64,4 +65,24 @@ export async function render(main) {
   $("q").addEventListener("input", draw);
   $("todo").addEventListener("change", draw);
   draw();
+}
+
+// 按最近一次回測校準信號和模組權重。逐步前推檢驗沒有變好時不能採用（後端也這樣限制）
+async function calibration(box, reload) {
+  let c;
+  try { c = await api("/calibration/latest"); } catch (e) { box.innerHTML = errorBox(e); return; }
+  if (!c.run_id) { box.innerHTML = ""; return; }
+  const w = c.walk_forward;
+  box.innerHTML = `<div class="panel inset"><h2>按回測校準權重 <span class="muted">回測 #${c.run_id}，${time(c.finished_at)}</span></h2>
+    <p class="sub">${esc(c.why)}${w ? `（逐步前推 IC：現在 ${w.current.ic == null ? "—" : num(w.current.ic, 3)} → 校準 ${w.calibrated.ic == null ? "—" : num(w.calibrated.ic, 3)}）` : ""}。
+      看 ${esc(c.horizon_name)} 的預測力；明細在前台「回測」頁。採用後今天起生效，舊版本保留，歷史回測不受影響。</p>
+    ${c.changes.length ? `<div class="scroll"><table><tr><th>參數</th><th class="n">現在</th><th class="n">建議</th><th>理由</th></tr>
+      ${c.changes.map((x) => `<tr><td>${esc(x.name_zh)}<div class="mono muted">${x.parameter}</div></td><td class="n">${x.current ?? "—"}</td>
+        <td class="n"><b>${x.proposed}</b></td><td>${esc(x.reason)}</td></tr>`).join("")}</table></div>
+      ${c.adoptable ? '<button class="btn primary" id="cadopt">採用這些權重（今天起生效）</button>' : ""}`
+      : '<p class="muted">建議和現在的權重一樣，不需要改。</p>'}<div id="cmsg"></div></div>`;
+  box.querySelector("#cadopt")?.addEventListener("click", async () => {
+    try { await api(`/calibration/${c.run_id}/adopt`, { method: "POST" }); await reload(); }
+    catch (e) { box.querySelector("#cmsg").innerHTML = errorBox(e); }
+  });
 }

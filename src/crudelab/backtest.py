@@ -84,21 +84,7 @@ def horizons_of(cfg: Config) -> list[HorizonDef]:
 
 # ------------------------------ 信號分數（向量化） ------------------------------
 
-def rolling_scores(values: pd.Series, lookback_days: int, min_points: int, direction: int) -> pd.DataFrame:
-    """每個數據日期上的信號分數：和 signals.data_signal 在那一天算出的完全一樣。
-
-    signals.py 的回看窗口是 [最新日期 − lookback_days, 最新日期]，兩端都含，所以這裡用 closed="both"。
-    """
-    columns = ["value", "mean", "std", "n", "z", "score"]
-    if values.empty:
-        return pd.DataFrame(columns=columns, index=pd.DatetimeIndex([]))
-    s = values.sort_index()
-    window = s.rolling(f"{lookback_days}D", closed="both")
-    mean, std, n = window.mean(), window.std(), window.count()
-    usable = (n >= min_points) & (std > 0)
-    z = ((s - mean) / std).where(usable)
-    score = (z / 2).clip(-1, 1) * direction
-    return pd.DataFrame({"value": s, "mean": mean, "std": std, "n": n, "z": z, "score": score})
+rolling_scores = signals.rolling_scores          # 算法只有一份，在 signals.py
 
 
 def as_available(frame: pd.DataFrame, dates: pd.DatetimeIndex, lag_days: int) -> pd.DataFrame:
@@ -118,7 +104,7 @@ def as_available(frame: pd.DataFrame, dates: pd.DatetimeIndex, lag_days: int) ->
 def _observation_scores(engine: IndicatorEngine, cfg: Config, dates: pd.DatetimeIndex) -> pd.DataFrame:
     out = {}
     for code, s in cfg.signals.items():
-        frame = rolling_scores(engine.values(s.input), s.lookback_days, s.min_points, s.direction)
+        frame = rolling_scores(engine.values(s.input), s.lookback_days, s.min_points, s.direction, s.detrend)
         lag = cfg.backtest.publication_lag_days[cfg.frequency_of(s.input)]
         known = as_available(frame, dates, lag)
         age = (known.index - pd.to_datetime(known["data_date"])).dt.days        # 沒有數據時是 NaN，比較結果為 False
@@ -175,11 +161,8 @@ def aggregate(cfg: Config, engine: IndicatorEngine, scores: pd.DataFrame) -> tup
         if not codes:
             modules[module] = pd.Series(np.nan, index=scores.index)
             continue
-        weights = pd.Series({c: cfg.signals[c].weight for c in codes})
-        part = scores[codes]
-        present = part.notna()
-        total = present.mul(weights, axis=1).sum(axis=1)
-        modules[module] = part.fillna(0).mul(weights, axis=1).sum(axis=1).div(total.where(total > 0))
+        weights = signal_weights(cfg, engine, codes, scores.index)
+        modules[module] = weighted_mean(scores[codes], weights)
     modules = pd.DataFrame(modules)
     weight_cols = {}
     for module in DATA_MODULES:
@@ -195,6 +178,27 @@ def aggregate(cfg: Config, engine: IndicatorEngine, scores: pd.DataFrame) -> tup
     total = weights.where(present, 0).sum(axis=1)
     overall = (modules.fillna(0) * weights.where(present, 0)).sum(axis=1).div(total.where(total > 0))
     return modules, overall
+
+
+def _stepwise(engine: IndicatorEngine, key: str, index: pd.DatetimeIndex, default: float) -> pd.Series:
+    """參數在每個日期當時生效的值（按生效日期的階梯函數）。"""
+    values = engine.parameter_values(key)
+    if not len(values):
+        return pd.Series(default, index=index)
+    return values.reindex(index.union(values.index)).ffill().reindex(index).fillna(default)
+
+
+def signal_weights(cfg: Config, engine: IndicatorEngine, codes: list[str], index: pd.DatetimeIndex) -> pd.DataFrame:
+    """每個信號在每個日期當時生效的權重（參數 W_{code}）。"""
+    return pd.DataFrame({c: _stepwise(engine, cfg.signals[c].weight_parameter, index, cfg.signals[c].weight)
+                         for c in codes}, index=index)
+
+
+def weighted_mean(part: pd.DataFrame, weights: pd.DataFrame) -> pd.Series:
+    """逐日加權平均，只算有分數的列；權重合計為 0 的日子沒有結果。"""
+    w = weights.where(part.notna(), 0)
+    total = w.sum(axis=1)
+    return (part.fillna(0) * w).sum(axis=1).div(total.where(total > 0))
 
 
 # ------------------------------ 評估 ------------------------------
@@ -396,6 +400,15 @@ def run(session: Session, cfg: Config, options: Options) -> dict:
         row, score = _evaluate_fair_value(cfg, model, fits[code], dates, target_fwd, horizons, step, options.mode)
         fair_rows.append(row)
         points[f"FV:{code}"] = {h.code: _points(score, target_fwd[h.code]) for h in horizons}
+    calibration = calibrate(cfg, engine, scores, fwd, horizons, step)
+    for row in signal_rows:                           # 輸入有沒有明顯趨勢：最近一個評估日、回看期內斜率的 t 值
+        sdef = cfg.signals[row["code"]]
+        frame = signals.rolling_scores(engine.values(sdef.input), sdef.lookback_days, sdef.min_points,
+                                       sdef.direction, sdef.detrend)
+        trend = frame["trend_t"].dropna()
+        row["detrend"] = sdef.detrend
+        row["trend_t"] = float(trend.iloc[-1]) if len(trend) else None
+        row["trending_share"] = float((trend.abs() > 2).mean()) if len(trend) else None
     weekly = dates[:: max(1, 5 // step)]
     caveats = [
         (f"{cfg.name_of(anchor)} 的收益已按換月調整；有 {unadjusted} 次換月因缺遠月數據沒能調整，那幾天含跳動。"
@@ -422,12 +435,121 @@ def run(session: Session, cfg: Config, options: Options) -> dict:
         "signals": signal_rows, "modules": module_rows,
         "overall": {"scored": int(overall.notna().sum()), "by_horizon": by_horizon(overall)},
         "fair_values": fair_rows,
+        "calibration": calibration,
         "band": {"expected": EXPECTED_COVERAGE, "by_horizon": _band(prices, vol, dates, horizons)},
         "points": points,
         "series": {"dates": [d.date().isoformat() for d in weekly],
                    "price": [float(prices.get(d, np.nan)) for d in weekly],
                    "overall": [float(overall.get(d, np.nan)) for d in weekly]},
         "caveats": caveats})
+
+
+# ------------------------------ 權重校準 ------------------------------
+#
+# 用回測裡的預測力（信號分數和之後收益的秩相關 IC）給權重：
+#   樣本不足                  → 保留現在的權重（沒有依據就不動）
+#   IC 顯著為正（t ≥ 2）       → 權重 = IC / IC_REFERENCE，限制在 [MIN_WEIGHT, WEIGHT_CAP]（IC 0.1 ≈ 權重 1）
+#   IC 顯著為負（t ≤ −2）      → 0：方向和實際相反。只建議停用，不自動翻轉方向（方向是人的判斷，見信號配置）
+#   不顯著                    → 0：歷史上沒有預測力，不參與合成
+# 模組權重用同樣的規則，看「按建議的信號權重合成的模組分數」的 IC。
+#
+# 建議值用到今天為止的全部回測樣本。它好不好，用「逐步前推」檢驗：每月初只用當時已經實現的收益
+# （評估日 + 期限 ≤ 當天）重新算一次權重，用到下個月初，這樣得到的綜合分數沒有用到未來；再和現在的權重比。
+
+IC_REFERENCE = 0.10
+MIN_WEIGHT, WEIGHT_CAP = 0.25, 3.0
+
+
+def proposed_weight(stats: dict, current: float) -> tuple[float, str, str]:
+    """（建議權重, 理由, 結論代碼）。stats 是 evaluate() 的結果。"""
+    if stats.get("status") != "ok" or stats.get("ic_t") is None:
+        return current, "樣本不足：保留現在的權重", "insufficient"
+    if stats["ic_t"] >= 2:
+        return (round(min(WEIGHT_CAP, max(MIN_WEIGHT, stats["ic"] / IC_REFERENCE)), 2),
+                "有預測力：按 IC 給權重", "effective")
+    if stats["ic_t"] <= -2:
+        return 0.0, "方向和實際相反：建議停用，並核對方向", "reversed"
+    return 0.0, "沒有顯著預測力：建議停用", "weak"
+
+
+def _modules_from(cfg: Config, scores: pd.DataFrame, weights: pd.DataFrame) -> pd.DataFrame:
+    """按給定的信號權重合成各模組分數。"""
+    out = {}
+    for m in DATA_MODULES:
+        codes = [c for c, s in cfg.signals.items() if s.module == m]
+        out[m] = weighted_mean(scores[codes], weights[codes]) if codes else pd.Series(np.nan, index=scores.index)
+    return pd.DataFrame(out, index=scores.index)
+
+
+def calibrate(cfg: Config, engine: IndicatorEngine, scores: pd.DataFrame, fwd: pd.DataFrame,
+              horizons: list[HorizonDef], step: int) -> dict:
+    settings = cfg.backtest
+    horizon = next((h for h in horizons if h.code == settings.calibration_horizon), horizons[-1])
+    returns = fwd[horizon.code]
+    ev = lambda series, ret=returns: evaluate(series, ret, horizon.trading_days, step,      # noqa: E731
+                                              settings.neutral_band, settings.min_effective_samples)
+    dates = scores.index
+    codes = list(cfg.signals)
+    current_sig = signal_weights(cfg, engine, codes, dates)
+    current_mod = pd.DataFrame({m: _stepwise(engine, cfg.projection.module_weights[m], dates, 1.0)
+                                if cfg.projection and cfg.projection.module_weights.get(m) else
+                                pd.Series(1.0, index=dates) for m in DATA_MODULES}, index=dates)
+
+    def propose(upto: int | None) -> tuple[dict[str, float], dict[str, float], dict, dict]:
+        """用前 upto 個評估日（None = 全部）的樣本算建議權重。"""
+        part = slice(None, upto)
+        at = dates[(upto or len(dates)) - 1]
+        sig, sig_rows = {}, {}
+        for c in codes:
+            stats = evaluate(scores[c].iloc[part], returns.iloc[part], horizon.trading_days, step,
+                             settings.neutral_band, settings.min_effective_samples)
+            sig[c], reason, verdict = proposed_weight(stats, float(current_sig[c].loc[at]))
+            sig_rows[c] = {"stats": stats, "reason": reason, "verdict": verdict}
+        modules = _modules_from(cfg, scores, pd.DataFrame({c: pd.Series(sig[c], index=dates) for c in codes}))
+        mod, mod_rows = {}, {}
+        for m in DATA_MODULES:
+            stats = evaluate(modules[m].iloc[part], returns.iloc[part], horizon.trading_days, step,
+                             settings.neutral_band, settings.min_effective_samples)
+            mod[m], reason, verdict = proposed_weight(stats, float(current_mod[m].loc[at]))
+            mod_rows[m] = {"stats": stats, "reason": reason, "verdict": verdict}
+        return sig, mod, sig_rows, mod_rows
+
+    sig, mod, sig_rows, mod_rows = propose(None)
+    last = dates[-1]
+    signal_out = [{"code": c, "name_zh": cfg.signals[c].name_zh, "module": cfg.signals[c].module,
+                   "parameter": cfg.signals[c].weight_parameter, "current": float(current_sig[c].loc[last]),
+                   "proposed": sig[c], **sig_rows[c]} for c in codes]
+    module_out = [{"module": m, "name_zh": signals.MODULE_NAMES[m],
+                   "parameter": cfg.projection.module_weights.get(m) if cfg.projection else None,
+                   "current": float(current_mod[m].loc[last]), "proposed": mod[m], **mod_rows[m]}
+                  for m in DATA_MODULES]
+
+    # 逐步前推：每月第一個評估日重算，只用已經實現的收益
+    gap = math.ceil(horizon.trading_days / step)
+    starts = [i for i in range(1, len(dates)) if dates[i].month != dates[i - 1].month and i - gap > 0]
+    wf_sig = pd.DataFrame(np.nan, index=dates, columns=codes)
+    wf_mod = pd.DataFrame(np.nan, index=dates, columns=list(DATA_MODULES))
+    s_w: dict[str, float] = {}
+    m_w: dict[str, float] = {}
+    for k, i in enumerate(starts):
+        end = starts[k + 1] if k + 1 < len(starts) else len(dates)
+        s_w, m_w, _, _ = propose(i - gap + 1)
+        wf_sig.iloc[i:end] = [s_w[c] for c in codes]
+        wf_mod.iloc[i:end] = [m_w[m] for m in DATA_MODULES]
+    walk = None
+    if starts:
+        first = dates[starts[0]]
+        wf_modules = _modules_from(cfg, scores, wf_sig.fillna(0))
+        calibrated = weighted_mean(wf_modules, wf_mod.fillna(0))
+        cur_modules = _modules_from(cfg, scores, current_sig)
+        current = weighted_mean(cur_modules, current_mod)
+        window = dates >= first
+        walk = {"start": first.date().isoformat(), "refits": len(starts), "last_weights": {**s_w, **m_w},
+                "current": ev(current[window], returns[window]), "calibrated": ev(calibrated[window], returns[window])}
+        cur_ic, cal_ic = walk["current"]["ic"], walk["calibrated"]["ic"]
+        walk["better"] = None if cur_ic is None or cal_ic is None else bool(cal_ic > cur_ic)
+    return {"horizon": horizon.code, "horizon_name": horizon.name_zh, "ic_reference": IC_REFERENCE,
+            "signals": signal_out, "modules": module_out, "walk_forward": walk}
 
 
 # ------------------------------ 記錄與後台執行 ------------------------------

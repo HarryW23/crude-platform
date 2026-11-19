@@ -76,7 +76,7 @@ function renderResults(view, r) {
     <td>${name}${extra}<div class="muted">${sub}</div></td>${cells(m)}</tr>`;
   const groups = r.modules.map((mod) => `<tr><td colspan="5" class="ink2" style="font-size:12px;padding-top:14px">${esc(mod.name_zh)}</td></tr>` +
     r.signals.filter((s) => s.module === mod.module).map((s) => row(s.code, esc(s.name_zh), `${esc(s.input_name)} · ${s.direction > 0 ? "高 = 利多" : "高 = 利空"}`,
-      s.by_horizon[h.code], s.approx ? ' <span class="tag warn" title="用到修訂後的月度數據，結果可能偏樂觀">近似</span>' : "")).join("") +
+      s.by_horizon[h.code], (s.approx ? ' <span class="tag warn" title="用到修訂後的月度數據，結果可能偏樂觀">近似</span>' : "") + trendTag(s))).join("") +
     row(`MODULE_${mod.module}`, `<b>${esc(mod.name_zh)}模組</b>`, "模組內加權", mod.by_horizon[h.code])).join("");
   const band = r.band.by_horizon;
 
@@ -102,6 +102,7 @@ function renderResults(view, r) {
         <tr><td>誤差減少</td>${r.horizons.map((x) => { const d = fv.drift[x.code]; return `<td class="n ${d.improvement > 0 ? "up" : d.improvement < 0 ? "down" : ""}"><b>${d.improvement == null ? "—" : signed(d.improvement * 100, 1) + "%"}</b>${d.significant ? '<div><span class="tag ok">顯著</span></div>' : ""}</td>`; }).join("")}</tr>
         <tr><td>方向命中率</td>${r.horizons.map((x) => `<td class="n">${pct(fv.drift[x.code].hit_rate)}</td>`).join("")}</tr>
         <tr><td>有效樣本</td>${r.horizons.map((x) => `<td class="n">${num(fv.drift[x.code].n_eff, 0)}${fv.drift[x.code].status === "insufficient" ? '<div><span class="tag warn">樣本不足</span></div>' : ""}</td>`).join("")}</tr></table></div></div>`).join("")}
+    ${calibrationPanel(r)}
     <h3>需要知道的局限</h3><ul class="ink2">${r.caveats.map((c) => `<li>${esc(c)}</li>`).join("")}</ul></div>`;
 
   view.querySelectorAll("[data-h]").forEach((b) => b.addEventListener("click", () => { state.horizon = b.dataset.h; renderResults(view, r); }));
@@ -127,4 +128,37 @@ function renderResults(view, r) {
   const box = view.querySelector("#series");
   box.append(lineChart(price, { unit: "價格", height: 150 }));
   if (overall.length >= 2) box.append(lineChart(overall, { unit: "綜合分數", height: 130 }));
+}
+
+// 輸入有明顯趨勢（回看期內斜率 |t| > 2）時提示：z 分數會長期偏一邊，可以考慮在信號配置裡加 detrend: linear
+function trendTag(s) {
+  if (s.detrend === "linear") return ' <span class="tag" title="和回看期的線性趨勢比，不是和均值比">已去趨勢</span>';
+  if (s.trend_t == null || Math.abs(s.trend_t) <= 2) return "";
+  return ` <span class="tag warn" title="最近一個評估日：回看期內斜率 t = ${num(s.trend_t, 1)}；回測期間 ${pct(s.trending_share, 0)} 的日子 |t| > 2。隨機遊走的價格也常這樣，要結合經濟含義判斷">有趨勢</span>`;
+}
+
+const VERDICT = { effective: ["ok", "有預測力"], reversed: ["bad", "方向相反"], weak: ["", "不顯著"], insufficient: ["warn", "樣本不足"] };
+
+function calibrationPanel(r) {
+  const c = r.calibration;
+  if (!c) return "";
+  const tag = (v) => `<span class="tag ${VERDICT[v][0]}">${VERDICT[v][1]}</span>`;
+  const line = (name, x) => `<tr><td>${name}</td><td class="n">${num(x.current, 2)}</td>
+    <td class="n ${x.proposed > x.current ? "up" : x.proposed < x.current ? "down" : ""}"><b>${num(x.proposed, 2)}</b></td>
+    <td class="n">${x.stats.ic == null ? "—" : signed(x.stats.ic)}<div class="muted">t ${x.stats.ic_t == null ? "—" : signed(x.stats.ic_t, 1)}</div></td>
+    <td>${tag(x.verdict)}<div class="muted">${esc(x.reason)}</div></td></tr>`;
+  const w = c.walk_forward;
+  const wf = w ? `<p class="sub">逐步前推檢驗（從 ${w.start} 起，每月初只用當時已實現的收益重算權重，共 ${w.refits} 次）：
+      現在的權重 IC <b>${w.current.ic == null ? "—" : signed(w.current.ic)}</b>、命中率 ${pct(w.current.hit_rate)}；
+      按校準權重 IC <b>${w.calibrated.ic == null ? "—" : signed(w.calibrated.ic)}</b>、命中率 ${pct(w.calibrated.hit_rate)}。
+      ${w.better ? '<span class="tag ok">校準後更好</span>' : '<span class="tag warn">校準後沒有更好：不建議採用</span>'}</p>`
+    : '<p class="sub">回測區間太短，沒有做逐步前推檢驗。</p>';
+  return `<h3>權重校準（看之後 ${esc(c.horizon_name)} 的預測力）</h3>
+    <p class="sub">IC 顯著為正（t ≥ 2）的按 IC 給權重（IC ${c.ic_reference} ≈ 權重 1）；不顯著或方向相反的建議為 0（不參與合成，方向相反的請核對方向，不會自動翻轉）；樣本不足的保留現在的權重。
+      建議值用到了全部回測樣本，所以要看下面的逐步前推檢驗：它只用每個時點之前的數據。採用在後台「參數」頁。</p>
+    ${wf}
+    <div class="cols"><div class="scroll"><table><tr><th>信號</th><th class="n">現在</th><th class="n">建議</th><th class="n">IC</th><th>結論</th></tr>
+      ${c.signals.map((x) => line(esc(x.name_zh), x)).join("")}</table></div>
+    <div class="scroll"><table><tr><th>模組</th><th class="n">現在</th><th class="n">建議</th><th class="n">IC</th><th>結論</th></tr>
+      ${c.modules.map((x) => line(`<b>${esc(x.name_zh)}</b>`, x)).join("")}</table></div></div>`;
 }

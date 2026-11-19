@@ -269,6 +269,13 @@ def load_config(config_dir: Path) -> Config:
                               for r in ld.items(RelationDef, path)], "關係模型")
     cfg.signals = ld.keyed([s for path in _optional(config_dir / "signals")
                             for s in ld.items(SignalDef, path)], "信號")
+    # 每個信號的權重是一個參數 W_{code}：帶生效日期和版本記錄，可以按回測結果採用新版本（backtest.calibrate）；
+    # 配置裡的 weight 是它的初始值。回測按每個日期當時生效的權重合成，結果可以重現。
+    params += [ParameterDef(key=sig.weight_parameter, name_zh=f"信號權重：{sig.name_zh}", group="信號權重",
+                            value=sig.weight, verified=True,
+                            description="模組內的相對權重；0 = 不參與合成。初始值來自 config/signals/，"
+                                        "可在回測頁按校準結果採用新值")
+               for sig in cfg.signals.values()]
     playbook_path = config_dir / "geo" / "playbooks.yaml"
     if playbook_path.exists():
         cfg.playbooks = ld.keyed(ld.items(PlaybookDef, playbook_path), "事件預案")
