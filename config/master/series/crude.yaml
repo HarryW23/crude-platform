@@ -15,16 +15,16 @@
 # 存的仍是連續合約序列（數據商給的就是 M1、M2…）；具體合約由規則推出，不另存一份。
 
 curves:
-  - {code: BRENT, name_zh: 布倫特期貨, commodity: BRENT, location: NWE, kind: futures, unit: USD/bbl,
+  - {code: BRENT, calendar: ICE_EU, name_zh: 布倫特期貨, commodity: BRENT, location: NWE, kind: futures, unit: USD/bbl,
      months: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], module: common, aliases: ["LCOc{n}", "Brent M{n}", "布倫特M{n}", "ICE Brent M{n}"],
      roll: {months_before: 2, day: last_business, note: "ICE Brent：交割月前第二個月的最後一個工作日"}}
-  - {code: WTI, name_zh: WTI 期貨, commodity: WTI, location: CUSHING, kind: futures, unit: USD/bbl,
+  - {code: WTI, calendar: CME, name_zh: WTI 期貨, commodity: WTI, location: CUSHING, kind: futures, unit: USD/bbl,
      months: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], module: common, aliases: ["CLc{n}", "WTI M{n}", "NYMEX WTI M{n}"],
      roll: {months_before: 1, day: 25, business_days_before: 3, note: "NYMEX WTI：交割月前一個月 25 日（非工作日取之前最近的工作日）之前 3 個工作日"}}
   - {code: DUBAI_SWAP, name_zh: 迪拜掉期, commodity: DUBAI, location: MEG, kind: swap, unit: USD/bbl,
      months: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], module: common, aliases: ["Dubai Swap M{n}", "迪拜掉期M{n}", "Dubai M{n}"],
      roll: {months_before: 1, day: last_business, note: "月均價掉期：假設 M1 在交割月前一個月月底換到下一個月。不同數據商的 M1 定義可能不同，務必核對"}}
-  - {code: SC, name_zh: 上海原油期貨, commodity: SC, location: CHINA, kind: futures, unit: CNY/bbl,
+  - {code: SC, calendar: CN, name_zh: 上海原油期貨, commodity: SC, location: CHINA, kind: futures, unit: CNY/bbl,
      months: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], module: common, aliases: ["ISCc{n}", "SC M{n}", "INE SC M{n}", "上海原油M{n}"],
      roll: {months_before: 1, day: last_business, note: "INE 原油：交割月前一個月的最後一個交易日"}}
 

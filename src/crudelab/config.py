@@ -22,6 +22,7 @@ config/ 的結構：
     backup.yaml                備份位置與保留策略
     llm.yaml                   大模型的調用限制
     jin10.yaml                 金十數據：額度、財經日曆的換算規則、快訊關鍵詞
+    calendars.yaml             交易所節假日日曆
 
 校驗一次做完並一次報全：結構（字段名、類型）、引用（單位、地區、品種、公式裡的名字）、
 唯一性（代碼、別名）、公式語法、循環引用、量綱。任何一項不過，整份配置都不生效。
@@ -30,6 +31,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
 from typing import Any, TypeVar
 
@@ -39,6 +41,8 @@ from pydantic import ValidationError
 from . import formula as fx
 from . import units
 from .balance import BalanceSpec, compile_balance
+from .calendars import WEEKDAYS, Calendar
+from .calendars import build as build_calendar
 from .refinery import RefinerySpec, compile_model
 from .schema import (
     FREQUENCY_ORDER,
@@ -46,6 +50,8 @@ from .schema import (
     BacktestSettings,
     BackupSettings,
     BalanceDef,
+    CalendarDef,
+    CalendarsFile,
     CommodityDef,
     CurveDef,
     FairValueModel,
@@ -110,6 +116,13 @@ class Config:
     fair_values: dict[str, FairValueModel] = field(default_factory=dict)
     curves: dict[str, CurveDef] = field(default_factory=dict)          # 期貨曲線：代碼 → 模板
     views: dict[str, PricingView] = field(default_factory=dict)        # 計價視角：代碼 → 定義（見 schema.PricingView）
+    calendar_defs: dict[str, CalendarDef] = field(default_factory=dict)
+    calendars: dict[str, Calendar] = field(default_factory=dict)       # 交易日曆：代碼 → 推出來的假期（calendars.py）
+
+    def calendar_of(self, code: str) -> Calendar:
+        """序列的交易日曆；沒指定的只按周一到周五算。"""
+        name = self.series[code].calendar if code in self.series else None
+        return self.calendars.get(name, WEEKDAYS) if name else WEEKDAYS
 
     @property
     def market_series(self) -> list[str]:
@@ -283,6 +296,14 @@ def load_config(config_dir: Path) -> Config:
     backup_path = config_dir / "backup.yaml"
     if backup_path.exists():
         cfg.backup = ld.build(BackupSettings, ld.read(backup_path) or {}, backup_path) or BackupSettings()
+    cal_path = config_dir / "calendars.yaml"
+    if cal_path.exists():
+        doc = ld.build(CalendarsFile, ld.read(cal_path) or {}, cal_path)
+        cfg.calendar_defs = ld.keyed(doc.calendars, "交易日曆") if doc else {}
+        cfg.calendars = {code: build_calendar(d) for code, d in cfg.calendar_defs.items()}
+    for curve in cfg.curves.values():                 # 換月的工作日按曲線的日曆算
+        if curve.roll is not None and curve.calendar in cfg.calendars:
+            curve.roll._calendar = cfg.calendars[curve.calendar]
     fresh_path = config_dir / "freshness.yaml"
     if fresh_path.exists():
         cfg.freshness = ld.build(FreshnessDef, ld.read(fresh_path) or {}, fresh_path) or FreshnessDef()
@@ -334,6 +355,12 @@ def _validate(cfg: Config) -> list[str]:
             if norm and owner_of.setdefault(norm, s.code) != s.code:
                 errors.append(f"別名「{alias}」同時指向 {owner_of[norm]} 和 {s.code}")
 
+    for s in cfg.series.values():
+        if s.calendar is not None and s.calendar not in cfg.calendars:
+            errors.append(f"序列 {s.code}：交易日曆 {s.calendar} 不在 calendars.yaml 裡")
+    for c in cfg.curves.values():
+        if c.calendar is not None and c.calendar not in cfg.calendars:
+            errors.append(f"曲線 {c.code}：交易日曆 {c.calendar} 不在 calendars.yaml 裡")
     for v in cfg.views.values():
         curve = cfg.curves.get(v.curve)
         if curve is None:
@@ -483,3 +510,17 @@ def _validate_indicators(cfg: Config) -> list[str]:
             errors.append(f"指標 {ind.code}：公式用了按期數計算的函數（lag / ma / diff 等），但輸入的頻率不同"
                           f"（{'、'.join(sorted(freqs))}）。請先分別算成同一頻率的指標再組合")
     return errors
+
+
+def calendar_warnings(cfg: Config, today: date) -> list[str]:
+    """逐年登記的日曆（例如中國長假）缺了今年、或 12 月了還沒有明年的，提醒補上。"""
+    out = []
+    for cal in cfg.calendars.values():
+        if cal.years is None:
+            continue
+        wanted = (today.year, today.year + 1) if today.month == 12 else (today.year,)
+        missing = [y for y in wanted if not cal.covers(y)]
+        if missing:
+            out.append(f"交易日曆 {cal.code}（{cal.name_zh}）還沒有登記 {'、'.join(map(str, missing))} 年的假期："
+                       "在 config/calendars.yaml 補上（國務院每年 11 月前後公布），沒登記的年份只按周一到周五算")
+    return out

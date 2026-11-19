@@ -55,6 +55,11 @@ def cmd_check(_args) -> int:
           f"{len(cfg.indicators)} 個指標，{len(cfg.refineries)} 個煉廠模型，"
           f"{len(cfg.balances)} 張平衡表，{len(cfg.relations)} 個關係模型，"
           f"{len(cfg.signals)} 個信號，{len(cfg.playbooks)} 個事件預案")
+    from datetime import date as _date
+
+    from .config import calendar_warnings
+    for line in calendar_warnings(cfg, _date.today()):
+        print("⚠ " + line)                      # 提醒，不算失敗：沒登記的年份退回只按周一到周五算
     from . import zh
     rules = cfg.jin10.calendar_rules
     issues = zh.traditional_issues({"config/jin10.yaml 快訊關鍵詞 flash_keywords": cfg.jin10.flash_keywords,

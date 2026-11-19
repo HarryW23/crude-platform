@@ -1,13 +1,13 @@
 # 成品油與化工品。字段說明見 crude.yaml。
 
 curves:
-  - {code: GASOIL_ICE, name_zh: ICE 柴油期貨, commodity: GASOIL, location: NWE, kind: futures, unit: USD/t,
+  - {code: GASOIL_ICE, calendar: ICE_EU, name_zh: ICE 柴油期貨, commodity: GASOIL, location: NWE, kind: futures, unit: USD/t,
      months: [1, 2, 3], module: refinery, aliases: ["LGOc{n}", "ICE Gasoil M{n}"],
      roll: {months_before: 0, day: 14, business_days_before: 2, note: "ICE Gasoil：交割月 14 日之前 2 個工作日"}}
-  - {code: RBOB, name_zh: RBOB 汽油期貨, commodity: GASOLINE, location: NYH, kind: futures, unit: USD/gal,
+  - {code: RBOB, calendar: CME, name_zh: RBOB 汽油期貨, commodity: GASOLINE, location: NYH, kind: futures, unit: USD/gal,
      months: [1, 2], module: refinery, aliases: ["RBc{n}", "RBOB M{n}"],
      roll: {months_before: 1, day: last_business, note: "NYMEX RBOB：交割月前一個月的最後一個工作日"}}
-  - {code: HO, name_zh: 取暖油（ULSD）期貨, commodity: GASOIL, location: NYH, kind: futures, unit: USD/gal,
+  - {code: HO, calendar: CME, name_zh: 取暖油（ULSD）期貨, commodity: GASOIL, location: NYH, kind: futures, unit: USD/gal,
      months: [1, 2], module: refinery, aliases: ["HOc{n}", "Heating Oil M{n}", "ULSD M{n}"],
      roll: {months_before: 1, day: last_business, note: "NYMEX 取暖油：交割月前一個月的最後一個工作日"}}
 
@@ -41,17 +41,17 @@ series:
      aliases: ["Rotterdam 3.5% Barges", "Rdam HSFO"]}
 
   # ---------- 中國：成品油（均為含稅價） ----------
-  - {code: SD_GASOLINE_92, name_zh: 山東地煉 92# 汽油, commodity: GASOLINE, location: SHANDONG, kind: spot, unit: CNY/t, module: refinery,
+  - {code: SD_GASOLINE_92, calendar: CN, name_zh: 山東地煉 92# 汽油, commodity: GASOLINE, location: SHANDONG, kind: spot, unit: CNY/t, module: refinery,
      aliases: ["山東汽油92", "山東地煉汽油", "山東92#"]}
-  - {code: SD_DIESEL_0, name_zh: 山東地煉 0# 柴油, commodity: GASOIL, location: SHANDONG, kind: spot, unit: CNY/t, module: refinery,
+  - {code: SD_DIESEL_0, calendar: CN, name_zh: 山東地煉 0# 柴油, commodity: GASOIL, location: SHANDONG, kind: spot, unit: CNY/t, module: refinery,
      aliases: ["山東柴油0", "山東地煉柴油", "山東0#"]}
-  - {code: SD_LPG, name_zh: 山東民用液化氣, commodity: LPG, location: SHANDONG, kind: spot, unit: CNY/t, module: refinery,
+  - {code: SD_LPG, calendar: CN, name_zh: 山東民用液化氣, commodity: LPG, location: SHANDONG, kind: spot, unit: CNY/t, module: refinery,
      aliases: ["山東液化氣", "山東民用氣", "山東LPG"]}
-  - {code: SD_PETCOKE, name_zh: 山東地煉石油焦, commodity: PETCOKE, location: SHANDONG, kind: spot, unit: CNY/t, module: refinery,
+  - {code: SD_PETCOKE, calendar: CN, name_zh: 山東地煉石油焦, commodity: PETCOKE, location: SHANDONG, kind: spot, unit: CNY/t, module: refinery,
      aliases: ["山東石油焦", "山東地煉石油焦"]}
-  - {code: EC_GASOLINE_92, name_zh: 華東 92# 汽油, commodity: GASOLINE, location: EAST_CHINA, kind: spot, unit: CNY/t, module: refinery,
+  - {code: EC_GASOLINE_92, calendar: CN, name_zh: 華東 92# 汽油, commodity: GASOLINE, location: EAST_CHINA, kind: spot, unit: CNY/t, module: refinery,
      aliases: ["華東汽油92", "華東92#"]}
-  - {code: EC_DIESEL_0, name_zh: 華東 0# 柴油, commodity: GASOIL, location: EAST_CHINA, kind: spot, unit: CNY/t, module: refinery,
+  - {code: EC_DIESEL_0, calendar: CN, name_zh: 華東 0# 柴油, commodity: GASOIL, location: EAST_CHINA, kind: spot, unit: CNY/t, module: refinery,
      aliases: ["華東柴油0", "華東0#"]}
   - {code: CN_JET_EXWORKS, name_zh: 中國航煤出廠價, commodity: JET, location: CHINA, kind: spot, unit: CNY/t, module: refinery,
      frequency: monthly, aliases: ["航煤出廠價", "中國航煤出廠價"]}

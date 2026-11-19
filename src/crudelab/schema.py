@@ -7,7 +7,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, model_validator
 
 Code = Field(pattern=r"^[A-Z][A-Z0-9_]*$", max_length=64)
 EPOCH = date(1900, 1, 1)          # 「自始生效」的生效日期
@@ -84,6 +84,7 @@ class SeriesDef(Strict):
     # 只在它所屬的期間內有效：月度值只用於那個月，不沿用到下個月；日期必須記在期間第一天（入庫時檢查）。
     # 用於「對某個月生效」的數據，例如官價：12 月裝船的官價記在 2026-12-01，只用於 12 月，不是公布日。
     within_period: bool = False
+    calendar: str | None = None          # 交易日曆（config/calendars.yaml），缺省只按周一到周五算
 
     @model_validator(mode="after")
     def _period(self) -> SeriesDef:
@@ -111,6 +112,7 @@ class RollRule(Strict):
     verified: bool = False                        # 規則是否已經和交易所 / 數據商的實際換月日核對過
     note: str | None = None
     overrides: dict[str, date] = {}               # 合約月份 "YYYY-MM" → 實際最後交易日（假期等例外）
+    _calendar: object = PrivateAttr(default=None)  # 載入配置時按曲線的 calendar 填上（calendars.Calendar）
 
     @model_validator(mode="after")
     def _check(self) -> RollRule:
@@ -138,6 +140,7 @@ class CurveDef(Strict):
     module: Module = "common"
     aliases: list[str] = []
     roll: RollRule | None = None
+    calendar: str | None = None          # 交易日曆：換月的工作日、斷更檢查都按它算
 
     @model_validator(mode="after")
     def _months(self) -> CurveDef:
@@ -148,8 +151,64 @@ class CurveDef(Strict):
     def expand(self) -> list[SeriesDef]:
         return [SeriesDef(code=f"{self.code}_M{n}", name_zh=f"{self.name_zh} M{n}", commodity=self.commodity,
                           location=self.location, kind=self.kind, unit=self.unit, contract=f"M{n}",
-                          module=self.module, aliases=[a.replace("{n}", str(n)) for a in self.aliases])
+                          module=self.module, aliases=[a.replace("{n}", str(n)) for a in self.aliases],
+                          calendar=self.calendar)
                 for n in self.months]
+
+
+class HolidayRule(Strict):
+    """每年都有的假期規則，三種寫法選一種：
+      month + day（+ observe）     固定日期，例如 7 月 4 日
+      month + weekday + nth        第 n 個星期幾（nth = -1 是最後一個），例如 11 月第 4 個星期四；weekday 0 = 周一
+      easter_offset                復活節前後幾天，例如耶穌受難日 = -2
+    observe（只用於固定日期）：落在周末時怎麼辦
+      none 不補 / nearest 周六提前到周五、周日順延到周一 / sunday_to_monday 只有周日順延 /
+      next_weekdays 順延到之後的工作日（連著的兩個假期會各佔一天，例如英國聖誕和節禮日）
+    """
+    name: str
+    month: int | None = Field(default=None, ge=1, le=12)
+    day: int | None = Field(default=None, ge=1, le=31)
+    weekday: int | None = Field(default=None, ge=0, le=6)
+    nth: int | None = Field(default=None, ge=-1, le=5)
+    easter_offset: int | None = Field(default=None, ge=-7, le=60)
+    observe: Literal["none", "nearest", "sunday_to_monday", "next_weekdays"] = "none"
+    since: int | None = None             # 從哪一年起有（例如美國六月節 2022 年起交易所休市）
+    until: int | None = None
+
+    @model_validator(mode="after")
+    def _one_kind(self) -> HolidayRule:
+        fixed = self.month is not None and self.day is not None and self.weekday is None and self.nth is None
+        nth = self.month is not None and self.weekday is not None and self.nth not in (None, 0) and self.day is None
+        easter = self.easter_offset is not None and self.month is None
+        if [fixed, nth, easter].count(True) != 1:
+            raise ValueError(f"假期規則「{self.name}」要寫成固定日期、第 n 個星期幾、或復活節前後之中的一種")
+        if self.observe != "none" and not fixed:
+            raise ValueError(f"假期規則「{self.name}」：observe 只用於固定日期")
+        return self
+
+
+class CalendarDef(Strict):
+    code: str = Code
+    name_zh: str
+    rules: list[HolidayRule] = []
+    dates: list[date] = []               # 逐年登記的假期（只登記周一到周五的；周末本來就不交易）
+    years: list[int] = []                # dates 已經登記全的年份
+    verified: bool = False               # 是否已經和交易所公布的假期表核對過
+    source: str | None = None
+    notes: str | None = None
+
+    @model_validator(mode="after")
+    def _years(self) -> CalendarDef:
+        if not self.rules and not self.years:
+            raise ValueError(f"日曆 {self.code}：只有 dates 時要寫 years（哪幾年已經登記全）")
+        stray = sorted({d.year for d in self.dates} - set(self.years)) if not self.rules else []
+        if stray:
+            raise ValueError(f"日曆 {self.code}：dates 裡有 {stray} 年的日期，但 years 沒寫這幾年")
+        return self
+
+
+class CalendarsFile(Strict):
+    calendars: list[CalendarDef] = []
 
 
 class PricingView(Strict):

@@ -12,5 +12,5 @@ series:
      aliases: ["TD25", "TD25 WS"]}
 
   # ---------- 匯率 ----------
-  - {code: USDCNY, name_zh: 美元兌人民幣（1 美元合多少人民幣）, commodity: FX, location: GLOBAL, kind: fx, unit: CNY/USD, module: common,
+  - {code: USDCNY, calendar: CN, name_zh: 美元兌人民幣（1 美元合多少人民幣）, commodity: FX, location: GLOBAL, kind: fx, unit: CNY/USD, module: common,
      aliases: ["CNY=", "USD/CNY", "USDCNY", "美元人民幣"]}

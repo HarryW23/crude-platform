@@ -16,7 +16,8 @@
                              k 是兩天之間的換月次數。取不到時退回原始收益並計數。
                              adjusted_prices 把收益連乘成比例調整後的價格，以最新一天為準（最新值等於原始價格）。
 
-約定：最後交易日當天合約仍然是 M1，第二天才換。工作日只按周一到周五算，交易所假期用 overrides 修正。
+約定：最後交易日當天合約仍然是 M1，第二天才換。工作日按曲線的交易日曆算（config/calendars.yaml，
+沒指定的只按周一到周五）；日曆管不到的特殊情況用 overrides 修正。
 """
 from __future__ import annotations
 
@@ -26,6 +27,7 @@ from datetime import date, timedelta
 import numpy as np
 import pandas as pd
 
+from .calendars import WEEKDAYS, Calendar
 from .config import Config
 from .schema import CurveDef, PricingView, RollRule
 
@@ -44,16 +46,9 @@ def contract_label(o: int) -> str:
     return f"{o // 12}-{o % 12 + 1:02d}"
 
 
-def _prev_business(d: date) -> date:
-    while d.weekday() >= 5:
-        d -= timedelta(days=1)
-    return d
-
-
-def _minus_business(d: date, n: int) -> date:
-    for _ in range(n):
-        d = _prev_business(d - timedelta(days=1))
-    return d
+def _calendar(rule: RollRule) -> Calendar:
+    """換月規則用的交易日曆（曲線的 calendar；沒指定的只按周一到周五算）。"""
+    return rule._calendar or WEEKDAYS
 
 
 def last_trading_day(rule: RollRule, o: int) -> date:
@@ -65,10 +60,10 @@ def last_trading_day(rule: RollRule, o: int) -> date:
     year, month = m // 12, m % 12 + 1
     if rule.day == "last_business":
         nxt = date(year + (month == 12), month % 12 + 1, 1)
-        anchor = _prev_business(nxt - timedelta(days=1))
+        anchor = _calendar(rule).prev_business(nxt - timedelta(days=1))
     else:
-        anchor = _prev_business(date(year, month, rule.day))
-    return _minus_business(anchor, rule.business_days_before)
+        anchor = _calendar(rule).prev_business(date(year, month, rule.day))
+    return _calendar(rule).minus_business(anchor, rule.business_days_before)
 
 
 def member(cfg: Config, code: str) -> CurveMember | None:

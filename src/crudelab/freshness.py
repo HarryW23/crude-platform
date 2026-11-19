@@ -13,10 +13,10 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 from zoneinfo import ZoneInfo
 
-import numpy as np
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from .calendars import WEEKDAYS, Calendar
 from .config import Config
 from .models import Observation
 from .schema import FreshnessRule
@@ -36,13 +36,13 @@ def rule_for(cfg: Config, code: str) -> FreshnessRule:
     return cfg.freshness.defaults[cfg.series[code].frequency]
 
 
-def lag(rule: FreshnessRule, last: date, today: date) -> int:
-    """從 last 到 today 隔了多少天（按規則數工作日或日曆天）。last 當天不算，today 當天算。"""
+def lag(rule: FreshnessRule, last: date, today: date, calendar: Calendar = WEEKDAYS) -> int:
+    """從 last 到 today 隔了多少天（按規則數工作日或日曆天）。last 當天不算，today 當天算。
+    數工作日時跳過這條序列所在市場的假期（交易日曆），長假不會誤報斷更。"""
     if last >= today:
         return 0
     if rule.count == "weekdays":
-        one = np.timedelta64(1, "D")
-        return int(np.busday_count(np.datetime64(last, "D") + one, np.datetime64(today, "D") + one))
+        return calendar.business_days_between(last, today)
     return (today - last).days
 
 
@@ -83,7 +83,7 @@ def check(session: Session, cfg: Config, now: datetime | None = None) -> dict:
             if last is None:
                 row["status"] = "stale"
             else:
-                row["lag"] = lag(rule, last, today)
+                row["lag"] = lag(rule, last, today, cfg.calendar_of(code))
                 row["status"] = "stale" if row["lag"] > rule.max_days else "fresh"
         rows.append(row)
     order = {"stale": 0, "never": 1, "fresh": 2, "ignored": 3}
