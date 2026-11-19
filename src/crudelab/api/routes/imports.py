@@ -1,6 +1,8 @@
 """文件導入：預覽 → 確認入庫。"""
 from __future__ import annotations
 
+from datetime import date
+
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -22,13 +24,17 @@ class CommitRequest(BaseModel):
 
 @admin_router.post("/imports/preview")
 async def preview(file: UploadFile = File(...), source_code: str = Form("reuters_xls"),
-                  session: Session = Depends(get_db), state: AppState = Depends(get_state),
-                  actor: str = Depends(get_actor)):
+                  vintage: str | None = Form(None), session: Session = Depends(get_db),
+                  state: AppState = Depends(get_state), actor: str = Depends(get_actor)):
     content = await file.read(MAX_UPLOAD + 1)
     if len(content) > MAX_UPLOAD:
         raise HTTPException(413, f"文件超過 {MAX_UPLOAD // 1_000_000} MB，請拆開再導入")
     try:
-        return preview_file(session, state.settings, content, file.filename or "upload", source_code, actor)
+        issued = date.fromisoformat(vintage) if vintage else None
+    except ValueError:
+        raise HTTPException(400, "報告期要寫成 2026-11-12 這樣的日期") from None
+    try:
+        return preview_file(session, state.settings, content, file.filename or "upload", source_code, actor, issued)
     except ImportFlowError as exc:
         raise HTTPException(400, str(exc)) from exc
 

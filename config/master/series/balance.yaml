@@ -45,33 +45,35 @@ series:
      frequency: weekly, module: balance, eia_id: PET.WKJUPUS2.W, aliases: ["US Jet Supplied", "美國航煤表需"]}
 
   # ---------- 全球月度（EIA 短期能源展望 STEO，含預測） ----------
-  - {code: STEO_OPEC_SUPPLY, name_zh: OPEC 液體燃料產量（EIA）, commodity: GLOBAL_FUNDAMENTAL, location: OPEC, kind: flow, unit: mb/d,
+  # vintaged：機構每期都會修訂過去的數字，按報告期保存（回測用當時發佈的那一期）。
+  #   補錄歷史報告時在導入頁填「報告發佈日期」；EIA 每天取數，數字變了才記新的一期
+  - {code: STEO_OPEC_SUPPLY, vintaged: true, name_zh: OPEC 液體燃料產量（EIA）, commodity: GLOBAL_FUNDAMENTAL, location: OPEC, kind: flow, unit: mb/d,
      frequency: monthly, module: balance, eia_id: STEO.PAPR_OPEC.M, aliases: ["STEO OPEC Supply", "OPEC液體產量"]}
-  - {code: STEO_NONOPEC_SUPPLY, name_zh: 非 OPEC 液體燃料產量（EIA）, commodity: GLOBAL_FUNDAMENTAL, location: NON_OPEC, kind: flow, unit: mb/d,
+  - {code: STEO_NONOPEC_SUPPLY, vintaged: true, name_zh: 非 OPEC 液體燃料產量（EIA）, commodity: GLOBAL_FUNDAMENTAL, location: NON_OPEC, kind: flow, unit: mb/d,
      frequency: monthly, module: balance, eia_id: STEO.PAPR_NONOPEC.M, aliases: ["STEO Non-OPEC Supply", "非OPEC液體產量"]}
-  - {code: STEO_OPEC_CRUDE, name_zh: OPEC 原油產量（EIA）, commodity: GLOBAL_FUNDAMENTAL, location: OPEC, kind: flow, unit: mb/d,
+  - {code: STEO_OPEC_CRUDE, vintaged: true, name_zh: OPEC 原油產量（EIA）, commodity: GLOBAL_FUNDAMENTAL, location: OPEC, kind: flow, unit: mb/d,
      frequency: monthly, module: balance, eia_id: STEO.COPR_OPEC.M, aliases: ["STEO OPEC Crude", "OPEC原油產量"]}
-  - {code: STEO_US_CRUDE, name_zh: 美國原油產量（EIA 月度）, commodity: GLOBAL_FUNDAMENTAL, location: US, kind: flow, unit: mb/d,
+  - {code: STEO_US_CRUDE, vintaged: true, name_zh: 美國原油產量（EIA 月度）, commodity: GLOBAL_FUNDAMENTAL, location: US, kind: flow, unit: mb/d,
      frequency: monthly, module: balance, eia_id: STEO.COPRPUS.M, aliases: ["STEO US Crude Production"]}
-  - {code: STEO_OECD_DEMAND, name_zh: OECD 需求（EIA）, commodity: GLOBAL_FUNDAMENTAL, location: OECD, kind: flow, unit: mb/d,
+  - {code: STEO_OECD_DEMAND, vintaged: true, name_zh: OECD 需求（EIA）, commodity: GLOBAL_FUNDAMENTAL, location: OECD, kind: flow, unit: mb/d,
      frequency: monthly, module: balance, eia_id: STEO.PATC_OECD.M, aliases: ["STEO OECD Demand", "OECD需求"]}
-  - {code: STEO_NONOECD_DEMAND, name_zh: 非 OECD 需求（EIA）, commodity: GLOBAL_FUNDAMENTAL, location: NON_OECD, kind: flow, unit: mb/d,
+  - {code: STEO_NONOECD_DEMAND, vintaged: true, name_zh: 非 OECD 需求（EIA）, commodity: GLOBAL_FUNDAMENTAL, location: NON_OECD, kind: flow, unit: mb/d,
      frequency: monthly, module: balance, eia_id: STEO.PATC_NON_OECD.M, aliases: ["STEO Non-OECD Demand", "非OECD需求"]}
-  - {code: STEO_CHINA_DEMAND, name_zh: 中國需求（EIA）, commodity: GLOBAL_FUNDAMENTAL, location: CHINA, kind: flow, unit: mb/d,
+  - {code: STEO_CHINA_DEMAND, vintaged: true, name_zh: 中國需求（EIA）, commodity: GLOBAL_FUNDAMENTAL, location: CHINA, kind: flow, unit: mb/d,
      frequency: monthly, module: balance, eia_id: STEO.PATC_CH.M, aliases: ["STEO China Demand", "中國需求EIA"]}
-  - {code: STEO_US_DEMAND, name_zh: 美國需求（EIA 月度）, commodity: GLOBAL_FUNDAMENTAL, location: US, kind: flow, unit: mb/d,
+  - {code: STEO_US_DEMAND, vintaged: true, name_zh: 美國需求（EIA 月度）, commodity: GLOBAL_FUNDAMENTAL, location: US, kind: flow, unit: mb/d,
      frequency: monthly, module: balance, eia_id: STEO.PATC_US.M, aliases: ["STEO US Demand"]}
-  - {code: STEO_OECD_STOCKS, name_zh: OECD 商業庫存（EIA）, commodity: GLOBAL_FUNDAMENTAL, location: OECD, kind: stock, unit: mb,
+  - {code: STEO_OECD_STOCKS, vintaged: true, name_zh: OECD 商業庫存（EIA）, commodity: GLOBAL_FUNDAMENTAL, location: OECD, kind: stock, unit: mb,
      frequency: monthly, module: balance, eia_id: STEO.PASC_OECD_T3.M, aliases: ["STEO OECD Stocks", "OECD商業庫存"]}
 
   # ---------- 其他機構（月報，Excel 導入；用來和 EIA 的口徑對照） ----------
-  - {code: IEA_WORLD_DEMAND, name_zh: 全球需求（IEA）, commodity: GLOBAL_FUNDAMENTAL, location: GLOBAL, kind: flow, unit: mb/d,
+  - {code: IEA_WORLD_DEMAND, vintaged: true, name_zh: 全球需求（IEA）, commodity: GLOBAL_FUNDAMENTAL, location: GLOBAL, kind: flow, unit: mb/d,
      frequency: quarterly, module: balance, aliases: ["IEA World Demand", "IEA全球需求"]}
-  - {code: IEA_WORLD_SUPPLY, name_zh: 全球供應（IEA）, commodity: GLOBAL_FUNDAMENTAL, location: GLOBAL, kind: flow, unit: mb/d,
+  - {code: IEA_WORLD_SUPPLY, vintaged: true, name_zh: 全球供應（IEA）, commodity: GLOBAL_FUNDAMENTAL, location: GLOBAL, kind: flow, unit: mb/d,
      frequency: quarterly, module: balance, aliases: ["IEA World Supply", "IEA全球供應"]}
-  - {code: OPEC_WORLD_DEMAND, name_zh: 全球需求（OPEC）, commodity: GLOBAL_FUNDAMENTAL, location: GLOBAL, kind: flow, unit: mb/d,
+  - {code: OPEC_WORLD_DEMAND, vintaged: true, name_zh: 全球需求（OPEC）, commodity: GLOBAL_FUNDAMENTAL, location: GLOBAL, kind: flow, unit: mb/d,
      frequency: quarterly, module: balance, aliases: ["OPEC World Demand", "OPEC全球需求"]}
-  - {code: OPEC_CALL_ON_OPEC, name_zh: 對 OPEC 原油的需求（OPEC）, commodity: GLOBAL_FUNDAMENTAL, location: OPEC, kind: flow, unit: mb/d,
+  - {code: OPEC_CALL_ON_OPEC, vintaged: true, name_zh: 對 OPEC 原油的需求（OPEC）, commodity: GLOBAL_FUNDAMENTAL, location: OPEC, kind: flow, unit: mb/d,
      frequency: quarterly, module: balance, aliases: ["Call on OPEC", "對OPEC原油需求"]}
 
   # ---------- 超預期（來自金十財經日曆，實際 − 公佈時的市場預期） ----------

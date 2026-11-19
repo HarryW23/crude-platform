@@ -151,11 +151,14 @@ def cmd_serve(args) -> int:
 
 
 def cmd_import(args) -> int:
+    from datetime import date
+
     from .imports import commit_batch, preview_file
     _init()
     path = Path(args.file)
     with db.session_scope() as session:
-        preview = preview_file(session, get_settings(), path.read_bytes(), path.name, args.source)
+        vintage = date.fromisoformat(args.vintage) if args.vintage else None
+        preview = preview_file(session, get_settings(), path.read_bytes(), path.name, args.source, vintage=vintage)
         for sheet in preview["sheets"]:
             print(f"[{sheet['name']}] 版式：{sheet['layout']}" + (f"（{sheet['note']}）" if sheet["note"] else ""))
             for col in sheet["columns"]:
@@ -797,6 +800,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("file")
     p.add_argument("--source", default="reuters_xls")
     p.add_argument("--dry-run", action="store_true", help="只預覽，不入庫")
+    p.add_argument("--vintage", default=None, help="機構報告的發佈日期（補錄歷史報告時填，例如 2025-03-11）")
     p.set_defaults(func=cmd_import)
     p = sub.add_parser("pull", help="從拉取型數據源取數")
     p.add_argument("source")

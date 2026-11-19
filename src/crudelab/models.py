@@ -108,6 +108,7 @@ class Series(Base):
     notes: Mapped[str | None] = mapped_column(Text)
     active: Mapped[bool] = mapped_column(Boolean, default=True)      # 已從配置移除的序列置為 False，數據保留
     within_period: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())   # 見 SeriesDef
+    vintaged: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())        # 按報告期保存
 
 
 class SeriesAlias(Base):
@@ -165,6 +166,7 @@ class ImportBatch(Base):
     stats: Mapped[dict | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     created_by: Mapped[str] = mapped_column(String(64))
+    vintage: Mapped[date | None] = mapped_column(Date)               # 機構報告的發佈日期（補錄歷史報告時填）
 
 
 class Observation(Base):
@@ -181,6 +183,26 @@ class Observation(Base):
     source_ref: Mapped[str | None] = mapped_column(String(256))      # 例如 "Sheet1!C15"
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)   # 第一次入庫
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)   # 當前值入庫
+
+
+class ObservationVintage(Base):
+    """按期保存的序列（機構預測：STEO、IEA、OPEC）每一期報告裡的數字。vintage = 那一期的發佈日期。
+
+    主表 observation 保存最新一期（頁面照常用）；這裡保存每一期，用來還原「某天之前發佈的最新一期是什麼」，
+    回測就不會用到後來的修訂。只在數字變了時記新的一期（每天取數、數字沒變不會多存）。
+    """
+    __tablename__ = "observation_vintage"
+    __table_args__ = (UniqueConstraint("series_code", "obs_date", "source_code", "vintage"),
+                      Index("ix_observation_vintage_series_code_vintage", "series_code", "vintage"))
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    series_code: Mapped[str] = mapped_column(ForeignKey("series.code"))
+    obs_date: Mapped[date] = mapped_column(Date)
+    source_code: Mapped[str] = mapped_column(ForeignKey("data_source.code"))
+    vintage: Mapped[date] = mapped_column(Date)
+    value: Mapped[float] = mapped_column(Float)
+    batch_id: Mapped[int | None] = mapped_column(ForeignKey("import_batch.id"))
+    source_ref: Mapped[str | None] = mapped_column(String(256))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 class ScenarioRow(Base):

@@ -76,7 +76,8 @@ function renderResults(view, r) {
     <td>${name}${extra}<div class="muted">${sub}</div></td>${cells(m)}</tr>`;
   const groups = r.modules.map((mod) => `<tr><td colspan="5" class="ink2" style="font-size:12px;padding-top:14px">${esc(mod.name_zh)}</td></tr>` +
     r.signals.filter((s) => s.module === mod.module).map((s) => row(s.code, esc(s.name_zh), `${esc(s.input_name)} · ${s.direction > 0 ? "高 = 利多" : "高 = 利空"}`,
-      s.by_horizon[h.code], (s.approx ? ' <span class="tag warn" title="用到修訂後的月度數據，結果可能偏樂觀">近似</span>' : "") + trendTag(s))).join("") +
+      s.by_horizon[h.code], (s.approx ? ' <span class="tag warn" title="用到修訂後的月度數據，結果可能偏樂觀">近似</span>' : "")
+        + (s.vintage_exact ? ' <span class="tag ok" title="每個評估日用當時已發佈的那一期機構報告">按期還原</span>' : "") + trendTag(s))).join("") +
     row(`MODULE_${mod.module}`, `<b>${esc(mod.name_zh)}模組</b>`, "模組內加權", mod.by_horizon[h.code])).join("");
   const band = r.band.by_horizon;
 

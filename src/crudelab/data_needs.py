@@ -154,7 +154,8 @@ def render(cfg: Config) -> str:
             usage = "、".join(f"{MODULES[m]} {len(c)}" for m, c in by_module.items()) or "（目前沒有指標用到）"
             extra = f"　`{s.eia_id}`" if s.eia_id else ""
             freq = FREQUENCIES[s.frequency] + ("（只對當期生效：日期記適用期間的 1 日，例如官價記裝船月）"
-                                               if s.within_period else "")
+                                               if s.within_period else "") + \
+                ("（按報告期保存：補錄歷史報告時填發佈日期）" if s.vintaged else "")
             lines.append(f"| `{s.code}`{extra} | {s.name_zh} | {s.unit} | {freq} | {usage} |")
         lines.append("")
 

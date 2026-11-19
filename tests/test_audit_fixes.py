@@ -76,7 +76,7 @@ def test_stale_signal_does_not_score_live_or_in_backtest(session, cfg):
     stale = signals.data_signal(engine, "SIG_BRENT_STRUCTURE", pd.Timestamp("2026-07-20"))
     assert fresh["status"] == "ok" and stale["status"] == "stale" and stale["score"] is None
     dates = pd.DatetimeIndex(["2026-07-06", "2026-07-20"])
-    scores = backtest._observation_scores(engine, cfg, dates)["SIG_BRENT_STRUCTURE"]
+    scores = backtest._observation_scores(engine, cfg, dates)[0]["SIG_BRENT_STRUCTURE"]
     assert scores.iloc[0] == pytest.approx(fresh["score"]) and np.isnan(scores.iloc[1])
 
 

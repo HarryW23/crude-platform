@@ -101,16 +101,48 @@ def as_available(frame: pd.DataFrame, dates: pd.DatetimeIndex, lag_days: int) ->
     return merged.drop(columns="key").set_index("t")
 
 
-def _observation_scores(engine: IndicatorEngine, cfg: Config, dates: pd.DatetimeIndex) -> pd.DataFrame:
-    out = {}
+def _known_scores(cfg: Config, s, values: pd.Series, dates: pd.DatetimeIndex, lag: int) -> pd.Series:
+    """每個評估日當時已知的分數：數據日期 ≤ 評估日 − lag 的最後一行；太舊不出分（和 signals.data_signal 一樣）。"""
+    frame = rolling_scores(values, s.lookback_days, s.min_points, s.direction, s.detrend)
+    known = as_available(frame, dates, lag)
+    age = (known.index - pd.to_datetime(known["data_date"])).dt.days        # 沒有數據時是 NaN，比較結果為 False
+    too_old = age > signals.stale_days(cfg, s.input)
+    return known["score"].astype(float).where(~too_old)
+
+
+def _observation_scores(engine: IndicatorEngine, cfg: Config, dates: pd.DatetimeIndex) -> tuple[pd.DataFrame, set]:
+    """按數據日期回測的分數。回傳（分數表, 完全按報告期還原的信號）。
+
+    用到按期保存序列（機構預測）的信號：每個評估日用「當時已發佈的最新一期」重算輸入，
+    不會用到後來的修訂（報告期就是發佈日期，不另加發佈延遲）。在這些序列第一期之前的評估日，
+    沒有當時的數字，退回原來的近似算法；整個回測區間都有期記錄的信號才不算「近似」。
+    """
+    from .ingest import vintage_dates, vintaged_with_history
+    out, exact = {}, set()
+    engines: dict = {}
     for code, s in cfg.signals.items():
-        frame = rolling_scores(engine.values(s.input), s.lookback_days, s.min_points, s.direction, s.detrend)
         lag = cfg.backtest.publication_lag_days[cfg.frequency_of(s.input)]
-        known = as_available(frame, dates, lag)
-        age = (known.index - pd.to_datetime(known["data_date"])).dt.days        # 沒有數據時是 NaN，比較結果為 False
-        too_old = age > signals.stale_days(cfg, s.input)
-        out[code] = known["score"].astype(float).where(~too_old)          # 和 signals.data_signal 一樣：太舊不出分
-    return pd.DataFrame(out, index=dates)
+        approx = _known_scores(cfg, s, engine.values(s.input), dates, lag)
+        deps = engine.dependencies(s.input)[0] if s.input in cfg.indicators else [s.input]
+        vintaged = [d for d in deps if d in cfg.series and cfg.series[d].vintaged]
+        history = vintaged_with_history(engine.session, vintaged)
+        if not vintaged or set(history) != set(vintaged):
+            out[code] = approx
+            continue
+        issues = pd.DatetimeIndex([pd.Timestamp(v) for v in vintage_dates(engine.session, vintaged)])
+        first_covered = max(pd.Timestamp(engine.vintage_first(d)) for d in vintaged)
+        scores = approx.copy()
+        position = issues.searchsorted(dates, side="right") - 1             # 每個評估日當時最新的一期
+        for k in sorted(set(position[(position >= 0) & (dates >= first_covered)])):
+            v = issues[k].date()
+            if v not in engines:
+                engines[v] = IndicatorEngine(engine.session, cfg, vintage=v)
+            mask = (position == k) & (dates >= first_covered)
+            scores[mask] = _known_scores(cfg, s, engines[v].values(s.input), dates[mask], 0).to_numpy()
+        out[code] = scores
+        if dates[0] >= first_covered:
+            exact.add(code)
+    return pd.DataFrame(out, index=dates), exact
 
 
 def _observation_volatility(prices: pd.Series, cfg: Config, dates: pd.DatetimeIndex) -> pd.Series:
@@ -363,8 +395,9 @@ def run(session: Session, cfg: Config, options: Options) -> dict:
     if len(dates) < 2:
         raise BacktestError("所選區間裡的交易日太少")
 
+    exact: set = set()
     if options.mode == "observation":
-        scores = _observation_scores(engine, cfg, dates)
+        scores, exact = _observation_scores(engine, cfg, dates)
         vol = _observation_volatility(prices, cfg, dates)
         fits = {}
         for code, model in cfg.fair_values.items():         # 同一個 fit_at：每個日期只用之前的數據擬合
@@ -385,7 +418,8 @@ def run(session: Session, cfg: Config, options: Options) -> dict:
         signal_rows.append({
             "code": code, "name_zh": s.name_zh, "module": s.module, "input": s.input,
             "input_name": cfg.name_of(s.input), "direction": s.direction,
-            "approx": options.mode == "observation" and cfg.frequency_of(s.input) in coarse,
+            "approx": options.mode == "observation" and cfg.frequency_of(s.input) in coarse and code not in exact,
+            "vintage_exact": code in exact,
             "scored": int(scores[code].notna().sum()), "by_horizon": by_horizon(scores[code])})
     module_rows = [{"module": m, "name_zh": signals.MODULE_NAMES[m], "scored": int(modules[m].notna().sum()),
                     "by_horizon": by_horizon(modules[m])} for m in DATA_MODULES]

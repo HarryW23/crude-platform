@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import hashlib
 import re
+from dataclasses import replace
+from datetime import date
 from pathlib import Path
 
 from sqlalchemy import select
@@ -38,7 +40,9 @@ def _duplicates(previews: list[SheetPreview], mapping: dict[str, str | None] | N
 
 
 def preview_file(session: Session, settings: Settings, content: bytes, filename: str,
-                 source_code: str, actor: str = "local") -> dict:
+                 source_code: str, actor: str = "local", vintage: date | None = None) -> dict:
+    """vintage：機構報告的發佈日期。補錄歷史報告（例如 2025 年 3 月那一期 STEO）時填，
+    按期保存的序列會記成那一期；不填就是今天。"""
     source = session.get(DataSource, source_code)
     if source is None or source.kind != "excel":
         raise ImportFlowError(f"數據源 {source_code} 不能用於文件導入")
@@ -52,8 +56,10 @@ def preview_file(session: Session, settings: Settings, content: bytes, filename:
         previews, _ = parse_workbook(stored, make_resolver(session))
     except ValueError as exc:
         raise ImportFlowError(str(exc)) from exc
+    if vintage is not None and vintage > date.today():
+        raise ImportFlowError(f"報告期 {vintage} 晚於今天：期號是報告的發佈日期")
     batch = ImportBatch(source_code=source_code, filename=filename, sha256=digest,
-                        stored_path=str(stored), status="previewed", created_by=actor)
+                        stored_path=str(stored), status="previewed", created_by=actor, vintage=vintage)
     session.add(batch)
     session.flush()
     earlier = session.scalars(select(ImportBatch.id).where(
@@ -62,7 +68,13 @@ def preview_file(session: Session, settings: Settings, content: bytes, filename:
     warnings += [f"{p.name}：{p.note}" for p in previews if p.note and "沒有讀入" in p.note]
     if earlier:
         warnings.append(f"同一個文件之前已導入過（批次 {', '.join(map(str, earlier))}），重複導入不會產生重複數據")
+    if vintage is not None:
+        vintaged = {c for c, in session.execute(select(Series.code).where(Series.vintaged))}
+        hit = {col.series_code for p in previews for col in p.columns if col.series_code}
+        if hit and not hit & vintaged:
+            warnings.append(f"填了報告期 {vintage}，但這個文件裡認出的序列都不是按期保存的，報告期不會起作用")
     return {"batch_id": batch.id, "filename": filename, "source_code": source_code,
+            "vintage": vintage.isoformat() if vintage else None,
             "sheets": [p.to_dict() for p in previews], "warnings": warnings}
 
 
@@ -80,6 +92,8 @@ def commit_batch(session: Session, batch_id: int, mapping: dict[str, str | None]
         raise ImportFlowError(f"未知的序列代碼：{', '.join(bad)}")
 
     previews, observations = parse_workbook(Path(batch.stored_path), make_resolver(session), mapping)
+    if batch.vintage is not None:
+        observations = [replace(o, vintage=batch.vintage) for o in observations]
     stats = write_observations(session, observations, batch.source_code, batch_id=batch.id, actor=actor)
 
     learned = 0

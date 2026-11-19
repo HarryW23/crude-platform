@@ -49,15 +49,15 @@
 | `EIA_GASOLINE_SUPPLIED`　`PET.WGFUPUS2.W` | 美國汽油表觀需求 | kb/d | 周 | 供需 2 |
 | `EIA_DISTILLATE_SUPPLIED`　`PET.WDIUPUS2.W` | 美國餾分油表觀需求 | kb/d | 周 | 供需 2 |
 | `EIA_JET_SUPPLIED`　`PET.WKJUPUS2.W` | 美國航煤表觀需求 | kb/d | 周 | （目前沒有指標用到） |
-| `STEO_OPEC_SUPPLY`　`STEO.PAPR_OPEC.M` | OPEC 液體燃料產量（EIA） | mb/d | 月 | 供需 3 |
-| `STEO_NONOPEC_SUPPLY`　`STEO.PAPR_NONOPEC.M` | 非 OPEC 液體燃料產量（EIA） | mb/d | 月 | 供需 3 |
-| `STEO_OPEC_CRUDE`　`STEO.COPR_OPEC.M` | OPEC 原油產量（EIA） | mb/d | 月 | 供需 1 |
-| `STEO_US_CRUDE`　`STEO.COPRPUS.M` | 美國原油產量（EIA 月度） | mb/d | 月 | （目前沒有指標用到） |
-| `STEO_OECD_DEMAND`　`STEO.PATC_OECD.M` | OECD 需求（EIA） | mb/d | 月 | 供需 4 |
-| `STEO_NONOECD_DEMAND`　`STEO.PATC_NON_OECD.M` | 非 OECD 需求（EIA） | mb/d | 月 | 供需 3 |
-| `STEO_CHINA_DEMAND`　`STEO.PATC_CH.M` | 中國需求（EIA） | mb/d | 月 | （目前沒有指標用到） |
-| `STEO_US_DEMAND`　`STEO.PATC_US.M` | 美國需求（EIA 月度） | mb/d | 月 | （目前沒有指標用到） |
-| `STEO_OECD_STOCKS`　`STEO.PASC_OECD_T3.M` | OECD 商業庫存（EIA） | mb | 月 | 供需 2 |
+| `STEO_OPEC_SUPPLY`　`STEO.PAPR_OPEC.M` | OPEC 液體燃料產量（EIA） | mb/d | 月（按報告期保存：補錄歷史報告時填發佈日期） | 供需 3 |
+| `STEO_NONOPEC_SUPPLY`　`STEO.PAPR_NONOPEC.M` | 非 OPEC 液體燃料產量（EIA） | mb/d | 月（按報告期保存：補錄歷史報告時填發佈日期） | 供需 3 |
+| `STEO_OPEC_CRUDE`　`STEO.COPR_OPEC.M` | OPEC 原油產量（EIA） | mb/d | 月（按報告期保存：補錄歷史報告時填發佈日期） | 供需 1 |
+| `STEO_US_CRUDE`　`STEO.COPRPUS.M` | 美國原油產量（EIA 月度） | mb/d | 月（按報告期保存：補錄歷史報告時填發佈日期） | （目前沒有指標用到） |
+| `STEO_OECD_DEMAND`　`STEO.PATC_OECD.M` | OECD 需求（EIA） | mb/d | 月（按報告期保存：補錄歷史報告時填發佈日期） | 供需 4 |
+| `STEO_NONOECD_DEMAND`　`STEO.PATC_NON_OECD.M` | 非 OECD 需求（EIA） | mb/d | 月（按報告期保存：補錄歷史報告時填發佈日期） | 供需 3 |
+| `STEO_CHINA_DEMAND`　`STEO.PATC_CH.M` | 中國需求（EIA） | mb/d | 月（按報告期保存：補錄歷史報告時填發佈日期） | （目前沒有指標用到） |
+| `STEO_US_DEMAND`　`STEO.PATC_US.M` | 美國需求（EIA 月度） | mb/d | 月（按報告期保存：補錄歷史報告時填發佈日期） | （目前沒有指標用到） |
+| `STEO_OECD_STOCKS`　`STEO.PASC_OECD_T3.M` | OECD 商業庫存（EIA） | mb | 月（按報告期保存：補錄歷史報告時填發佈日期） | 供需 2 |
 
 ### 國際交易所期貨結算價（ICE、NYMEX、DME / IFAD）
 
@@ -222,10 +222,10 @@ WS 點折成 美元/桶 還需要 Worldscale 每年的基準費率，見下面�
 
 | 代碼 | 名稱 | 單位 | 頻率 | 用到它的指標 |
 |---|---|---|---|---|
-| `IEA_WORLD_DEMAND` | 全球需求（IEA） | mb/d | 季 | 供需 2 |
-| `IEA_WORLD_SUPPLY` | 全球供應（IEA） | mb/d | 季 | 供需 1 |
-| `OPEC_WORLD_DEMAND` | 全球需求（OPEC） | mb/d | 季 | 供需 1 |
-| `OPEC_CALL_ON_OPEC` | 對 OPEC 原油的需求（OPEC） | mb/d | 季 | （目前沒有指標用到） |
+| `IEA_WORLD_DEMAND` | 全球需求（IEA） | mb/d | 季（按報告期保存：補錄歷史報告時填發佈日期） | 供需 2 |
+| `IEA_WORLD_SUPPLY` | 全球供應（IEA） | mb/d | 季（按報告期保存：補錄歷史報告時填發佈日期） | 供需 1 |
+| `OPEC_WORLD_DEMAND` | 全球需求（OPEC） | mb/d | 季（按報告期保存：補錄歷史報告時填發佈日期） | 供需 1 |
+| `OPEC_CALL_ON_OPEC` | 對 OPEC 原油的需求（OPEC） | mb/d | 季（按報告期保存：補錄歷史報告時填發佈日期） | （目前沒有指標用到） |
 
 ### 煉廠檢修（諮詢機構）
 

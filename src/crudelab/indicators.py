@@ -20,7 +20,7 @@ from datetime import date, datetime
 
 import numpy as np
 import pandas as pd
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from . import contracts
@@ -69,8 +69,10 @@ class Scenario:
 
 class IndicatorEngine:
     def __init__(self, session: Session, cfg: Config, as_of: datetime | None = None,
-                 scenario: Scenario | None = None):
+                 scenario: Scenario | None = None, vintage: date | None = None):
         self.session, self.cfg, self.as_of = session, cfg, as_of
+        # 按期保存的序列取 vintage 那天（含）之前發佈的最新一期；給了 as_of 而沒給 vintage 時取 as_of 那天
+        self.vintage = vintage if vintage is not None else (as_of.date() if as_of is not None else None)
         self.scenario = scenario or Scenario()
         self.scenario.validate(cfg)
         self._points: pd.DataFrame | None = None
@@ -186,9 +188,52 @@ class IndicatorEngine:
     def _all_points(self) -> pd.DataFrame:
         if self._points is None:
             codes = sorted(self.cfg.series)
-            self._points = (load_points(self.session, codes, as_of=self.as_of) if self.as_of is not None
-                            else load_points_cached(self.session, codes))
+            points = (load_points(self.session, codes, as_of=self.as_of) if self.as_of is not None
+                      else load_points_cached(self.session, codes))
+            if self.vintage is not None:
+                points = self._apply_vintages(points)
+            self._points = points
         return self._points
+
+    def _apply_vintages(self, points: pd.DataFrame) -> pd.DataFrame:
+        """按期保存的序列換成 self.vintage 那天之前發佈的最新一期。
+
+        只換「那天已經有期記錄」的序列：在它第一期之前的日子，不知道當時發佈的是什麼，沿用主表的數字（近似），
+        不憑空編造期號。"""
+        from .ingest import vintage_points
+        from .models import ObservationVintage
+        vintaged = [c for c, s in self.cfg.series.items() if s.vintaged]
+        if not vintaged:
+            return points
+        first = dict(self.session.execute(select(ObservationVintage.series_code, func.min(ObservationVintage.vintage))
+                                          .where(ObservationVintage.series_code.in_(vintaged))
+                                          .group_by(ObservationVintage.series_code)).all())
+        covered = [c for c, d in first.items() if d <= self.vintage]
+        if not covered:
+            return points
+        replaced = vintage_points(self.session, covered, self.vintage)
+        kept = points[~points["series_code"].isin(covered)]
+        return pd.concat([kept, replaced], ignore_index=True)
+
+    def vintage_first(self, code: str) -> date | None:
+        """序列最早的一期。"""
+        from .models import ObservationVintage
+        return self.session.scalar(select(func.min(ObservationVintage.vintage))
+                                   .where(ObservationVintage.series_code == code))
+
+    def vintage_covered(self, name: str) -> bool | None:
+        """name（序列或指標）用到的按期保存序列，在 self.vintage 那天是否都已經有期記錄。不用按期序列時回 None。"""
+        from .models import ObservationVintage
+        names = self.dependencies(name)[0] if name in self.cfg.indicators else [name]
+        vintaged = [n for n in names if n in self.cfg.series and self.cfg.series[n].vintaged]
+        if not vintaged:
+            return None
+        if self.vintage is None:
+            return False
+        first = dict(self.session.execute(select(ObservationVintage.series_code, func.min(ObservationVintage.vintage))
+                                          .where(ObservationVintage.series_code.in_(vintaged))
+                                          .group_by(ObservationVintage.series_code)).all())
+        return all(c in first and first[c] <= self.vintage for c in vintaged)
 
     def dependencies(self, code: str) -> tuple[list[str], list[str]]:
         """一個指標最終依賴的全部（原始序列, 參數）。"""

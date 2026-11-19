@@ -3,9 +3,12 @@
 寫入保證：
   - 只接受配置裡登記的序列和數據源
   - 同一 序列 × 日期 × 來源 只有一個當前值；值相同則跳過，不同則改寫，舊值存進 observation_revision
+  - 按報告期保存的序列（vintaged，機構預測）：每一期記進 observation_vintage（數字沒變不多記）；
+    主表只在這一期不比已有的舊時才更新，所以補錄舊報告不會蓋掉新一期
 讀取保證：
   - 同一 序列 × 日期 有多個來源時，取優先級最高（priority 最小）的來源
   - 給了 as_of 就還原那個時點當時看到的數據
+  - vintage_points：按期保存的序列在某天之前發佈的最新一期
 """
 from __future__ import annotations
 
@@ -18,7 +21,7 @@ import pandas as pd
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .models import DataSource, Observation, ObservationRevision, Series, utcnow
+from .models import DataSource, Observation, ObservationRevision, ObservationVintage, Series, utcnow
 
 POINT_COLUMNS = ["series_code", "obs_date", "value", "source_code", "batch_id", "source_ref"]
 
@@ -30,6 +33,7 @@ class Obs:
     obs_date: date
     value: float
     source_ref: str | None = None
+    vintage: date | None = None          # 機構報告的發佈日期；只用於按期保存的序列，不給就是入庫當天
 
 
 class IngestError(ValueError):
@@ -70,6 +74,18 @@ def write_observations(session: Session, observations: list[Obs], source_code: s
             raise IngestError(f"{o.series_code} {o.obs_date} 的值不是有效數字")
         latest[(o.series_code, o.obs_date)] = o          # 同一批裡重複時以後面的為準
 
+    vintaged = {code for code, row in rows.items() if row.vintaged}
+    if vintaged:
+        today = now.date()
+        by_issue: dict[tuple[str, date, date], Obs] = {}      # 同一批裡可以有同一個點的好幾期：按 期 去重
+        for o in observations:
+            if o.series_code in vintaged:
+                by_issue[(o.series_code, o.obs_date, o.vintage or today)] = o
+        ordered = sorted(by_issue.values(), key=lambda o: o.vintage or today)
+        for o in ordered:                                      # 主表的候選：這一批裡最新的一期
+            latest[(o.series_code, o.obs_date)] = o
+        stats.update(_write_vintages(session, ordered, source_code, batch_id, now, latest))
+
     existing = {(row.series_code, row.obs_date): row for row in session.scalars(
         select(Observation).where(Observation.source_code == source_code, Observation.series_code.in_(codes)))}
 
@@ -90,6 +106,81 @@ def write_observations(session: Session, observations: list[Obs], source_code: s
             row.value, row.batch_id, row.source_ref, row.updated_at = float(o.value), batch_id, o.source_ref, now
             stats["updated"] += 1
     return stats
+
+
+def _write_vintages(session: Session, observations: list[Obs], source_code: str, batch_id: int | None,
+                    now: datetime, latest: dict) -> dict[str, int]:
+    """把按期保存的序列寫進 observation_vintage，並決定主表要不要跟著更新（只有最新一期才更新主表）。
+
+    同一期再寫一次：數字不同就更正那一期。新的一期和它之前最近一期的數字相同：不多記（每天取數不會重複存）。
+    比已有的期更舊的（補錄歷史報告）：只記進期表，從 latest 裡拿掉，主表不動。
+    """
+    out = {"vintages": 0, "older_vintage": 0}
+    if not observations:
+        return out
+    today = now.date()
+    for o in observations:
+        if o.vintage is not None and o.vintage > today:
+            raise IngestError(f"{o.series_code} 的報告期 {o.vintage} 晚於今天：期號是報告的發佈日期，不能是未來")
+    codes = {o.series_code for o in observations}
+    history: dict[tuple[str, date], list[ObservationVintage]] = {}
+    for row in session.scalars(select(ObservationVintage).where(
+            ObservationVintage.source_code == source_code, ObservationVintage.series_code.in_(codes))):
+        history.setdefault((row.series_code, row.obs_date), []).append(row)
+    for o in observations:
+        key, v = (o.series_code, o.obs_date), o.vintage or today
+        rows = sorted(history.get(key, []), key=lambda r: r.vintage)
+        same = next((r for r in rows if r.vintage == v), None)
+        if same is not None:
+            if not math.isclose(same.value, o.value, rel_tol=1e-12, abs_tol=1e-12):
+                same.value, same.batch_id, same.source_ref = float(o.value), batch_id, o.source_ref
+                out["vintages"] += 1
+        else:
+            before = [r for r in rows if r.vintage < v]
+            if not before or not math.isclose(before[-1].value, o.value, rel_tol=1e-12, abs_tol=1e-12):
+                row = ObservationVintage(series_code=o.series_code, obs_date=o.obs_date, source_code=source_code,
+                                         vintage=v, value=float(o.value), batch_id=batch_id, source_ref=o.source_ref,
+                                         created_at=now)
+                session.add(row)
+                history.setdefault(key, []).append(row)
+                out["vintages"] += 1
+        if any(r.vintage > v for r in rows):         # 已經有更新的一期：主表保持那一期的數字
+            latest.pop(key, None)
+            out["older_vintage"] += 1
+    return out
+
+
+def vintage_points(session: Session, codes: list[str], on: date) -> pd.DataFrame:
+    """按期保存的序列在 on 那天（含）之前發佈的最新一期。沒有任何期記錄的序列不在結果裡。回傳列見 POINT_COLUMNS。"""
+    if not codes:
+        return pd.DataFrame(columns=POINT_COLUMNS)
+    stmt = (select(ObservationVintage.series_code, ObservationVintage.obs_date, ObservationVintage.value,
+                   ObservationVintage.source_code, ObservationVintage.batch_id, ObservationVintage.source_ref,
+                   ObservationVintage.vintage, DataSource.priority)
+            .join(DataSource, DataSource.code == ObservationVintage.source_code)
+            .where(ObservationVintage.series_code.in_(codes), ObservationVintage.vintage <= on))
+    df = pd.DataFrame(session.execute(stmt).all(), columns=[*POINT_COLUMNS, "vintage", "priority"])
+    if df.empty:
+        return df[POINT_COLUMNS]
+    df = df.sort_values("vintage").drop_duplicates(["series_code", "obs_date", "source_code"], keep="last")
+    df = df.sort_values(["series_code", "obs_date", "priority", "source_code"])
+    return df.drop_duplicates(["series_code", "obs_date"], keep="first")[POINT_COLUMNS].reset_index(drop=True)
+
+
+def vintaged_with_history(session: Session, codes: list[str]) -> list[str]:
+    """這些序列裡，已經有期記錄的（只有它們能按期還原）。"""
+    if not codes:
+        return []
+    return list(session.scalars(select(ObservationVintage.series_code).distinct()
+                                .where(ObservationVintage.series_code.in_(codes))))
+
+
+def vintage_dates(session: Session, codes: list[str]) -> list[date]:
+    """這些序列所有報告期（發佈日期），由早到晚。"""
+    if not codes:
+        return []
+    return sorted(session.scalars(select(ObservationVintage.vintage).distinct()
+                                  .where(ObservationVintage.series_code.in_(codes))))
 
 
 def load_points(session: Session, codes: list[str], start: date | None = None, end: date | None = None,
