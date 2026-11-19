@@ -105,6 +105,43 @@ def event_impacts(session: Session = Depends(get_db), state: AppState = Depends(
     return projection.event_impacts(session, state.cfg)
 
 
+@router.get("/flashes")
+def flashes(limit: int = 50, session: Session = Depends(get_db)):
+    """收錄的原油相關快訊（來自金十），新的在前。"""
+    from sqlalchemy import select
+
+    from ... import credentials
+    from ...models import NewsFlash, iso_utc
+    rows = session.scalars(select(NewsFlash).order_by(NewsFlash.time.desc()).limit(max(1, min(limit, 200))))
+    return {"configured": bool(credentials.get("JIN10_TOKEN")),
+            "items": [{"id": f.id, "time": iso_utc(f.time), "content": f.content, "url": f.url,
+                       "keywords": f.keywords, "important": f.important, "extracted": f.extracted_at is not None,
+                       "drafts": f.drafts} for f in rows]}
+
+
+@router.post("/flashes/{flash_id}/extract")
+def extract_flash(flash_id: int, session: Session = Depends(get_db), state: AppState = Depends(get_state),
+                  actor: str = Depends(get_actor)):
+    """把一條快訊交給大模型抽取成事件草稿。草稿不參與計算，要人確認。"""
+    from ...models import NewsFlash, utcnow
+    flash = session.get(NewsFlash, flash_id)
+    if flash is None:
+        raise HTTPException(404, f"沒有編號為 {flash_id} 的快訊")
+    text = f"金十快訊（{flash.time:%Y-%m-%d %H:%M} UTC）：{flash.content}"
+    try:
+        provider = get_provider("extract", state.cfg.llm)
+        found, dropped = extract_events(provider, text, state.cfg)
+    except LLMNotConfigured as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except LLMError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    source = (text + (f"\n{flash.url}" if flash.url else ""))[:1000]
+    rows = [service.create(session, state.cfg, **e.model_dump(), source=source, origin="llm", draft=True,
+                           actor=f"{actor}+{provider.name}") for e in found]
+    flash.extracted_at, flash.drafts = utcnow(), flash.drafts + len(rows)
+    return {"drafts": len(rows), "dropped": dropped}
+
+
 @router.get("/playbooks")
 def list_playbooks(state: AppState = Depends(get_state)):
     cfg = state.cfg

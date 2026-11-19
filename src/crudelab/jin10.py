@@ -214,3 +214,69 @@ def calendar_view(session: Session, days_back: int = 7, days_ahead: int = 21, mi
                     "released": e.released_at is not None, "upcoming": e.pub_time > now})
     return out
 
+
+
+# ------------------------------ 快訊 ------------------------------
+
+_TAG = re.compile(r"<[^>]+>")
+FLASH_KEEP_DAYS = 90
+
+
+def flash_text(item: dict) -> str:
+    """快訊條目裡的正文：依次試 content / title / introduction（也試套在 data 裡的），去掉 HTML 標籤。"""
+    sources = [item, item.get("data") if isinstance(item.get("data"), dict) else {}]
+    for src in sources:
+        for key in ("content", "title", "introduction", "text"):
+            value = src.get(key)
+            if isinstance(value, str) and value.strip():
+                return _TAG.sub("", value).strip()
+    return ""
+
+
+def sync_flash(session: Session, cfg: Config, jin: Jin10) -> dict:
+    """同步最新快訊，只收錄命中關鍵詞的。從最新一頁往後翻，遇到已經收錄過的就停（最多 flash_pages 頁）。"""
+    from .models import NewsFlash
+    keywords = [k.lower() for k in cfg.jin10.flash_keywords]
+    known = set(session.scalars(select(NewsFlash.ext_id).where(NewsFlash.source == SOURCE)))   # 以前收錄過的
+    seen_now: set[str] = set()                                     # 這一輪看過的（同一條可能出現在相鄰兩頁）
+    stats = {"seen": 0, "kept": 0, "pages": 0}
+    cursor, new_rows = None, []
+    for _ in range(cfg.jin10.flash_pages):
+        content = jin.call("list_flash", **({"cursor": cursor} if cursor else {}))
+        stats["pages"] += 1
+        rows = rows_of(content)
+        reached_known = False
+        for item in rows:
+            stats["seen"] += 1
+            text = flash_text(item)
+            when = parse_time(item.get("time") or item.get("pub_time") or item.get("create_time"))
+            if not text or when is None:
+                continue
+            ext_id = str(item.get("id") or hashlib.sha256(f"{when}|{text}".encode()).hexdigest()[:40])[:64]
+            if ext_id in known:                 # 翻到上次收錄過的地方：之後都是舊的
+                reached_known = True
+                continue
+            if ext_id in seen_now:
+                continue
+            seen_now.add(ext_id)
+            hit = [k for k in cfg.jin10.flash_keywords if k.lower() in text.lower()]
+            if not hit or not keywords:
+                continue
+            new_rows.append(NewsFlash(source=SOURCE, ext_id=ext_id, time=when, content=text[:4000],
+                                      url=_clip(item.get("url"), 500), keywords=hit,
+                                      important=bool(item.get("important") or (item.get("star") or 0) >= 3)))
+        data = content.get("data", {}) if isinstance(content, dict) else {}
+        cursor = data.get("next_cursor") if isinstance(data, dict) else None
+        if reached_known or not cursor or not (isinstance(data, dict) and data.get("has_more")):
+            break
+    session.add_all(new_rows)
+    stats["kept"] = len(new_rows)
+    return stats
+
+
+def prune_flash(session: Session, now: datetime | None = None) -> int:
+    from sqlalchemy import delete
+
+    from .models import NewsFlash
+    cutoff = (now or utcnow()) - timedelta(days=FLASH_KEEP_DAYS)
+    return session.execute(delete(NewsFlash).where(NewsFlash.time < cutoff)).rowcount or 0

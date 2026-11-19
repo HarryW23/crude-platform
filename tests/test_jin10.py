@@ -163,3 +163,72 @@ def test_probe_command(session, cfg, monkeypatch, capsys):
     assert TOKEN not in out
     assert cli.main(["jin10", "usage"]) == 0
     assert "list_calendar    1" in capsys.readouterr().out
+
+
+# ------------------------------ 快訊 ------------------------------
+
+def flash_page(ids, cursor=None, has_more=False):
+    items = [{"id": i, "time": f"2026-11-19 10:{i:02d}:00", "content": f"<b>消息{i}</b>：沙特称将延长原油减产",
+              "url": f"https://flash.example/{i}"} for i in ids]
+    items.append({"id": 999, "time": "2026-11-19 09:00:00", "content": "日本央行维持利率不变"})   # 不相關
+    return {"data": {"items": items, "next_cursor": cursor, "has_more": has_more}}
+
+
+def test_flash_sync_filters_paginates_and_stops_at_known(session, cfg):
+    pages = {None: flash_page([5, 4], cursor="p2", has_more=True), "p2": flash_page([3, 2], cursor="p3", has_more=True),
+             "p3": flash_page([1])}
+    calls = []
+
+    def list_flash(args):
+        calls.append(args.get("cursor"))
+        return pages[args.get("cursor")]
+    jin = jin10.Jin10(cfg, client_for(FakeServer({"list_flash": list_flash})))
+    first = jin10.sync_flash(session, cfg, jin)
+    session.commit()
+    assert first["kept"] == 5 and calls == [None, "p2", "p3"]
+    from crudelab.models import NewsFlash
+    flash = session.scalars(select(NewsFlash).where(NewsFlash.ext_id == "5")).one()
+    assert flash.content == "消息5：沙特称将延长原油减产" and set(flash.keywords) >= {"原油", "沙特"}   # 去掉 HTML
+    assert flash.time.hour == 2                                          # 北京 10:05 = UTC 02:05
+
+    pages[None] = flash_page([6, 5], cursor="p2", has_more=True)        # 只多了一條：看到已收錄的就停
+    calls.clear()
+    second = jin10.sync_flash(session, cfg, jin)
+    session.commit()
+    assert second["kept"] == 1 and calls == [None]
+
+
+def test_flash_extract_to_drafts(session, cfg, sites, monkeypatch):
+    from crudelab.api.routes import geo
+    from crudelab.llm.tasks import ExtractedEvent
+    from crudelab.models import Event, NewsFlash
+    from crudelab.models import utcnow as now
+    session.add(NewsFlash(source="jin10", ext_id="1", time=now(), content="沙特称将延长原油减产至明年一季度",
+                          keywords=["沙特"], important=True, url="https://flash.example/1"))
+    session.commit()
+    seen = []
+
+    class Provider:
+        name = "fake"
+
+    def fake_extract(provider, text, cfg):
+        seen.append(text)
+        return [ExtractedEvent(title="沙特延長減產", category="opec_policy", bias=1)], 0
+    monkeypatch.setattr(geo, "get_provider", lambda *a, **k: Provider())
+    monkeypatch.setattr(geo, "extract_events", fake_extract)
+    front = sites["front"]
+    item = front.get("/api/flashes").json()["items"][0]
+    assert item["extracted"] is False and item["important"] is True
+    r = front.post(f"/api/flashes/{item['id']}/extract")
+    assert r.status_code == 200 and r.json()["drafts"] == 1
+    assert "沙特称将延长原油减产" in seen[0]
+    session.expire_all()
+    draft = session.scalars(select(Event)).one()
+    assert draft.draft and draft.origin == "llm" and "flash.example/1" in draft.source
+    assert front.get("/api/flashes").json()["items"][0]["drafts"] == 1
+    assert front.post("/api/flashes/999/extract").status_code == 404
+
+
+def test_flash_job_skips_without_token(session, cfg, settings):
+    result = jobs.run_now(cfg, settings, "SYNC_JIN10_FLASH")
+    assert result["status"] == "skipped" and "JIN10_TOKEN" in result["message"]

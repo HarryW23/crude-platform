@@ -9,8 +9,8 @@ const BIAS = { "-2": "強利空", "-1": "利空", "0": "中性", "1": "利多", 
 const options = (map, selected) => Object.entries(map).map(([k, v]) => `<option value="${k}" ${String(selected) === k ? "selected" : ""}>${v}</option>`).join("");
 
 export async function render(main) {
-  const [events, playbooks, meta, llm, impacts] = await Promise.all([api("/events"), api("/playbooks"), api("/meta"),
-    api("/llm"), api("/events/impacts")]);
+  const [events, playbooks, meta, llm, impacts, flashes] = await Promise.all([api("/events"), api("/playbooks"),
+    api("/meta"), api("/llm"), api("/events/impacts"), api("/flashes?limit=40")]);
   const month = impacts.horizons.find((h) => h.code === "M1") ?? impacts.horizons[0];
   const locations = Object.fromEntries(Object.entries(meta.locations).map(([k, v]) => [k, v.name_zh]));
   const drafts = events.filter((e) => e.draft), confirmed = events.filter((e) => !e.draft);
@@ -36,6 +36,17 @@ export async function render(main) {
         <textarea id="x-text" rows="5" placeholder="貼上文字…" ${llm.configured ? "" : "disabled"}></textarea>
         <div class="row" style="margin-top:8px"><button class="btn" id="x-run" ${llm.configured ? "" : "disabled"}>抽取成草稿</button></div><div id="x-msg"></div></div>
     </div>
+    <div class="panel"><h2>原油快訊 <span class="muted" style="font-weight:400;font-size:13px">金十，每 10 分鐘同步，只收錄命中原油關鍵詞的</span></h2>
+      ${flashes.configured ? "" : '<div class="msg warn">還沒有設定金十的 token（在服務器上運行 <span class="mono">crudelab secret set JIN10_TOKEN</span>），快訊不會更新。</div>'}
+      ${flashes.items.length ? `<div class="scroll" style="max-height:420px"><table>
+        ${flashes.items.map((f) => `<tr><td class="nw muted">${time(f.time)}</td>
+          <td>${f.important ? '<span class="tag warn">重要</span> ' : ""}${esc(f.content)}${f.url ? ` <a href="${esc(f.url)}" target="_blank" rel="noopener noreferrer">原文</a>` : ""}
+            <div>${f.keywords.map((k) => `<span class="tag">${esc(k)}</span>`).join(" ")}</div></td>
+          <td class="nw">${f.extracted ? `<span class="muted">已抽取${f.drafts ? ` ${f.drafts} 條草稿` : "，沒有事件"}</span>`
+            : `<button class="btn" data-flash="${f.id}" ${llm.configured ? "" : 'disabled title="大模型未配置"'}>抽成草稿</button>`}</td></tr>`).join("")}</table></div>`
+        : '<p class="muted">還沒有收錄的快訊。</p>'}
+      <p class="muted" style="margin:8px 0 0">點「抽成草稿」才會調用大模型（只發這一條快訊）；抽出的草稿出現在下面「待確認的草稿」，確認後才生效。關鍵詞在 config/jin10.yaml。</p>
+      <div id="f-msg"></div></div>
     ${drafts.length ? `<div class="panel"><h2>待確認的草稿 <span class="tag warn">${drafts.length}</span></h2>
       <p class="sub">由大模型抽取，尚未生效。核對內容後確認，或標為不採納。</p><div class="scroll">${table(drafts, true)}</div></div>` : ""}
     <div class="panel"><h2>事件庫</h2>${confirmed.length ? `<div class="scroll">${table(confirmed, false)}</div>` : '<p class="muted">還沒有事件。</p>'}</div>
@@ -60,6 +71,15 @@ export async function render(main) {
       await reload();
     } catch (e) { $("x-msg").innerHTML = errorBox(e); }
   });
+  main.querySelectorAll("[data-flash]").forEach((b) => b.addEventListener("click", async () => {
+    b.disabled = true;
+    $("f-msg").innerHTML = '<div class="msg">抽取中…</div>';
+    try {
+      const r = await api(`/flashes/${b.dataset.flash}/extract`, { method: "POST" });
+      await reload();
+      if (!r.drafts) main.querySelector("#f-msg").innerHTML = '<div class="msg">這條快訊裡沒有抽取到相關事件。</div>';
+    } catch (e) { $("f-msg").innerHTML = errorBox(e); b.disabled = false; }
+  }));
   main.querySelectorAll("[data-set]").forEach((b) => b.addEventListener("click", async () => {
     try { await api(`/events/${b.dataset.id}`, { method: "PATCH", json: JSON.parse(b.dataset.set) }); await reload(); }
     catch (e) { b.closest("td").insertAdjacentHTML("beforeend", errorBox(e)); }

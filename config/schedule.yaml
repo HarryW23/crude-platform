@@ -15,6 +15,7 @@
 #     check_freshness  檢查數據有沒有斷更（規則在 freshness.yaml）。有斷更時記為失敗，從而觸發通知
 #     backup         備份數據庫、配置和原始文件，並清理舊備份（位置和保留策略在 backup.yaml）
 #     calendar       同步金十財經日曆，把超預期換算成序列（規則在 jin10.yaml）
+#     news           同步金十快訊，只收錄命中原油關鍵詞的
 timezone: Asia/Shanghai
 
 jobs:
@@ -30,6 +31,9 @@ jobs:
 
   # 金十財經日曆：每 2 小時同步一次（公佈後的實際值最多 2 小時內入庫）。沒設 JIN10_TOKEN 時只記「跳過」
   - {code: SYNC_JIN10_CALENDAR, name_zh: 同步財經日曆, action: calendar, every_minutes: 120}
+
+  # 金十快訊：每 10 分鐘同步一次，只收錄命中原油關鍵詞的（jin10.yaml）。沒有新內容時記為「跳過」
+  - {code: SYNC_JIN10_FLASH, name_zh: 同步原油快訊, action: news, every_minutes: 10}
 
   # 每個工作日早上檢查一次有沒有數據斷更；持續斷更時按 notifications.yaml 的 repeat_hours 提醒
   - {code: CHECK_FRESHNESS, name_zh: 檢查數據斷更, action: check_freshness, at: "09:15", days: weekdays}

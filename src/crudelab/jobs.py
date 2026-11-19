@@ -154,8 +154,8 @@ def _backup(session: Session, cfg: Config, settings: Settings, job: JobDef) -> R
     return "ok", message, {"backup": made["name"], "size": made["size"], "removed": removed}
 
 
-def _calendar(session: Session, cfg: Config, settings: Settings, job: JobDef) -> Result:
-    """同步金十財經日曆。沒設 token 時記為「跳過」；本地額度到了也記為跳過（明天自動恢復）。"""
+def _jin10(session: Session, cfg: Config, sync) -> tuple[str, str, dict] | dict:
+    """跑一個金十同步。沒設 token、本地額度到了都記為「跳過」（明天自動恢復）；接口出錯記為失敗。"""
     from . import jin10
     from .connectors.mcp import MCPError
     try:
@@ -163,21 +163,38 @@ def _calendar(session: Session, cfg: Config, settings: Settings, job: JobDef) ->
     except jin10.Jin10NotReady as exc:
         return "skipped", str(exc), {}
     try:
-        stats = jin10.sync_calendar(session, cfg, client)
+        return sync(session, cfg, client)
     except jin10.Jin10LimitReached as exc:
         return "skipped", str(exc), {}
     except MCPError as exc:
         raise JobError(str(exc)) from None
     finally:
         client.close()
+
+
+def _calendar(session: Session, cfg: Config, settings: Settings, job: JobDef) -> Result:
+    from . import jin10
+    stats = _jin10(session, cfg, jin10.sync_calendar)
+    if isinstance(stats, tuple):
+        return stats
     message = f"日曆 {stats['items']} 項：新增 {stats['new']}，更新 {stats['updated']}，新公佈 {stats['released']}"
     if stats["observations"]:
         message += f"，寫入超預期 {stats['observations']} 個"
     return "ok", message, stats
 
 
+def _news(session: Session, cfg: Config, settings: Settings, job: JobDef) -> Result:
+    from . import jin10
+    stats = _jin10(session, cfg, jin10.sync_flash)
+    if isinstance(stats, tuple):
+        return stats
+    if not stats["kept"]:
+        return "skipped", f"看了 {stats['seen']} 條快訊，沒有新的原油相關內容", stats
+    return "ok", f"看了 {stats['seen']} 條快訊，收錄原油相關的 {stats['kept']} 條", stats
+
+
 ACTIONS = {"pull": _pull, "import_folder": _import_folder, "report": _report, "check_freshness": _check_freshness,
-           "backup": _backup, "calendar": _calendar}
+           "backup": _backup, "calendar": _calendar, "news": _news}
 
 
 # ------------------------------ 認領與執行 ------------------------------
@@ -245,6 +262,8 @@ def prune_history(now: datetime | None = None) -> int:
         result = session.execute(delete(JobRun).where(JobRun.status == "skipped", JobRun.started_at < cutoff))
         # 過期或登出超過 30 天的登錄記錄也沒用了（只存令牌的雜湊）
         session.execute(delete(UserSession).where(UserSession.expires_at < cutoff))
+        from .jin10 import prune_flash
+        prune_flash(session, now)                                    # 快訊保留 90 天
         return result.rowcount or 0
 
 

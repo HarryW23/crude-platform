@@ -384,11 +384,12 @@ class JobDef(Strict):
       check_freshness  檢查數據有沒有斷更（規則在 freshness.yaml）。有斷更時記為失敗，從而觸發通知
       backup           備份數據庫、配置和原始文件，並按 backup.yaml 清理舊的定時備份
       calendar         同步金十財經日曆（含市場預期），把超預期換算成序列（規則在 jin10.yaml）
+      news             同步金十快訊，只收錄命中原油關鍵詞的（關鍵詞在 jin10.yaml）
     """
     code: str = Code
     name_zh: str
     enabled: bool = True
-    action: Literal["pull", "import_folder", "report", "check_freshness", "backup", "calendar"]
+    action: Literal["pull", "import_folder", "report", "check_freshness", "backup", "calendar", "news"]
     at: str | None = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
     days: list[Literal["mon", "tue", "wed", "thu", "fri", "sat", "sun"]] | Literal["daily", "weekdays"] = "daily"
     day_of_month: int | None = Field(default=None, ge=1, le=28)

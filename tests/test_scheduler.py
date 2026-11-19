@@ -124,7 +124,8 @@ def test_tick_runs_due_jobs_once(ready, cfg, session):
     assert "REPORT_WEEKLY" not in by_job and "REPORT_MONTHLY" not in by_job  # 周報上周五的已超過補跑時限；月報停用
     assert scheduler.tick(cfg, ready, now + timedelta(seconds=30)) == []     # 同一個時點不重跑
     later = scheduler.tick(cfg, ready, now + timedelta(minutes=10))
-    assert [r["job"] for r in later] == ["IMPORT_INBOX"]                     # 只有間隔任務進了下一格
+    every_10 = [j.code for j in cfg.schedule.jobs if j.every_minutes == 10]
+    assert [r["job"] for r in later] == every_10 and "IMPORT_INBOX" in every_10   # 只有每 10 分鐘的任務進了下一格
     assert session.scalar(select(func.count()).select_from(Report)) == 1
 
     status = scheduler.status(cfg, now + timedelta(minutes=10))

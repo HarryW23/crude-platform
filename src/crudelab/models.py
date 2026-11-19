@@ -380,6 +380,23 @@ class CalendarEvent(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
+class NewsFlash(Base):
+    """一條收錄的快訊（命中原油相關關鍵詞的才收錄）。可以交給大模型抽取成事件草稿，草稿要人確認。"""
+    __tablename__ = "news_flash"
+    __table_args__ = (UniqueConstraint("source", "ext_id"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source: Mapped[str] = mapped_column(String(32))
+    ext_id: Mapped[str] = mapped_column(String(64))                  # 對方的編號（沒有時用時間 + 內容的雜湊）
+    time: Mapped[datetime] = mapped_column(DateTime, index=True)     # UTC
+    content: Mapped[str] = mapped_column(Text)
+    url: Mapped[str | None] = mapped_column(String(500))
+    keywords: Mapped[list] = mapped_column(JSON)                     # 命中的關鍵詞
+    important: Mapped[bool] = mapped_column(Boolean, default=False)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    extracted_at: Mapped[datetime | None] = mapped_column(DateTime)  # 交給大模型抽取的時間
+    drafts: Mapped[int] = mapped_column(Integer, default=0)          # 抽出了幾條事件草稿
+
+
 class LLMCall(Base):
     """一次大模型調用。用來做跨進程的頻率和用量限制，也讓人看得到花了多少。不存發出去的內容和回覆。"""
     __tablename__ = "llm_call"
