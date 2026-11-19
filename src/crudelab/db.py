@@ -24,12 +24,48 @@ def alembic_config() -> AlembicConfig:
     return cfg
 
 
+class MigrationError(RuntimeError):
+    pass
+
+
 def migrate(engine: Engine) -> None:
-    """把表結構升級到最新版本。已是最新時什麼都不做。"""
+    """把表結構升級到最新版本。已是最新時什麼都不做。
+
+    SQLite 上單獨開一個連接來遷移：
+      - 整個遷移在一個事務裡（建表、改表也在內）：中途失敗就全部回滾，不會留下改了一半的庫
+        （Python 的 sqlite3 默認不給建表語句開事務，所以要自己發 BEGIN）
+      - 遷移期間關閉外鍵檢查：SQLite 改表常要「建新表 → 複製 → 刪舊表」，舊表被別的表引用時刪不掉
+      - 遷移完、提交前做一次外鍵完整性檢查，比遷移前多出斷掉的引用就回滾並報錯
+    """
     cfg = alembic_config()
-    with engine.begin() as connection:
-        cfg.attributes["connection"] = connection
-        command.upgrade(cfg, "head")
+    if engine.dialect.name != "sqlite":
+        with engine.begin() as connection:
+            cfg.attributes["connection"] = connection
+            command.upgrade(cfg, "head")
+        return
+    migrator = create_engine(engine.url)
+
+    @event.listens_for(migrator, "connect")
+    def _connect(dbapi_connection, _record):
+        dbapi_connection.isolation_level = None                    # 由下面的 BEGIN 自己管事務
+        dbapi_connection.execute("PRAGMA foreign_keys=OFF")        # 必須在事務外設置才生效
+        dbapi_connection.execute("PRAGMA busy_timeout=5000")
+
+    @event.listens_for(migrator, "begin")
+    def _begin(connection):
+        connection.exec_driver_sql("BEGIN")
+
+    try:
+        with migrator.begin() as connection:
+            cfg.attributes["connection"] = connection
+            before = len(connection.exec_driver_sql("PRAGMA foreign_key_check").fetchall())
+            command.upgrade(cfg, "head")
+            after = connection.exec_driver_sql("PRAGMA foreign_key_check").fetchall()
+            if len(after) > before:                     # 只攔遷移新造成的；庫裡原有的不擋啟動
+                raise MigrationError(f"升級表結構後多了 {len(after) - before} 處斷掉的引用"
+                                     f"（例如表 {after[0][0]}），已全部回滾，數據沒有改動")
+    finally:
+        migrator.dispose()
 
 
 def init_engine(settings: Settings | None = None) -> Engine:
