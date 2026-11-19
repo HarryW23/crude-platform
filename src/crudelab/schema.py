@@ -494,6 +494,14 @@ class JobDef(Strict):
     folder: str = "inbox"
     kind: Literal["daily", "weekly", "monthly"] | None = None
     narrative: bool = False
+    # 失敗重試：上一次開始後隔 retry_minutes 分鐘再試，最多 retries 次。只對「失敗」重試，「跳過」不重試。
+    # 還會重試的那次記為「失敗，待重試」，不發失敗通知；全部重試都失敗才算失敗並通知
+    retries: int = Field(default=0, ge=0, le=5)
+    retry_minutes: int = Field(default=15, ge=1, le=240)
+    # 依賴：到點後等 after 裡的任務各自最近一次該跑的那次執行完（完成、跳過或最終失敗）再執行，
+    # 最多等 wait_minutes 分鐘；等不到就照常執行，並在結果裡註明。手動運行不等
+    after: list[str] = []
+    wait_minutes: int = Field(default=120, ge=0, le=720)
 
     @model_validator(mode="after")
     def _check(self):
@@ -507,6 +515,12 @@ class JobDef(Strict):
             raise ValueError("report 任務需要 kind")
         if ".." in self.folder or self.folder.startswith(("/", "\\")):
             raise ValueError("folder 必須是 data/ 下的相對路徑")
+        if self.retries and self.every_minutes is not None and self.retry_minutes * self.retries >= self.every_minutes:
+            raise ValueError(f"{self.code}：重試要在下一次定時執行之前做完（retries × retry_minutes < every_minutes）")
+        if self.code in self.after:
+            raise ValueError(f"{self.code}：after 不能寫自己")
+        if self.after and self.at is not None and self.wait_minutes > self.catch_up_hours * 60:
+            raise ValueError(f"{self.code}：wait_minutes 不能超過補跑期限（catch_up_hours），否則等完就過期了")
         return self
 
     @property
@@ -521,6 +535,24 @@ class JobDef(Strict):
 class ScheduleDef(Strict):
     timezone: str = "Asia/Shanghai"
     jobs: list[JobDef] = []
+
+    @model_validator(mode="after")
+    def _dependencies(self) -> ScheduleDef:
+        codes = {j.code for j in self.jobs}
+        for job in self.jobs:
+            unknown = [c for c in job.after if c not in codes]
+            if unknown:
+                raise ValueError(f"任務 {job.code} 的 after 裡有不存在的任務：{', '.join(unknown)}")
+        after = {j.code: j.after for j in self.jobs}
+
+        def visit(code: str, path: list[str]) -> None:
+            if code in path:
+                raise ValueError("任務依賴成環：" + " → ".join([*path[path.index(code):], code]))
+            for dep in after[code]:
+                visit(dep, [*path, code])
+        for code in after:
+            visit(code, [])
+        return self
 
 
 # ------------------------------ 通知 ------------------------------

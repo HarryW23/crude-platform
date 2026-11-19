@@ -131,9 +131,9 @@ def test_tick_runs_due_jobs_once(ready, cfg, session):
     status = scheduler.status(cfg, now + timedelta(minutes=10))
     daily = next(j for j in status["jobs"] if j["code"] == "REPORT_DAILY")
     assert status["running"] and daily["next_run"] == "2026-11-18T10:30:00Z" and daily["last"]["status"] == "ok"
-    # 「最近一次」記的是實際執行的時刻（真實時鐘），只檢查它是今天（按上海時區），不寫死日期
-    today = datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat()
-    assert daily["last"]["at"].startswith(today) and daily["schedule"] == "周一至周五 18:30"
+    # 「最近一次」記的是調度器認領時的時刻（正式運行時就是當下），日報等 EIA 和收件夾完成後在同一輪執行
+    assert daily["last"]["at"] == now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    assert daily["schedule"] == "周一至周五 18:30，等 IMPORT_INBOX、PULL_EIA 完成後執行"
     assert next(j for j in status["jobs"] if j["code"] == "REPORT_MONTHLY")["next_run"] is None
     assert not scheduler.status(cfg, now + timedelta(hours=1))["running"]    # 心跳過期 → 顯示未運行
 

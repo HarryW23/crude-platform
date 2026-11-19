@@ -2,7 +2,8 @@ import { api } from "../../api.js";
 import { errorBox, esc, time, zoneLabel } from "../../ui.js";
 
 const ACTION = { pull: "接口取數", import_folder: "導入收件夾", report: "生成報告", check_freshness: "檢查斷更", backup: "備份", calendar: "財經日曆", news: "快訊" };
-const STATUS = { ok: ["ok", "完成"], skipped: ["", "跳過"], failed: ["bad", "失敗"], running: ["warn", "執行中"] };
+const STATUS = { ok: ["ok", "完成"], skipped: ["", "跳過"], failed: ["bad", "失敗"], running: ["warn", "執行中"],
+  retry: ["warn", "失敗，待重試"], retried: ["", "失敗，已重試"] };
 const EVENT = { failure: "失敗", reminder: "仍在失敗", recovery: "已恢復", test: "測試" };
 // 斷更檢查記為「失敗」是為了觸發通知；頁面上顯示成「有斷更」，免得以為是程序出錯
 const tag = (status, action) => action === "check_freshness" && status === "failed" ? '<span class="tag bad">有斷更</span>'

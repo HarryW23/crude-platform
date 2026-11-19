@@ -325,14 +325,16 @@ class UserSession(Base):
 
 
 class JobRun(Base):
-    """定時任務的一次執行。(job_code, slot) 唯一：同一個時點的任務，不管有幾個進程在跑調度，只會被執行一次。"""
+    """定時任務的一次執行。(job_code, slot, attempt) 唯一：
+    同一個時點的同一次嘗試，不管有幾個進程在跑調度，只會被執行一次。"""
     __tablename__ = "job_run"
-    __table_args__ = (UniqueConstraint("job_code", "slot"),)
+    __table_args__ = (UniqueConstraint("job_code", "slot", "attempt"),)
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     job_code: Mapped[str] = mapped_column(String(64), index=True)
     slot: Mapped[datetime] = mapped_column(DateTime)                 # 這次執行對應的計劃時點（手動觸發時是觸發時刻）
+    attempt: Mapped[int] = mapped_column(Integer, default=1, server_default="1")   # 同一個時點的第幾次（重試 + 1）
     trigger: Mapped[str] = mapped_column(String(16))                 # schedule / manual
-    status: Mapped[str] = mapped_column(String(16))                  # running / ok / skipped / failed
+    status: Mapped[str] = mapped_column(String(16))                  # running / ok / skipped / failed / retry / retried
     started_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime)
     message: Mapped[str | None] = mapped_column(Text)                # 給人看的一句話結果（已脫敏）

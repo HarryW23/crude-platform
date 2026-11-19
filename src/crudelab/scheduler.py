@@ -6,6 +6,9 @@
   - 程序沒開而錯過的任務：按時刻跑的（at）在 catch_up_hours 之內補跑一次，超過就放棄；
     按間隔跑的（every_minutes）不補，直接等下一次。
   - 任務一個一個順序執行，不並行：量很小，順序執行最不容易出問題。
+  - 失敗重試（retries）：失敗後隔 retry_minutes 再認領同一個時點的下一次嘗試（attempt + 1）。
+  - 依賴（after）：到點後先看依賴的任務各自「最近一次該跑的那次」有沒有執行完；沒有就等（下一輪再看），
+    最多等 wait_minutes，等不到就照常執行並在結果裡註明。依賴被停用或錯過了補跑期限（不會再跑）時不等。
 時區在 schedule.yaml 裡指定；數據庫裡一律存 UTC。
 """
 from __future__ import annotations
@@ -14,6 +17,8 @@ import logging
 import socket
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
+
+from sqlalchemy import select
 
 from . import db, jobs, notifications, switches
 from .config import Config
@@ -76,7 +81,13 @@ def should_run(job: JobDef, slot: datetime | None, now: datetime, enabled: bool 
 
 
 def describe(job: JobDef) -> str:
-    """給人看的時間說明。"""
+    """給人看的時間說明（含重試和依賴）。"""
+    extra = (f"，失敗後每 {job.retry_minutes} 分鐘重試，最多 {job.retries} 次" if job.retries else "") + \
+        (f"，等 {'、'.join(job.after)} 完成後執行" if job.after else "")
+    return _when(job) + extra
+
+
+def _when(job: JobDef) -> str:
     if job.every_minutes is not None:
         return f"每 {job.every_minutes} 分鐘"
     names = dict(zip(WEEKDAYS, "一二三四五六日", strict=True))
@@ -112,19 +123,78 @@ def tick(cfg: Config, settings: Settings, now: datetime | None = None) -> list[d
     results = []
     for job in cfg.schedule.jobs:
         slot = due_slot(job, now, tz)
-        if not should_run(job, slot, now, state[switches.job_key(job.code)]):
+        for stale in jobs.abandon_retries(job.code, slot):                 # 被下一個時點取代的待重試：定為失敗並通知
+            results.append(_notify(cfg, job, stale, {"id": stale, "job": job.code, "status": "failed",
+                                                     "message": "上次失敗後沒能重試"}))
+        enabled = state[switches.job_key(job.code)]
+        if not enabled or slot is None:
             continue
-        run_id = jobs.claim(job.code, slot, "schedule")
-        if run_id is None:                            # 這個時點已經執行過（或別的進程正在執行）
+        with db.session_scope() as session:
+            last = jobs.latest_attempt(session, job.code, slot)
+            if last is None:                                                # 這個時點第一次：補跑期限、依賴
+                attempt = 1 if should_run(job, slot, now, enabled) else None
+                waiting, failed = blocking(session, cfg, job, slot, now, tz, state) if attempt else ([], [])
+            else:                                                           # 同一個時點的重試：不受補跑期限限制
+                attempt = jobs.retry_due(session, job, slot, now)
+                waiting, failed = [], []
+        if attempt is None:
             continue
-        result = jobs.execute(cfg, settings, job, run_id)
-        try:
-            result["notified"] = notifications.after_run(cfg, job, run_id)
-        except Exception:                             # 通知出錯不能影響調度
-            log.exception("為任務 %s 發通知時出錯", job.code)
+        note = None
+        if waiting:
+            waited = now - slot
+            if waited < timedelta(minutes=job.wait_minutes):
+                continue                                                    # 下一輪再看
+            minutes = int(waited.total_seconds() // 60)
+            note = f"等了 {minutes} 分鐘，{'、'.join(_names(cfg, waiting))} 還沒完成，照常執行"
+        elif failed:
+            note = f"注意：{'、'.join(_names(cfg, failed))} 最近一次失敗了"
+        run_id = jobs.claim(job.code, slot, "schedule", attempt, now)
+        if run_id is None:                            # 這次嘗試已經執行過（或別的進程正在執行）
+            continue
+        result = jobs.execute(cfg, settings, job, run_id, retries_left=job.retries - attempt + 1, note=note)
         log.warning("定時任務 %s：%s　%s", job.code, result["status"], result["message"])
-        results.append(result)
+        results.append(_notify(cfg, job, run_id, result))
     return results
+
+
+def _notify(cfg: Config, job: JobDef, run_id: int, result: dict) -> dict:
+    result["notified"] = None
+    try:
+        result["notified"] = notifications.after_run(cfg, job, run_id)
+    except Exception:                                 # 通知出錯不能影響調度
+        log.exception("為任務 %s 發通知時出錯", job.code)
+    return result
+
+
+def _names(cfg: Config, codes: list[str]) -> list[str]:
+    return [jobs.find_job(cfg, c).name_zh for c in codes]
+
+
+def blocking(session, cfg: Config, job: JobDef, slot: datetime, now: datetime, tz: ZoneInfo,
+             state: dict) -> tuple[list[str], list[str]]:
+    """job 在 slot 這個時點的依賴：（還沒執行完的, 最終失敗了的）。
+
+    每個依賴看它「在 slot 之前（含）最近一次該跑的時點」：那個時點之後（含）有沒有一次已經結束的執行
+    （手動運行也算）。依賴被停用、或錯過了補跑期限不會再跑時，不等它。
+    """
+    waiting, failed = [], []
+    for code in job.after:
+        dep = jobs.find_job(cfg, code)
+        if not state.get(switches.job_key(code), dep.enabled):
+            continue
+        dep_slot = due_slot(dep, slot, tz)
+        if dep_slot is None:
+            continue
+        run = session.scalar(select(JobRun).where(JobRun.job_code == code, JobRun.slot >= dep_slot)
+                             .order_by(JobRun.id.desc()).limit(1))
+        if run is None:                  # 還沒跑：錯過了補跑期限就不會再跑，不等；否則等它
+            if dep.every_minutes is not None or should_run(dep, dep_slot, now, True):
+                waiting.append(code)
+        elif run.status in ("running", "retry"):
+            waiting.append(code)
+        elif run.status == "failed":
+            failed.append(code)
+    return waiting, failed
 
 
 def status(cfg: Config, now: datetime | None = None) -> dict:

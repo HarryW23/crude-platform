@@ -23,6 +23,8 @@ def old_db(tmp_path, revision: str, leftover: bool = False) -> sa.Engine:
                              "VALUES ('A', 'a', 'X', 'X', 'spot', 'x', 'daily', 0, 'common', '{}', 1)"))
         conn.execute(sa.text("INSERT INTO series_alias (alias_norm, alias, series_code, origin) "
                              "VALUES ('a', 'a', 'A', 'config')"))
+        conn.execute(sa.text("INSERT INTO job_run (job_code, slot, trigger, status, started_at) "   # 有執行歷史
+                             "VALUES ('PULL_EIA', '2026-11-16 23:30:00', 'schedule', 'ok', '2026-11-16 23:30:01')"))
         if leftover:                                   # 0.30.0 失敗後留下的臨時表
             conn.execute(sa.text("CREATE TABLE _alembic_tmp_series (code VARCHAR(64))"))
     return engine
@@ -41,8 +43,12 @@ def test_upgrade_keeps_data_when_series_is_referenced(tmp_path, leftover):
     engine = old_db(tmp_path, "0015", leftover)
     db.migrate(engine)
     got = state(engine)
-    assert got["version"] == "0017" and got["series"] == ["A"] and got["aliases"] == ["A"]
+    from alembic.script import ScriptDirectory
+    head = ScriptDirectory.from_config(db.alembic_config()).get_current_head()
+    assert got["version"] == head and got["series"] == ["A"] and got["aliases"] == ["A"]
     assert "_alembic_tmp_series" not in got["tables"]
+    with engine.connect() as conn:                                            # 0018 重建 job_run：歷史保留，attempt = 1
+        assert conn.execute(sa.text("SELECT job_code, status, attempt FROM job_run")).all() == [("PULL_EIA", "ok", 1)]
 
 
 def test_failed_migration_rolls_back_everything(tmp_path, monkeypatch):

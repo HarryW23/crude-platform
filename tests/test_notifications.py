@@ -132,6 +132,7 @@ def test_tick_sends_notifications_and_switches_silence_them(ready, cfg, session,
     monkeypatch.setenv("NOTIFY_WECOM_WEBHOOK", HOOK)
     monkeypatch.setenv("EIA_API_KEY", "some-eia-key-123456")
     _fail_pull(monkeypatch)
+    monkeypatch.setattr(jobs.find_job(cfg, "PULL_EIA"), "retries", 0)       # 這裡測通知；重試另有測試
     results = {r["job"]: r for r in scheduler.tick(cfg, ready, T0)}
     assert results["PULL_EIA"]["status"] == "failed" and results["PULL_EIA"]["notified"] == "failure"
     assert results["REPORT_DAILY"]["notified"] is None and len(outbox) == 1

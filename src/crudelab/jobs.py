@@ -206,11 +206,17 @@ def find_job(cfg: Config, code: str) -> JobDef:
     raise JobError(f"沒有名為 {code} 的定時任務")
 
 
-def claim(code: str, slot: datetime, trigger: str) -> int | None:
-    """認領一次執行。這個時點已經被別的進程認領過就回 None。"""
+def claim(code: str, slot: datetime, trigger: str, attempt: int = 1, now: datetime | None = None) -> int | None:
+    """認領一次執行。這個時點的這次嘗試已經被別的進程認領過就回 None。now 是開始時刻（調度器傳入它的時鐘）。"""
     try:
         with db.session_scope() as session:
-            run = JobRun(job_code=code, slot=slot, trigger=trigger, status="running")
+            run = JobRun(job_code=code, slot=slot, trigger=trigger, status="running", attempt=attempt,
+                         started_at=now or utcnow())
+            if attempt > 1:                          # 上一次嘗試從「待重試」變成「已重試」
+                previous = session.scalar(select(JobRun).where(JobRun.job_code == code, JobRun.slot == slot,
+                                                               JobRun.attempt == attempt - 1))
+                if previous is not None and previous.status == "retry":
+                    previous.status = "retried"
             session.add(run)
             session.flush()
             return run.id
@@ -218,8 +224,12 @@ def claim(code: str, slot: datetime, trigger: str) -> int | None:
         return None
 
 
-def execute(cfg: Config, settings: Settings, job: JobDef, run_id: int) -> dict:
-    """執行已認領的任務並記下結果。任何異常都被接住，不會把調度器打掉。"""
+def execute(cfg: Config, settings: Settings, job: JobDef, run_id: int, retries_left: int = 0,
+            note: str | None = None) -> dict:
+    """執行已認領的任務並記下結果。任何異常都被接住，不會把調度器打掉。
+
+    retries_left > 0 時，失敗記為 retry（失敗，待重試）：不算最終失敗，不發通知。note 加在結果前面（例如依賴沒等到）。
+    """
     try:
         with db.session_scope() as session:
             status, message, detail = ACTIONS[job.action](session, cfg, settings, job)
@@ -228,10 +238,45 @@ def execute(cfg: Config, settings: Settings, job: JobDef, run_id: int) -> dict:
     except Exception as exc:      # 意料之外：不把原文給頁面（可能含網址或路徑），詳情進日誌（日誌有脫敏）
         log.exception("定時任務 %s 發生未預期的錯誤", job.code)
         status, message, detail = "failed", f"未預期的錯誤（{type(exc).__name__}），詳情見服務器日誌", {}
+    if status == "failed" and retries_left > 0:
+        status = "retry"
+        message = f"{message}（{job.retry_minutes} 分鐘後自動重試，還剩 {retries_left} 次）"
+    if note:
+        message = f"{note}；{message}"
     with db.session_scope() as session:
         run = session.get(JobRun, run_id)
         run.status, run.message, run.detail, run.finished_at = status, message, detail, utcnow()
-        return {"id": run.id, "job": run.job_code, "status": status, "message": message}
+        return {"id": run.id, "job": run.job_code, "status": status, "message": message, "attempt": run.attempt}
+
+
+def latest_attempt(session: Session, code: str, slot: datetime) -> JobRun | None:
+    """某個時點最近的一次嘗試。"""
+    return session.scalar(select(JobRun).where(JobRun.job_code == code, JobRun.slot == slot)
+                          .order_by(JobRun.attempt.desc()).limit(1))
+
+
+def abandon_retries(code: str, current_slot: datetime | None) -> list[int]:
+    """更早時點還掛著「待重試」的（程序關掉了、沒來得及重試，已經到了下一次）：定為失敗，回傳它們的編號。
+    不能讓它們一直掛著：那樣既不算失敗，也不會發通知。"""
+    with db.session_scope() as session:
+        stmt = select(JobRun).where(JobRun.job_code == code, JobRun.status == "retry")
+        if current_slot is not None:
+            stmt = stmt.where(JobRun.slot < current_slot)
+        rows = list(session.scalars(stmt))
+        for run in rows:
+            run.status = "failed"
+            run.message = f"{run.message}；沒能重試：已經到了下一次執行時間（程序可能關閉過）"
+        return [r.id for r in rows]
+
+
+def retry_due(session: Session, job: JobDef, slot: datetime, now: datetime) -> int | None:
+    """這個時點該不該重試：上一次是 retry（失敗，待重試），且離它開始已經過了 retry_minutes。回傳下一次的嘗試序號。"""
+    last = latest_attempt(session, job.code, slot)
+    if last is None or last.status != "retry" or last.attempt > job.retries:
+        return None
+    if now - last.started_at < timedelta(minutes=job.retry_minutes):
+        return None
+    return last.attempt + 1
 
 
 def run_now(cfg: Config, settings: Settings, code: str) -> dict:
