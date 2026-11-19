@@ -131,7 +131,7 @@ def test_backtest_shows_no_benefit_on_noise(session, cfg, monkeypatch):
 def test_projection_uses_drift_only_when_chosen_and_available(session, cfg, monkeypatch):
     synthetic(session)
     monkeypatch.setitem(cfg.fair_values, "BRENT_FV", one_factor(code="BRENT_FV"))
-    set_value(session, "PROJ_PRICE_PER_BALANCE", 5.0)
+    set_value(session, "PROJ_PRICE_PER_STOCK", 5.0)
     plain = projection.create(session, "不加", cfg=cfg)
     with_drift = projection.create(session, "加", drift_model="BRENT_FV", cfg=cfg)
     session.commit()

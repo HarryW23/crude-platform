@@ -236,7 +236,7 @@ WS 點折成 美元/桶 還需要 Worldscale 每年的基準費率，見下面�
 | `FLAT_TD20` | TD20 基準費率（西非→鹿特丹） | USD/t | Worldscale 年度 flat rate |
 | `FLAT_TD25` | TD25 基準費率（美灣→歐洲） | USD/t | Worldscale 年度 flat rate |
 | `ESPO_FREIGHT_CN` | ESPO 科茲米諾→山東 運費 | USD/bbl | 短程阿芙拉型運費，波動大，請按實際成交水平錄入並隨時更新 |
-| `PROJ_PRICE_PER_BALANCE` | 平衡對價格的敏感度 | USD*d/bbl/mb | 全球平衡在期限內平均每多過剩 1 百萬桶/日，Brent 下跌多少美元/桶。這是推演的核心假設，沒有預設值，必須由你給出 |
+| `PROJ_PRICE_PER_STOCK` | 庫存對價格的敏感度 | USD/bbl/mb | 全球庫存每多累積 1 百萬桶，Brent 下跌多少美元/桶。推演按期限算累庫：過剩 1 百萬桶/日持續 30 天 = 累庫 30 百萬桶。 這是推演的核心假設，沒有預設值。推演頁會給出從歷史估計的值和它的可信度，可以在這裡採用，也可以自己填 |
 
 其中運費基準費率（`FLAT_*`）來自 Worldscale 協會的年度費率表，需要訂閱，每年 1 月 1 日更新一次，錄入時按年填生效日期。
 

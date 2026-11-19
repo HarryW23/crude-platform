@@ -199,4 +199,4 @@ def test_data_requirements_doc_is_current_and_complete(cfg):
                      "DATED_BRENT": "pra", "ARAB_LIGHT_OSP_ASIA": "osp", "TD3C_WS": "freight", "USDCNY": "fx",
                      "SD_GASOLINE_92": "cn_vendor", "IEA_WORLD_DEMAND": "agency", "PP_CN": "exchange_cn",
                      "PX_CFR_CHINA": "pra"}
-    assert "FLAT_TD3C" in text and "PROJ_PRICE_PER_BALANCE" in text
+    assert "FLAT_TD3C" in text and "PROJ_PRICE_PER_STOCK" in text

@@ -1,5 +1,5 @@
 import { api } from "../../api.js";
-import { errorBox, esc, time, zoneLabel } from "../../ui.js";
+import { errorBox, esc, num, time, zoneLabel } from "../../ui.js";
 
 const since = (d) => d == null ? "" : d === "1900-01-01" ? "自始" : d;
 
@@ -28,7 +28,8 @@ export async function render(main) {
 
   const edit = async (key) => {
     const p = rows.find((r) => r.key === key);
-    const versions = await api(`/parameters/${key}/versions`);
+    const [versions, est] = await Promise.all([api(`/parameters/${key}/versions`), api("/projection/sensitivity")]);
+    const isSensitivity = est.parameter === key;
     const box = $("editor");
     box.innerHTML = `<div class="panel inset"><h2>${esc(p.name_zh)} <span class="mono muted">${key}</span></h2>
       <p class="sub">${esc(p.description ?? "")}${p.used_by.length ? `<br>用到它的指標：<span class="mono">${p.used_by.join("、")}</span>` : ""}</p>
@@ -37,6 +38,8 @@ export async function render(main) {
         <label>生效日期 <input type="date" id="pd"></label><span class="muted">不填 = 更正目前的值</span>
         <label>原因 <input id="pn" size="18"></label><button class="btn primary" id="psave">保存</button>
         ${p.value != null && !p.verified ? '<button class="btn" id="pverify">數值無誤，標為已核對</button>' : ""}</div><div id="pmsg"></div>
+      ${isSensitivity ? `<div class="msg ${est.status === "ok" ? "" : "warn"}">歷史估計：${est.value == null ? "沒有結果" : `<b>${num(est.value, 3)}</b>（95% 區間 ${num(est.low, 3)} – ${num(est.high, 3)}，t = ${num(est.t, 1)}，${est.n} 個月）`}。${esc(est.message)}。
+        ${est.status === "ok" ? '<button class="btn" id="padopt" style="margin-left:8px">採用這個估計（今天起生效）</button>' : ""}</div>` : ""}
       <h3>版本記錄</h3><div class="scroll"><table><tr><th>生效自</th><th class="n">數值</th><th>原因</th><th>錄入者</th><th>錄入時間（${zoneLabel()}）</th><th></th></tr>
         ${versions.map((v) => `<tr><td>${since(v.valid_from)}</td><td class="n">${v.value}</td><td>${esc(v.note ?? "")}</td><td>${esc(v.created_by)}</td>
           <td>${time(v.created_at)}</td><td>${v.effective ? "" : '<span class="tag">已被更正</span>'}</td></tr>`).join("") || '<tr><td colspan="6" class="muted">還沒有數值。</td></tr>'}</table></div></div>`;
@@ -49,6 +52,9 @@ export async function render(main) {
         await api(`/parameters/${key}/versions`, { json: { value, valid_from: box.querySelector("#pd").value || null, note: box.querySelector("#pn").value || null } });
         await render(main);
       } catch (e) { fail(e); }
+    });
+    box.querySelector("#padopt")?.addEventListener("click", async () => {
+      try { await api("/projection/sensitivity/adopt", { method: "POST" }); await render(main); } catch (e) { fail(e); }
     });
     box.querySelector("#pverify")?.addEventListener("click", async () => {
       try { await api(`/parameters/${key}/verify`, { json: { verified: true } }); await render(main); } catch (e) { fail(e); }

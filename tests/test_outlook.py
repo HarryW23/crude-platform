@@ -150,24 +150,26 @@ def test_projection_matches_hand_calculation(session, cfg, market):
 
     blocked = projection.compute(session, cfg, p.id)                 # 還沒給敏感度：情境分支算不出，也不硬算
     assert blocked["cases"][1]["horizons"]["M1"]["central"] is None
-    assert "缺參數 PROJ_PRICE_PER_BALANCE" in blocked["cases"][1]["horizons"]["M1"]["reason"]
+    assert "缺參數 PROJ_PRICE_PER_STOCK" in blocked["cases"][1]["horizons"]["M1"]["reason"]
     assert blocked["expected"]["M1"] is None
     assert blocked["cases"][0]["horizons"]["M1"]["central"] == pytest.approx(price)
 
-    set_value(session, "PROJ_PRICE_PER_BALANCE", 8.0)
+    set_value(session, "PROJ_PRICE_PER_STOCK", 8.0)
     session.commit()
     result = projection.compute(session, cfg, p.id)
     returns = np.array([0.01 if i % 2 else -0.01 for i in range(1, 250)])
     sigma = returns.std(ddof=1)
     assert result["volatility"]["daily"] == pytest.approx(sigma) and result["anchor"]["price"] == pytest.approx(price)
     base, tight = result["cases"]
-    for code, trading in (("W1", 5), ("M1", 21), ("M3", 63)):
+    for code, trading, days in (("W1", 5, 7), ("M1", 21, 30), ("M3", 63, 91)):
         band = price * sigma * math.sqrt(trading)
         b, t = base["horizons"][code], tight["horizons"][code]
         assert (b["central"], b["low"], b["high"]) == pytest.approx((price, price - band, price + band))
-        assert t["balance_change"] == pytest.approx(-1.0) and t["balance_effect"] == pytest.approx(8.0)
-        assert t["central"] == pytest.approx(price + 8.0 + 2.0)
-        assert result["expected"][code] == pytest.approx(0.6 * price + 0.4 * (price + 10.0))
+        # 少供應 1 mb/d，持續整個期限：累庫 = −1 × 天數（百萬桶），供需效應 = −8 × 累庫
+        assert t["balance_change"] == pytest.approx(-1.0) and t["stock_change"] == pytest.approx(-days)
+        assert t["balance_effect"] == pytest.approx(8.0 * days)
+        assert t["central"] == pytest.approx(price + 8.0 * days + 2.0)
+        assert result["expected"][code] == pytest.approx(0.6 * price + 0.4 * (price + 8.0 * days + 2.0))
     assert tight["horizons"]["W1"]["periods"] == 1 and tight["horizons"]["M3"]["periods"] >= 3
     assert result["problems"] == []
 
@@ -382,7 +384,7 @@ def test_chat_looks_up_data_and_answer_is_checked(loaded, cfg):
 
 def test_chat_what_if_uses_the_engine_not_the_model(loaded, cfg):
     from crudelab.llm import chat
-    set_value(loaded, "PROJ_PRICE_PER_BALANCE", 5.0)
+    set_value(loaded, "PROJ_PRICE_PER_STOCK", 5.0)
     loaded.commit()
     start = month_start(0).isoformat()
     provider = ScriptedProvider(
@@ -393,8 +395,9 @@ def test_chat_what_if_uses_the_engine_not_the_model(loaded, cfg):
     rows = what_if["compared"][0]["rows"]
     assert what_if["compared"][0]["code"] == "BAL_GLOBAL_BALANCE" and all(r["change"] == -2 for r in rows)
     month = what_if["price"]["horizons"]["M1"]
-    assert month["balance_change"] == -2 and month["balance_effect"] == 10                # −5 × −2
-    assert month["central"] == pytest.approx(what_if["price"]["price"] + 10, abs=1e-3)
+    assert month["balance_change"] == -2 and month["stock_change"] == -60                # −2 mb/d × 30 天
+    assert month["balance_effect"] == 300                                                  # −5 × −60
+    assert month["central"] == pytest.approx(what_if["price"]["price"] + 300, abs=1e-3)
     assert len(loaded.new) == 0 and len(loaded.dirty) == 0                                # 沒有寫入任何東西
 
     # 之前的問答會帶進下一輪

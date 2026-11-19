@@ -2,8 +2,9 @@
 
 對每個分支、每個期限（1 周 / 1 個月 / 3 個月）：
     基本面回歸 = 推演選了公允價值模型時，預計在期限內消退的偏離（見 fair_value.py）；沒選則為 0。各分支相同
-    平衡變化   = 期限內各期「情境下的平衡 − 基準平衡」的平均          （來自平衡表和情境調整）
-    供需效應   = −敏感度 × 平衡變化                                    （敏感度是參數：每多 1 單位過剩，價格跌多少）
+    平衡變化   = 期限內各期「情境下的平衡 − 基準平衡」的平均          （來自平衡表和情境調整；只用來展示）
+    庫存變化   = Σ 各期的平衡變化 × 這一期落在 [今天, 期限末] 內的天數  （過剩持續越久，累庫越多）
+    供需效應   = −敏感度 × 庫存變化                                    （敏感度是參數：庫存每多累積 1 單位，價格跌多少）
     中樞       = 當前價格 + 基本面回歸 + 供需效應 + 分支的直接價格調整（直接調整 = 人給的判斷，如風險溢價）
     區間       = 中樞 ± 當前價格 × 日波動率 × √期限交易日數            （一倍標準差，來自歷史已實現波動）
     機率加權價 = Σ 機率 × 中樞                                          （各分支機率之和必須等於 1）
@@ -11,7 +12,8 @@
 每一項都能指回來源：當前價格和波動率來自行情，平衡變化來自情境調整，敏感度和機率是人設的。
 這是把假設攤開來算的工具，不是黑盒預測：
   - 不選公允價值模型時沒有「基準漂移」，基準分支的中樞就是當前價格
-  - 敏感度是線性的、不隨期限變化，這是一個粗略的經驗設定，必須由使用者自己給
+  - 敏感度是線性的：價格對累積庫存變化的反應。同樣的過剩，持續 3 個月的累庫是 1 周的十幾倍，影響也大得多。
+    可以用 sensitivity.py 從歷史估計（庫存月度變化對價格月度變化的回歸），但採用與否由使用者決定
   - 區間只反映歷史波動的大小，不是置信區間的保證
 缺任何一項輸入，對應的結果就留空並說明原因。
 """
@@ -212,13 +214,27 @@ def _volatility(prices: pd.Series, lookback: int, min_points: int) -> float | No
 
 
 def _balance_change(base: pd.Series, scenario: pd.Series, today: pd.Timestamp, end: pd.Timestamp,
-                    period_days: int) -> tuple[float | None, int]:
-    """期限內各期的平均平衡變化。期間與 [今天, 期限末] 有重疊就算在內。回傳（變化, 用到的期數）。"""
+                    period_days: int) -> tuple[float | None, float | None, int]:
+    """期限內的平衡變化。期間與 [今天, 期限末] 有重疊就算在內。
+
+    回傳（各期平衡變化的平均, 累積的庫存變化, 用到的期數）。庫存變化 = Σ 平衡變化 × 該期落在窗口內的天數：
+    平衡的單位是「每日」（例如 百萬桶/日），乘上天數就是庫存（百萬桶）。
+    """
     frame = pd.DataFrame({"base": base, "scenario": scenario}).dropna()
     window = frame[(frame.index <= end) & (frame.index + pd.Timedelta(days=period_days) > today)]
     if window.empty:
-        return None, 0
-    return float((window["scenario"] - window["base"]).mean()), len(window)
+        return None, None, 0
+    diff = window["scenario"] - window["base"]
+    starts = list(frame.index)
+    stock = 0.0
+    for start, value in diff.items():
+        # 這一期到下一期開始為止（月度數據每期長短不一）；最後一期或中間缺期時最多 period_days 天
+        later = [d for d in starts if d > start]
+        period_end = min(later[0], start + pd.Timedelta(days=period_days)) if later \
+            else start + pd.Timedelta(days=period_days)
+        overlap = (min(period_end, end) - max(start, today)).days
+        stock += float(value) * max(overlap, 0)
+    return float(diff.mean()), stock, len(window)
 
 
 @dataclass(frozen=True)
@@ -261,20 +277,20 @@ def _case_cells(ctx: _Context, scenario_balance: pd.Series | None, price_adjustm
     for h in ctx.settings.horizons:
         end = ctx.today + pd.Timedelta(days=h.calendar_days)
         drift_effect = (drift or {}).get(h.code) or 0.0
-        cell = {"balance_change": 0.0, "periods": 0, "balance_effect": 0.0, "drift_effect": drift_effect,
-                "central": None, "low": None, "high": None, "reason": None}
+        cell = {"balance_change": 0.0, "stock_change": 0.0, "periods": 0, "balance_effect": 0.0,
+                "drift_effect": drift_effect, "central": None, "low": None, "high": None, "reason": None}
         if scenario_balance is not None:
-            change, n = _balance_change(ctx.base_balance, scenario_balance, ctx.today, end, ctx.period_days)
-            cell["balance_change"], cell["periods"] = change, n
+            change, stock, n = _balance_change(ctx.base_balance, scenario_balance, ctx.today, end, ctx.period_days)
+            cell["balance_change"], cell["stock_change"], cell["periods"] = change, stock, n
             if change is None:
                 cell["balance_effect"], cell["reason"] = None, "平衡表在這段期間沒有數據，算不出情境的影響"
-            elif change == 0:
+            elif stock == 0:
                 cell["balance_effect"] = 0.0
             elif ctx.sensitivity is None:
                 cell["balance_effect"] = None
-                cell["reason"] = f"缺參數 {ctx.settings.sensitivity_parameter}（平衡變化對價格的敏感度）"
+                cell["reason"] = f"缺參數 {ctx.settings.sensitivity_parameter}（庫存變化對價格的敏感度）"
             else:
-                cell["balance_effect"] = -ctx.sensitivity * change
+                cell["balance_effect"] = -ctx.sensitivity * stock
         if ctx.price is not None and cell["balance_effect"] is not None:
             cell["central"] = ctx.price + drift_effect + cell["balance_effect"] + price_adjustment
             if ctx.volatility is not None:

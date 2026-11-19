@@ -384,10 +384,18 @@ def _validate_projection(cfg: Config) -> list[str]:
             errors.append(f"projection.yaml：參數 {key} 不存在")
     if errors:
         return errors
-    try:    # 敏感度的單位必須是 價格單位 ÷ 平衡單位，這樣 敏感度 × 平衡變化 才是價格
-        expected = units.divide(cfg.dim(cfg.series[p.anchor].unit), cfg.dim(cfg.indicators[p.balance_indicator].unit))
+    try:    # 敏感度的單位必須是 價格 ÷（平衡 × 天），這樣 敏感度 × 累積庫存變化（平衡 × 天數）才是價格
+        stock = units.multiply(cfg.dim(cfg.indicators[p.balance_indicator].unit), cfg.dim("d"))
+        expected = units.divide(cfg.dim(cfg.series[p.anchor].unit), stock)
         if cfg.dim(cfg.parameters[p.sensitivity_parameter].unit) != expected:
             errors.append(f"projection.yaml：{p.sensitivity_parameter} 的單位應該是 {units.format_dim(expected)}")
+        est = p.sensitivity_estimate
+        if est is not None:
+            if est.stocks not in cfg.series:
+                errors.append(f"projection.yaml：sensitivity_estimate.stocks {est.stocks} 不是序列")
+            elif cfg.dim(cfg.series[est.stocks].unit) != stock:
+                errors.append(f"projection.yaml：sensitivity_estimate.stocks 的單位應該是 {units.format_dim(stock)}"
+                              "（平衡 × 天，即庫存）")
     except units.UnitError as exc:
         errors.append(f"projection.yaml：{exc}")
     return errors

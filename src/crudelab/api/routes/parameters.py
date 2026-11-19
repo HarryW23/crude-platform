@@ -10,8 +10,9 @@ from sqlalchemy.orm import Session
 
 from ... import formula as fx
 from ... import parameters as service
+from ...indicators import IndicatorEngine
 from ...models import Parameter, ParameterVersion
-from ..deps import AppState, get_actor, get_db, get_state
+from ..deps import AppState, get_actor, get_db, get_engine, get_state
 
 router = APIRouter(tags=["parameters"])            # 兩個站點都有：只讀
 admin_router = APIRouter(tags=["parameters-admin"])  # 只在後台：改參數
@@ -74,3 +75,30 @@ def verify(key: str, body: VerifyRequest, session: Session = Depends(get_db)):
     except service.ParameterError as exc:
         raise HTTPException(404, str(exc)) from exc
     return {"key": key, "verified": body.verified}
+
+
+@router.get("/projection/sensitivity")
+def sensitivity_estimate(session: Session = Depends(get_db), state: AppState = Depends(get_state),
+                         engine: IndicatorEngine = Depends(get_engine)):
+    """推演敏感度的歷史估計（見 sensitivity.py），以及參數現在的值。兩個站點都能看。"""
+    from ... import sensitivity
+    result = sensitivity.estimate(engine, state.cfg)
+    key = result["parameter"]
+    result["current"] = engine.value_at(key, engine.as_of.date() if engine.as_of else date.today()) if key else None
+    return result
+
+
+@admin_router.post("/projection/sensitivity/adopt")
+def adopt_sensitivity(session: Session = Depends(get_db), state: AppState = Depends(get_state),
+                      engine: IndicatorEngine = Depends(get_engine), actor: str = Depends(get_actor)):
+    """把歷史估計寫成敏感度參數的一個新版本（今天起生效），版本說明裡記下估計的依據。只接受結論為 ok 的估計。"""
+    from ... import sensitivity
+    result = sensitivity.estimate(engine, state.cfg)
+    if result["status"] != "ok":
+        raise HTTPException(409, f"這個估計不建議採用：{result['message']}。可以在參數頁自己填一個值")
+    try:
+        version = service.set_value(session, result["parameter"], round(result["value"], 4), date.today(),
+                                    sensitivity.adoption_note(result), actor)
+    except service.ParameterError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"key": result["parameter"], "value": version.value, "valid_from": version.valid_from}

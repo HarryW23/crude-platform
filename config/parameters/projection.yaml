@@ -1,7 +1,8 @@
 # 推演與信號用到的參數。字段說明見 conversion.yaml。
 
-- {key: PROJ_PRICE_PER_BALANCE, name_zh: 平衡對價格的敏感度, unit: USD*d/bbl/mb, group: 推演,
-   description: 全球平衡在期限內平均每多過剩 1 百萬桶/日，Brent 下跌多少美元/桶。這是推演的核心假設，沒有預設值，必須由你給出}
+- {key: PROJ_PRICE_PER_STOCK, name_zh: 庫存對價格的敏感度, unit: USD/bbl/mb, group: 推演,
+   description: "全球庫存每多累積 1 百萬桶，Brent 下跌多少美元/桶。推演按期限算累庫：過剩 1 百萬桶/日持續 30 天 = 累庫 30 百萬桶。
+     這是推演的核心假設，沒有預設值。推演頁會給出從歷史估計的值和它的可信度，可以在這裡採用，也可以自己填"}
 - {key: SIG_WEIGHT_SPREAD, name_zh: 信號權重：地域價差, value: 1, group: 推演,
    description: 各模組在綜合信號裡的權重，預設等權}
 - {key: SIG_WEIGHT_BALANCE, name_zh: 信號權重：供需, value: 1, group: 推演}

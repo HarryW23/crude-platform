@@ -122,30 +122,48 @@ async function renderFairValues(box, fvs) {
   }
 }
 
+const EST = { ok: ["ok", "可以參考"], weak: ["warn", "不顯著"], wrong_sign: ["bad", "方向不對"], insufficient: ["warn", "樣本不足"], unconfigured: ["", "未設定"] };
+
+function estimatePanel(e, a) {
+  if (!e || e.status === "unconfigured") return "";
+  const tag = `<span class="tag ${EST[e.status]?.[0] ?? ""}">${EST[e.status]?.[1] ?? esc(e.status)}</span>`;
+  return `<details class="panel inset" ${e.current == null ? "open" : ""} style="margin:10px 0"><summary><b>庫存敏感度的歷史估計</b> ${tag}
+      ${e.value == null ? "" : `<span class="mono">${num(e.value, 3)}</span> <span class="muted">${esc(e.unit)}</span>`}</summary>
+    <p class="sub">用${esc(e.stocks_name ?? "")}的月度變化，對${esc(a.name_zh)}的月度漲跌做回歸（${e.start ?? "—"} 至 ${e.end ?? "—"}，${e.n} 個月）。${esc(e.message)}。</p>
+    ${e.value == null ? "" : `<div class="stat">
+      <div>估計值<b>${num(e.value, 3)}</b></div><div>95% 區間<b>${num(e.low, 3)} – ${num(e.high, 3)}</b></div>
+      <div>t<b>${num(e.t, 1)}</b></div><div>R²<b>${num(e.r2)}</b></div>
+      <div title="過剩 1 百萬桶/日持續 30 天 = 累庫 30 百萬桶">過剩 1 mb/d 持續 1 個月<b>${signed(-e.per_month_1mbd)} ${esc(a.unit)}</b></div></div>`}
+    <p class="muted">這是相關，不是因果：價格也會反過來影響庫存，還有很多因素同時在動。它只是一個有依據的起點。
+      ${e.status === "ok" ? `可以在${adminLink("params", "參數")}的「推演」組採用這個值（會把估計依據記在版本說明裡），也可以自己填。` : "這個估計不建議採用，請按你的判斷在參數頁填一個值。"}
+      ${e.current != null ? `目前參數的值是 ${num(e.current, 3)}。` : ""}</p></details>`;
+}
+
 async function renderProjection(box, scenarios, main, fvs) {
-  const p = await api(`/projections/${state.projection}`);
+  const [p, est] = await Promise.all([api(`/projections/${state.projection}`), api("/projection/sensitivity")]);
   const a = p.anchor, reload = () => render(main);
   const cell = (c) => c.central == null ? `<span class="tag warn" title="${esc(c.reason ?? "")}">無法計算</span>`
     : `<b>${num(c.central)}</b>${c.low == null ? "" : `<div class="muted">${num(c.low)} – ${num(c.high)}</div>`}`;
   box.innerHTML = `
     <div class="stat"><div>${esc(a.name_zh)}（${a.date ?? "無數據"}）<b>${num(a.price)}</b></div>
       <div>年化波動率<b>${p.volatility.annualized == null ? "—" : pct(p.volatility.annualized)}</b></div>
-      <div>平衡敏感度<b>${p.sensitivity.value == null ? '<span class="tag warn">未設定</span>' : num(p.sensitivity.value)}</b></div>
+      <div title="庫存每多累積 1 百萬桶，價格跌多少（${esc(p.sensitivity.unit)}）">庫存敏感度<b>${p.sensitivity.value == null ? '<span class="tag warn">未設定</span>' : num(p.sensitivity.value, 3)}</b></div>
       <div>機率合計<b class="${Math.abs(p.total_probability - 1) < 1e-6 ? "" : "down"}">${pct(p.total_probability)}</b></div>
       ${fvs.length ? `<div>基本面回歸<b><label style="font-weight:400;font-size:14px"><input type="checkbox" id="drift" ${p.drift_model ? "checked" : ""}> ${p.drift_model ? esc(p.drift?.name_zh ?? p.drift_model) : "不加"}</label></b></div>` : ""}</div>
     ${p.drift?.effects && Object.keys(p.drift.effects).length ? `<div class="msg">已計入基本面回歸（${esc(p.drift.name_zh)}，偏離 ${signed(p.drift.deviation_pct * 100, 1)}%，半衰期約 ${num(p.drift.half_life, 0)} 個交易日）：${p.horizons.map((h) => `${esc(h.name_zh)} ${signed(p.drift.effects[h.code])}`).join("，")}。各分支相同。</div>` : ""}
     ${p.problems.map((x) => `<div class="msg warn">${esc(x)}。</div>`).join("")}
-    ${p.sensitivity.value == null ? `<div class="msg">平衡敏感度（${p.sensitivity.parameter}）還沒有設定：全球平衡每多過剩 1 ${esc(p.balance.unit)}，${esc(a.name_zh)} 下跌多少 ${esc(a.unit)}。這是推演的核心假設，請到${adminLink("params", "參數")}給出；在那之前，帶供需調整的分支算不出價格。</div>` : ""}
-    <div class="scroll"><table><tr><th>分支</th><th class="n">機率</th><th class="n">直接價格調整</th><th class="n">平衡變化（1 個月）</th>
+    ${p.sensitivity.value == null ? `<div class="msg">庫存敏感度（${p.sensitivity.parameter}）還沒有設定：全球庫存每多累積 1 百萬桶，${esc(a.name_zh)} 下跌多少 ${esc(a.unit)}。這是推演的核心假設，請到${adminLink("params", "參數")}給出（可以採用下面的歷史估計）；在那之前，帶供需調整的分支算不出價格。</div>` : ""}
+    ${estimatePanel(est, a)}
+    <div class="scroll"><table><tr><th>分支</th><th class="n">機率</th><th class="n">直接價格調整</th><th class="n" title="期限內平衡的平均變化 / 累積的庫存變化（過剩 × 天數）">平衡變化 / 累庫（1 個月）</th>
       ${p.horizons.map((h) => `<th class="n">${esc(h.name_zh)}</th>`).join("")}<th></th></tr>
       ${p.cases.map((c) => `<tr><td style="min-width:220px"><b>${esc(c.label)}</b>${c.event_id ? ' <span class="tag" title="機率和溢價跟著事件走：在「地緣事件」頁改，再回來同步">事件同步</span>' : ""}<div class="muted">${c.scenario_code ? "情境 " + c.scenario_code : c.event_id ? "只有風險溢價" : "基準（不加調整）"}</div>${c.note ? `<div class="ink2">${esc(c.note)}</div>` : ""}</td>
         <td class="n"><input class="num" style="width:64px" data-prob="${c.id}" value="${num(c.probability * 100, 0)}" inputmode="decimal" aria-label="機率"> %</td>
         <td class="n"><input class="num" style="width:70px" data-adj="${c.id}" value="${c.price_adjustment}" inputmode="decimal" aria-label="直接價格調整"></td>
-        <td class="n">${c.horizons.M1?.balance_change == null ? "—" : signed(c.horizons.M1.balance_change)}</td>
+        <td class="n nw">${c.horizons.M1?.balance_change == null ? "—" : `${signed(c.horizons.M1.balance_change)}<div class="muted">累庫 ${signed(c.horizons.M1.stock_change, 0)}</div>`}</td>
         ${p.horizons.map((h) => `<td class="n">${cell(c.horizons[h.code])}</td>`).join("")}
         <td class="nw"><button class="btn" data-save="${c.id}">保存</button> <button class="btn" data-remove="${c.id}">刪除</button></td></tr>`).join("")}
       <tr class="total"><td>機率加權</td><td></td><td></td><td></td>${p.horizons.map((h) => `<td class="n">${num(p.expected[h.code])}</td>`).join("")}<td></td></tr></table></div>
-    <p class="muted" style="margin:8px 0">每格上面是中樞，下面是一倍標準差區間（${esc(a.unit)}）。中樞 = 當前價格 + 基本面回歸 − 敏感度 × 平衡變化 + 直接價格調整；區間 = ± 當前價格 × 日波動率 × √交易日數。不加基本面回歸時，基準分支的中樞就是當前價格。區間只反映歷史波動的大小，不是保證。</p>
+    <p class="muted" style="margin:8px 0">每格上面是中樞，下面是一倍標準差區間（${esc(a.unit)}）。中樞 = 當前價格 + 基本面回歸 − 敏感度 × 累庫 + 直接價格調整（累庫 = 平衡變化 × 期限內的天數，所以同樣的過剩，期限越長影響越大）；區間 = ± 當前價格 × 日波動率 × √交易日數。不加基本面回歸時，基準分支的中樞就是當前價格。區間只反映歷史波動的大小，不是保證。</p>
     <h3>從地緣事件同步</h3>
     <div class="row"><button class="btn" id="sync-events">同步地緣事件</button>
       <span class="muted">把「地緣事件」頁裡填了機率、且量化過（套用了預案或填了風險溢價）的事件，各變成一個分支；剩下的機率歸基準。可以反覆同步。</span></div>

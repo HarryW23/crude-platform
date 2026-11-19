@@ -347,11 +347,19 @@ class HorizonDef(Strict):
     trading_days: int = Field(ge=1)
 
 
+class SensitivityEstimate(Strict):
+    """從歷史估計「庫存變化 → 價格變化」的設定。"""
+    stocks: str                                   # 庫存序列（月度，例如 OECD 商業庫存），單位要和 平衡 × 天 一致
+    lookback_days: int = Field(default=3650, ge=365)
+    min_points: int = Field(default=36, ge=12)
+
+
 class ProjectionSettings(Strict):
     """價格推演的全局設定。算法見 projection.py。"""
     anchor: str                    # 推演的價格：序列代碼
     balance_indicator: str         # 用哪個平衡指標衡量情境對供需的影響
-    sensitivity_parameter: str     # 參數 key：平衡每變化一個單位，價格反向變化多少
+    sensitivity_parameter: str     # 參數 key：累積庫存每變化一個單位，價格反向變化多少
+    sensitivity_estimate: SensitivityEstimate | None = None    # 從歷史估計敏感度的設定（見 sensitivity.py）
     volatility_lookback: int = Field(default=250, ge=20)
     volatility_min_points: int = Field(default=60, ge=20)
     horizons: list[HorizonDef] = Field(min_length=1)
