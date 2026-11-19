@@ -1,6 +1,7 @@
 """金十數據：MCP 客戶端（握手、會話、SSE、錯誤）、額度控制、財經日曆的同步與超預期。用模擬的 MCP 服務器測試。"""
+import hashlib
 import json
-from datetime import date
+from datetime import date, datetime
 
 import httpx
 import pytest
@@ -299,6 +300,8 @@ def test_times_dates_and_flash_ids():
     assert jin10.parse_time(1795058460000) == datetime(2026, 11, 19, 3, 21)                  # 毫秒
     assert jin10.parse_time("1795058460") == datetime(2026, 11, 19, 3, 21)
     assert jin10.parse_time(True) is None and jin10.parse_time("昨天") is None
+    assert jin10.parse_time("20261119") == datetime(2026, 11, 18, 16, 0)                    # 8 位 = 日期，不是時間戳
+    assert jin10.parse_time(0) is None and jin10.parse_time("12345") is None                # 太小：不當時間戳
     assert jin10.trade_date(datetime(2026, 11, 19, 3, 21)) == date(2026, 11, 18)            # 紐約週三晚上
     assert jin10.trade_date(datetime(2026, 11, 21, 18, 0)) is None                           # 紐約週六
     when = datetime(2026, 11, 19, 3, 0)
@@ -317,7 +320,7 @@ def test_backfill_closes_checks_budget_first(session, cfg):
     rows = {r["series"]: r for r in result["rows"]}
     assert result["calls"] == 60 == len(calls) and result["last"] == date(2026, 11, 27)
     assert rows["MACRO_XAUUSD"]["closes"] == 9 and rows["MACRO_XAUUSD"]["no_trading"] == 1
-    assert rows["MACRO_XAUUSD"]["written"] == 9
+    assert rows["MACRO_XAUUSD"]["written"] == 9 and rows["MACRO_XAUUSD"]["earliest"] == date(2026, 11, 16)
     session.commit()
     again = jin10.backfill_closes(session, cfg, jin, days=10, now=now)    # 再跑一次：不重複寫
     assert all(r["written"] == 0 for r in again["rows"])
@@ -388,3 +391,38 @@ def test_probe_reports_keyword_hits_and_script_search(session, cfg, monkeypatch,
     assert "2 條裡命中 1 條" in out and "沙特" in out and "火山引擎" not in out.split("命中 1 條")[1]
     assert searched == ["欧佩克", "歐佩克"]
     assert "search_flash（簡體：欧佩克）\n  1 條" in out and "search_flash（繁體：歐佩克）\n  0 條" in out
+
+
+def test_migration_rekeys_flashes_by_url_and_merges_duplicates(tmp_path):
+    """0.29.0 用時間 + 內容雜湊當快訊編號，之後改用網址：升級時要換編號、合併已經重複的，下次同步不會再重複收錄。"""
+    import sqlalchemy as sa
+    from alembic import command
+
+    from crudelab import db
+    engine = sa.create_engine(f"sqlite:///{tmp_path / 'old.db'}")
+    alembic = db.alembic_config()
+    with engine.begin() as conn:
+        alembic.attributes["connection"] = conn
+        command.upgrade(alembic, "0014")
+    rows = [  # (ext_id, url, first_seen_at, extracted_at, drafts)
+        ("oldhash1", "https://flash.jin10.com/detail/1", "2026-11-19 01:00:00", "2026-11-19 02:00:00", 2),
+        ("u:" + hashlib.sha256(b"https://flash.jin10.com/detail/1").hexdigest()[:40],
+         "https://flash.jin10.com/detail/1", "2026-11-19 03:00:00", None, 0),      # 新版又收錄了一次：重複
+        ("oldhash2", "https://flash.jin10.com/detail/2", "2026-11-19 01:00:00", None, 0),
+        ("oldhash3", None, "2026-11-19 01:00:00", None, 0),                       # 沒有網址：不動
+    ]
+    with engine.begin() as conn:
+        for ext, url, seen, extracted, drafts in rows:
+            conn.execute(sa.text(
+                "INSERT INTO news_flash (source, ext_id, time, content, url, keywords, important, first_seen_at, "
+                "extracted_at, drafts) VALUES ('jin10', :e, '2026-11-19 00:00:00', '原油', :u, '[]', 0, :s, :x, :d)"),
+                {"e": ext, "u": url, "s": seen, "x": extracted, "d": drafts})
+    db.migrate(engine)
+    with engine.connect() as conn:
+        got = conn.execute(sa.text("SELECT ext_id, url, extracted_at, drafts FROM news_flash ORDER BY id")).all()
+    when = datetime(2026, 11, 19)
+    assert len(got) == 3
+    assert got[0][0] == jin10.flash_id({"url": "https://flash.jin10.com/detail/1"}, when, "")
+    assert got[0][2] is not None and got[0][3] == 2                               # 留下抽取過草稿的那條
+    assert got[1][0] == jin10.flash_id({"url": "https://flash.jin10.com/detail/2"}, when, "")
+    assert got[2][0] == "oldhash3"

@@ -333,6 +333,9 @@ def cmd_jin10(args) -> int:
     db.init_engine(settings)
     cfg = load_config(settings.config_dir)
     if args.action == "backfill":
+        if not 1 <= args.days <= 2000:
+            print("--days 要在 1 到 2000 之間", file=sys.stderr)
+            return 1
         try:
             client = jin10.Jin10(cfg)
         except jin10.Jin10NotReady as exc:
@@ -348,8 +351,10 @@ def cmd_jin10(args) -> int:
             client.close()
         print(f"紐約交易日 {result['first']} → {result['last']}，調用 get_kline {result['calls']} 次（口徑：紐約 16:59 的收盤價）")
         for r in result["rows"]:
-            print(f"  {r['series']:<16} {r['code']:<8} 取到 {r['closes']}/{r['days']} 天，休市 {r['no_trading']} 天，"
-                  f"新增 {r['written']}")
+            print(f"  {r['series']:<16} {r['code']:<8} 取到 {r['closes']}/{r['days']} 天"
+                  f"（最早 {r['earliest'] or '—'}），沒取到 {r['no_trading']} 天，"
+                  f"新增 {r['written']}，更正 {r['corrected']}")
+        print("沒取到 = 那天休市，或者早於金十保存的分鐘數據。連續一大段沒取到，通常是後者：更早的歷史從金十補不了。")
         return 0
     if args.action == "usage":
         tools = ("list_calendar", "list_flash", "search_flash", "get_quote", "get_kline", "quote://codes")

@@ -119,15 +119,21 @@ def parse_time(text) -> datetime | None:
     """金十的時間 → 不帶時區的 UTC。三種寫法：
       - 不帶時區的文本（例如 2026-11-19 23:30:00）：按北京時間
       - 帶時區的 ISO 文本（例如 2026-11-19T11:21:25+08:00）：按它寫的時區
-      - 數字（K 線的 time）：Unix 時間戳，秒；大於 1e11 的按毫秒
+      - 數字（K 線的 time）：Unix 時間戳，秒；大於 1e11 的按毫秒；早於 2001 年的不當時間戳
+      - 8 位數字（20261119）：日期，按北京時間 0 點
     """
     if text is None or text == "" or isinstance(text, bool):
         return None
     utc = ZoneInfo("UTC")
-    if isinstance(text, (int, float)) or (isinstance(text, str) and text.strip().isdigit()):
+    digits = isinstance(text, str) and text.strip().isdigit()
+    if digits and len(text.strip()) == 8:                              # 20261119：緊湊寫法的日期
+        text = f"{text.strip()[:4]}-{text.strip()[4:6]}-{text.strip()[6:]}"
+    elif isinstance(text, (int, float)) or digits:
         stamp = float(text)
         if stamp > 1e11:
             stamp /= 1000
+        if stamp < 1e9:                                                # 2001 年以前：不是時間戳，不猜
+            return None
         try:
             return datetime.fromtimestamp(stamp, utc).replace(tzinfo=None)
         except (OverflowError, OSError, ValueError):
@@ -411,9 +417,11 @@ def backfill_closes(session: Session, cfg: Config, jin: Jin10, days: int, now: d
             obs.append(Obs(s.code, day, got[0], f"jin10:close:{code}"))
         collected.append(obs)
         rows.append({"series": s.code, "code": code, "days": len(trade_days), "closes": len(obs),
-                     "no_trading": holidays, "written": 0})
+                     "no_trading": holidays, "earliest": obs[0].obs_date if obs else None,
+                     "written": 0, "corrected": 0})
     for row, obs in zip(rows, collected, strict=True):
         if obs:
-            row["written"] = write_observations(session, obs, SOURCE, actor="jin10")["inserted"]
+            stats = write_observations(session, obs, SOURCE, actor="jin10")
+            row["written"], row["corrected"] = stats["inserted"], stats["updated"]   # 更正 = 舊版本寫過不同的值
     return {"calls": need, "first": trade_days[0] if trade_days else None,
             "last": trade_days[-1] if trade_days else None, "rows": rows}
