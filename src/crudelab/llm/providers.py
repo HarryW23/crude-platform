@@ -2,12 +2,21 @@
 
 DeepSeek 和 OpenAI 用的是同一種接口格式（chat completions），所以共用一個類；
 Claude 的接口不同，用 Anthropic 官方 SDK。
+
+原生工具調用（#42，問答用）：
+  chat completions  tools=[{type: function, function: {name, description, parameters}}]，回覆的 message.tool_calls
+                    裡 arguments 是 JSON 字串；結果用 {role: tool, tool_call_id, content} 交回。
+                    思考模式下 DeepSeek 的 reasoning_content 要在同一題的後續請求裡原樣帶回。
+  Claude            tools=[{name, description, input_schema}]，回覆裡的 tool_use 塊；結果用 user 消息裡的
+                    tool_result 塊交回（同一輪的全部結果放在一條消息裡）。助手這一輪的 content 原樣帶回（含思考塊）。
 """
 from __future__ import annotations
 
+import json as jsonlib
+
 import httpx
 
-from .base import LLMError, LLMProvider
+from .base import LLMError, LLMProvider, ToolCall, ToolSpec, ToolTurn
 
 # 這些 Claude 模型可能因安全策略拒絕請求；按官方建議開啟服務端後備，讓請求自動改由後備模型完成
 _CLAUDE_WITH_FALLBACK = ("claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5", "claude-fable-5-1",
@@ -79,6 +88,75 @@ class OpenAICompatibleProvider(LLMProvider):
             raise LLMError(f"{self.name} 的回覆因長度上限被截斷，結果不完整")
         return text
 
+    supports_tools = True
+
+    def _messages(self, system: str, messages: list[dict]) -> list[dict]:
+        out: list[dict] = [{"role": "system", "content": system}]
+        for m in messages:
+            if m["role"] == "user":
+                out.append({"role": "user", "content": m["text"]})
+            elif m["role"] == "assistant" and "raw" in m:
+                out.append(m["raw"])
+            elif m["role"] == "assistant":
+                out.append({"role": "assistant", "content": m["text"]})
+            else:
+                out += [{"role": "tool", "tool_call_id": cid, "content": text} for cid, text, _ in m["results"]]
+        return out
+
+    def chat_tools(self, system: str, messages: list[dict], tools: list[ToolSpec], *,
+                   max_tokens: int = 4000) -> ToolTurn:
+        if self.thinking:
+            max_tokens += self.THINKING_BUDGET
+        body: dict = {"model": self.model, "max_tokens": max_tokens, "messages": self._messages(system, messages),
+                      "tools": [{"type": "function", "function": {"name": t.name, "description": t.description,
+                                                                  "parameters": t.parameters}} for t in tools],
+                      "tool_choice": "auto"}
+        if self.thinking is not None:
+            body["thinking"] = {"type": "enabled" if self.thinking else "disabled"}
+        try:
+            response = httpx.post(self._url, json=body, timeout=self._timeout,
+                                  headers={"Authorization": f"Bearer {self._key}"})
+            response.raise_for_status()
+            payload = response.json()
+            choice = payload["choices"][0]
+            message = choice["message"]
+            usage = payload.get("usage") or {}
+            self.last_usage = (usage.get("prompt_tokens"), usage.get("completion_tokens"))
+        except httpx.HTTPStatusError as exc:
+            error = self._fail(exc)
+            if exc.response.status_code in (400, 422):
+                error = LLMError(f"{error}。如果是這個模型或接口不支持原生工具調用，在 config/llm.yaml "
+                                 "設 chat_protocol: json 改用通用協議", status=error.status)
+            raise error from None
+        except httpx.HTTPError as exc:
+            raise LLMError(f"連不上 {self.name}（{type(exc).__name__}）") from None
+        except (KeyError, IndexError, TypeError, ValueError):
+            raise LLMError(f"{self.name} 的回覆格式不符合預期") from None
+        if choice.get("finish_reason") == "length":
+            raise LLMError(f"{self.name} 的回覆因長度上限被截斷，結果不完整")
+        calls = []
+        for item in message.get("tool_calls") or []:
+            function = item.get("function") or {}
+            args, error = _parse_args(function.get("arguments"))
+            calls.append(ToolCall(id=str(item.get("id")), name=str(function.get("name")), args=args, error=error))
+        text = message.get("content") or ""
+        if not calls and not text.strip():
+            raise LLMError(f"{self.name} 沒有回覆內容（結束原因：{choice.get('finish_reason')}）")
+        raw = {"role": "assistant", "content": message.get("content"), "tool_calls": message.get("tool_calls")}
+        if message.get("reasoning_content") is not None:          # DeepSeek 思考模式：同一題內要原樣帶回
+            raw["reasoning_content"] = message["reasoning_content"]
+        return ToolTurn(text=text, calls=calls, raw={k: v for k, v in raw.items() if v is not None})
+
+
+def _parse_args(raw) -> tuple[dict | None, str | None]:
+    if isinstance(raw, dict):
+        return raw, None
+    try:
+        value = jsonlib.loads(raw or "{}")
+    except (TypeError, ValueError):
+        return None, "參數不是合法的 JSON"
+    return (value, None) if isinstance(value, dict) else (None, "參數必須是一個 JSON 對象")
+
 
 class AnthropicProvider(LLMProvider):
     """Claude。需要另外安裝：pip install -e ".[anthropic]"。"""
@@ -106,12 +184,9 @@ class AnthropicProvider(LLMProvider):
         except sdk.APIConnectionError:
             raise LLMError("連不上 Claude") from None
 
-    def complete(self, system: str, user: str, *, json: bool = False, max_tokens: int = 4000) -> str:
+    def _create(self, request: dict):
+        """發一次請求並檢查結束原因。有服務端後備的型號走 beta 接口（被安全策略拒絕時自動改由後備模型完成）。"""
         sdk = self._sdk
-        if json:
-            system += "\n\n只輸出一個 JSON 對象，不要加任何說明文字或代碼塊標記。"
-        request = dict(model=self.model, max_tokens=max(max_tokens, 16000), system=system,
-                       messages=[{"role": "user", "content": user}])
         try:
             if self.model in _CLAUDE_WITH_FALLBACK:
                 response = self._client.beta.messages.create(
@@ -132,7 +207,51 @@ class AnthropicProvider(LLMProvider):
             raise LLMError("Claude 拒絕了這個請求")
         if response.stop_reason == "max_tokens":
             raise LLMError("Claude 的回覆因長度上限被截斷，結果不完整")
+        return response
+
+    def complete(self, system: str, user: str, *, json: bool = False, max_tokens: int = 4000) -> str:
+        if json:
+            system += "\n\n只輸出一個 JSON 對象，不要加任何說明文字或代碼塊標記。"
+        response = self._create(dict(model=self.model, max_tokens=max(max_tokens, 16000), system=system,
+                                     messages=[{"role": "user", "content": user}]))
         text = "".join(block.text for block in response.content if block.type == "text")
         if not text:
             raise LLMError("Claude 沒有回覆內容")
         return text
+
+    supports_tools = True
+
+    @staticmethod
+    def _messages(messages: list[dict]) -> list[dict]:
+        out: list[dict] = []
+        for m in messages:
+            if m["role"] == "user":
+                out.append({"role": "user", "content": m["text"]})
+            elif m["role"] == "assistant" and "raw" in m:
+                out.append({"role": "assistant", "content": m["raw"]})          # 原樣帶回，含思考塊
+            elif m["role"] == "assistant":
+                out.append({"role": "assistant", "content": m["text"]})
+            else:                                       # 同一輪的全部結果放在一條消息裡
+                out.append({"role": "user", "content": [
+                    {"type": "tool_result", "tool_use_id": cid, "content": text, "is_error": bad}
+                    for cid, text, bad in m["results"]]})
+        return out
+
+    def chat_tools(self, system: str, messages: list[dict], tools: list[ToolSpec], *,
+                   max_tokens: int = 4000) -> ToolTurn:
+        # tool_choice 用預設的 auto：新型號不接受強制調用（any / tool 會 400），由系統提示引導
+        response = self._create(dict(model=self.model, max_tokens=max(max_tokens, 16000), system=system,
+                                     messages=self._messages(messages),
+                                     tools=[{"name": t.name, "description": t.description,
+                                             "input_schema": t.parameters} for t in tools]))
+        if response.stop_reason == "pause_turn":
+            raise LLMError("Claude 暫停了這一輪（沒有用到服務端工具，不應出現），請重試")
+        calls = []
+        for block in response.content:
+            if block.type == "tool_use":
+                args, error = _parse_args(block.input)
+                calls.append(ToolCall(id=block.id, name=block.name, args=args, error=error))
+        text = "".join(block.text for block in response.content if block.type == "text")
+        if not calls and not text.strip():
+            raise LLMError("Claude 沒有回覆內容")
+        return ToolTurn(text=text, calls=calls, raw=response.content)

@@ -6,8 +6,13 @@
   - 回答裡的每個數字都要能在工具返回的結果（或使用者的問題）裡找到，對不上的會被列出來。
   - 每一步調了什麼工具、拿到什麼結果，都原樣返回給頁面，使用者可以展開核對。
 
-為了不綁定某一家的「工具調用」專有格式，這裡用最樸素的做法：每一步讓模型輸出一個 JSON，
-要麼是 {"tool": 名字, "args": {...}}，要麼是 {"answer": 文字}。DeepSeek、GPT、Claude 都能用同一套。
+兩種協議（#42，config/llm.yaml 的 chat_protocol）：
+  native  用各家原生的工具調用（Claude 的 tool_use、chat completions 的 tool_calls）。參數按 JSON Schema 給，
+          模型不用自己拼 JSON，弱一些的模型也穩。一輪可以同時調幾個工具。
+  json    通用協議：每一步讓模型輸出一個 JSON，要麼是 {"tool": 名字, "args": {...}}，要麼是 {"answer": 文字}。
+          任何能輸出文字的模型都能用；給不支持原生工具調用的兼容接口用。
+  auto    （預設）DeepSeek、OpenAI、Claude 用 native，其他兼容接口用 json。
+兩種協議用同一套工具、同一個步數上限，結果一樣過數字核對，每一步都原樣返回給頁面。
 """
 from __future__ import annotations
 
@@ -30,7 +35,7 @@ from ..indicators import IndicatorEngine, RangedShift, Scenario
 from ..models import Projection, ScenarioRow
 from ..parameters import effective_versions
 from ..refinery import breakdown
-from .base import LLMError, LLMProvider
+from .base import LLMError, LLMProvider, ToolSpec
 from .guard import unknown_numbers
 
 MAX_STEPS = 8                 # 一個問題最多調幾次工具
@@ -264,18 +269,65 @@ TOOLS: dict[str, tuple[Callable, str]] = {
 }
 
 
+# 原生工具調用用的參數說明（JSON Schema）。和上面函數的參數一一對應；tests/test_chat_native.py 會核對。
+_S, _I = {"type": "string"}, {"type": "integer"}
+_SCENARIO = {"type": ["string", "null"], "description": "已保存的情境代碼；不給就是基準"}
+
+
+def _obj(properties: dict | None = None, required: tuple = ()) -> dict:
+    return {"type": "object", "properties": properties or {}, "required": list(required),
+            "additionalProperties": False}
+
+
+SCHEMAS: dict[str, dict] = {
+    "search": _obj({"query": {**_S, "description": "中文名或代碼的片段"}}, ("query",)),
+    "get_values": _obj({"code": {**_S, "description": "序列或指標代碼"},
+                        "last": {**_I, "minimum": 1, "maximum": 60, "description": "最近幾個值，預設 10"},
+                        "scenario": _SCENARIO}, ("code",)),
+    "list_indicators": _obj({"module": {"type": "string", "enum": ["spread", "balance", "refinery", "positioning"]}},
+                            ("module",)),
+    "get_balance": _obj({"code": {**_S, "description": "平衡表代碼"}, "scenario": _SCENARIO}, ("code",)),
+    "get_refinery": _obj({"code": {**_S, "description": "煉廠模型代碼"}}, ("code",)),
+    "get_signals": _obj(),
+    "list_events": _obj(),
+    "list_scenarios": _obj(),
+    "get_projection": _obj(),
+    "get_fair_value": _obj(),
+    "get_parameter": _obj({"key": {**_S, "description": "參數的 key"}}, ("key",)),
+    "what_if": _obj({
+        "adjustments": {"type": "array", "items": {
+            "type": "object", "additionalProperties": False, "required": ["target", "delta"],
+            "properties": {"target": {**_S, "description": "序列或指標代碼，例如 BAL_GLOBAL_S_OPEC"},
+                           "delta": {"type": "number", "description": "加上的量，單位同 target"},
+                           "date_from": {**_S, "description": "YYYY-MM-DD，預設今天"},
+                           "date_to": {**_S, "description": "YYYY-MM-DD，不給就一直持續"}}}},
+        "parameters": {"type": "object", "additionalProperties": {"type": "number"},
+                       "description": "臨時改的參數 {key: 數值}"},
+        "watch": {"type": "array", "items": _S, "description": "要對比的指標代碼"},
+        "price_adjustment": {"type": "number", "description": "直接加在價格上的調整（美元/桶），預設 0"}}),
+}
+
+
+def tool_specs() -> list[ToolSpec]:
+    return [ToolSpec(name, doc.split(" — ", 1)[-1], SCHEMAS[name]) for name, (_, doc) in TOOLS.items()]
+
+
 # ------------------------------ 對話循環 ------------------------------
 
-def _system_prompt() -> str:
-    return f"""你是一個原油研究平台的查詢助手。使用者用自然語言提問，你通過調用工具取得數據，然後回答。今天是 {date.today()}。
-
-規則：
+_RULES = """規則：
 - 你不知道任何行情或數據，一切數字都必須來自工具的返回結果。不要用你自己記得的價格、庫存、產量。
 - 不要自己做算術。需要「如果…會怎樣」時調用 what_if，讓系統去算；需要差值、變化時用工具結果裡已有的字段。
 - 工具結果裡標明缺數據、缺參數、樣本不足、待核對的地方，要如實告訴使用者，不要繞過或猜測。
 - 你只能查詢和試算，不能修改任何數據、參數、情境或事件。使用者要求修改時，告訴他去哪個頁面操作。
 - 使用者的假設裡沒有給數量時（例如只說「霍爾木茲中斷」而沒說影響多少），不要自己編一個數量：請他給出，或說明你用的是他在問題裡給的數字。
-- 回答用繁體中文，簡潔，先給結論再給依據。提到的每個數字都要說明是哪個指標、哪一天。
+- 回答用繁體中文，簡潔，先給結論再給依據。提到的每個數字都要說明是哪個指標、哪一天。"""
+
+
+def _system_prompt() -> str:
+    """通用協議（json）的系統提示：工具清單和輸出格式都寫在這裡。"""
+    return f"""你是一個原油研究平台的查詢助手。使用者用自然語言提問，你通過調用工具取得數據，然後回答。今天是 {date.today()}。
+
+{_RULES}
 
 每一步只輸出一個 JSON 對象，不要輸出別的文字：
 - 需要數據時：{{"tool": "工具名", "args": {{...}}}}
@@ -283,6 +335,15 @@ def _system_prompt() -> str:
 
 可用的工具：
 {chr(10).join("- " + doc for _, doc in TOOLS.values())}"""
+
+
+def _native_system_prompt() -> str:
+    """原生工具調用的系統提示：工具和參數由接口另外傳，這裡只寫規則。"""
+    return f"""你是一個原油研究平台的查詢助手。使用者用自然語言提問，你通過調用提供的工具取得數據，然後回答。今天是 {date.today()}。
+
+{_RULES}
+
+需要數據就調用工具（可以一次調幾個）；數據夠了就直接用文字回答，不要再調工具。"""
 
 
 def _parse(raw: str) -> dict | None:
@@ -293,46 +354,97 @@ def _parse(raw: str) -> dict | None:
     return value if isinstance(value, dict) else None
 
 
-def answer(provider: LLMProvider, session: Session, cfg: Config, question: str,
-           history: list[dict] | None = None) -> dict:
-    """回答一個問題。回傳 {answer, steps, unknown_numbers, guard_passed, provider, model}。
+def _run_tool(ctx: _Ctx, name, args) -> dict:
+    """執行一個工具。用法不對時回 {"error": …}，交還給模型讓它改正；不拋給調用方。"""
+    if name not in TOOLS or not isinstance(args, dict):
+        return {"error": f"沒有名為 {name} 的工具，或 args 不是對象。可用的工具：{'、'.join(TOOLS)}"}
+    try:
+        return _r(TOOLS[name][0](ctx, **args))
+    except ToolError as exc:
+        return {"error": str(exc)}
+    except TypeError as exc:                    # 參數名不對或缺參數
+        return {"error": f"參數不對：{exc}"}
 
-    steps 是完整的取數過程：每一步調了什麼工具、參數是什麼、結果是什麼。
+
+def _shown(result: dict) -> str:
+    text = json.dumps(result, ensure_ascii=False, default=str)
+    if len(text) > MAX_RESULT_CHARS:
+        text = text[:MAX_RESULT_CHARS] + "…（結果過長，已截斷；請用更具體的查詢）"
+    return text
+
+
+def protocol_for(provider: LLMProvider, setting: str = "auto") -> str:
+    if setting == "json" or not provider.supports_tools:
+        return "json"
+    if setting == "native" or provider.name in NATIVE_BY_DEFAULT:
+        return "native"
+    return "json"
+
+
+NATIVE_BY_DEFAULT = {"deepseek", "openai", "anthropic"}     # 其他兼容接口未必支持，auto 時用通用協議
+
+
+def _finish(provider: LLMProvider, protocol: str, question: str, history_text: str, text: str,
+            steps: list[dict]) -> dict:
+    reference = question + history_text + json.dumps([s["result"] for s in steps], ensure_ascii=False, default=str)
+    unknown = unknown_numbers(text, reference)
+    return {"answer": text, "steps": steps, "unknown_numbers": unknown, "guard_passed": not unknown,
+            "provider": provider.name, "model": provider.model, "protocol": protocol}
+
+
+def answer(provider: LLMProvider, session: Session, cfg: Config, question: str,
+           history: list[dict] | None = None, protocol: str = "auto") -> dict:
+    """回答一個問題。回傳 {answer, steps, unknown_numbers, guard_passed, provider, model, protocol}。
+
+    steps 是完整的取數過程：每一步調了什麼工具、參數是什麼、結果是什麼。protocol 見文件開頭。
     """
     ctx = _Ctx(session, cfg, IndicatorEngine(session, cfg))
     turns = [t for t in (history or []) if t.get("role") in ("user", "assistant") and t.get("content")]
-    transcript = "".join(f"{'使用者' if t['role'] == 'user' else '助手'}：{t['content']}\n"
-                         for t in turns[-2 * MAX_HISTORY_TURNS:])
-    transcript += f"使用者：{question}\n"
+    turns = turns[-2 * MAX_HISTORY_TURNS:]
+    history_text = "".join(f"{'使用者' if t['role'] == 'user' else '助手'}：{t['content']}\n" for t in turns)
+    if protocol_for(provider, protocol) == "native":
+        return _answer_native(provider, ctx, question, turns, history_text)
+    return _answer_json(provider, ctx, question, history_text)
+
+
+def _answer_native(provider: LLMProvider, ctx: _Ctx, question: str, turns: list[dict], history_text: str) -> dict:
+    messages = [{"role": t["role"], "text": str(t["content"])} for t in turns] + [{"role": "user", "text": question}]
+    specs, system, steps = tool_specs(), _native_system_prompt(), []
+    while True:
+        turn = provider.chat_tools(system, messages, specs, max_tokens=2000)
+        if not turn.calls:
+            return _finish(provider, "native", question, history_text, turn.text.strip(), steps)
+        if len(steps) >= MAX_STEPS:
+            break
+        results = []
+        for call in turn.calls:
+            if len(steps) >= MAX_STEPS:             # 這一輪調得太多：多出的不執行，告訴模型
+                result = {"error": f"已達到 {MAX_STEPS} 次查詢的上限，這次沒有執行。請用已有的數據回答"}
+            elif call.args is None:
+                result = {"error": f"{call.error}，請重新調用"}
+            else:
+                result = _run_tool(ctx, call.name, call.args)
+                steps.append({"tool": call.name, "args": call.args, "result": result})
+            results.append((call.id, _shown(result), "error" in result))
+        messages += [{"role": "assistant", "raw": turn.raw}, {"role": "tool_results", "results": results}]
+    raise LLMError(f"查了 {MAX_STEPS} 步仍沒有得出回答，已停止。請把問題問得更具體一些")
+
+
+def _answer_json(provider: LLMProvider, ctx: _Ctx, question: str, history_text: str) -> dict:
+    transcript = history_text + f"使用者：{question}\n"
     steps: list[dict] = []
     system = _system_prompt()
-
     for _ in range(MAX_STEPS + 1):
         raw = provider.complete(system, transcript + "\n請輸出下一步的 JSON。", json=True, max_tokens=2000)
         reply = _parse(raw)
         if reply is None:                       # 不是 JSON：當作直接回答（照樣要過數字核對）
             reply = {"answer": raw.strip()}
         if "answer" in reply:
-            text = str(reply["answer"]).strip()
-            reference = question + transcript + json.dumps([s["result"] for s in steps], ensure_ascii=False, default=str)
-            unknown = unknown_numbers(text, reference)
-            return {"answer": text, "steps": steps, "unknown_numbers": unknown, "guard_passed": not unknown,
-                    "provider": provider.name, "model": provider.model}
+            return _finish(provider, "json", question, transcript, str(reply["answer"]).strip(), steps)
         name, args = reply.get("tool"), reply.get("args") or {}
         if len(steps) >= MAX_STEPS:
             break
-        if name not in TOOLS or not isinstance(args, dict):
-            result = {"error": f"沒有名為 {name} 的工具，或 args 不是對象。可用的工具：{'、'.join(TOOLS)}"}
-        else:
-            try:
-                result = _r(TOOLS[name][0](ctx, **args))
-            except ToolError as exc:
-                result = {"error": str(exc)}
-            except TypeError as exc:            # 參數名不對或缺參數
-                result = {"error": f"參數不對：{exc}"}
+        result = _run_tool(ctx, name, args)
         steps.append({"tool": name, "args": args, "result": result})
-        shown = json.dumps(result, ensure_ascii=False, default=str)
-        if len(shown) > MAX_RESULT_CHARS:
-            shown = shown[:MAX_RESULT_CHARS] + "…（結果過長，已截斷；請用更具體的查詢）"
-        transcript += f"你調用了 {name}({json.dumps(args, ensure_ascii=False, default=str)})，結果：{shown}\n"
+        transcript += f"你調用了 {name}({json.dumps(args, ensure_ascii=False, default=str)})，結果：{_shown(result)}\n"
     raise LLMError(f"查了 {MAX_STEPS} 步仍沒有得出回答，已停止。請把問題問得更具體一些")

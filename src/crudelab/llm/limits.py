@@ -130,6 +130,13 @@ class LimitedProvider(LLMProvider):
         return self._run(self.inner.list_models)
 
     @property
+    def supports_tools(self) -> bool:
+        return self.inner.supports_tools
+
+    def chat_tools(self, system, messages, tools, *, max_tokens: int = 4000):
+        return self._run(lambda: self.inner.chat_tools(system, messages, tools, max_tokens=max_tokens))
+
+    @property
     def thinking(self) -> bool:
         return bool(getattr(self.inner, "thinking", False))
 

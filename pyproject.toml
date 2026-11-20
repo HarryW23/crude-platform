@@ -1,6 +1,6 @@
 [project]
 name = "crudelab"
-version = "0.46.1"
+version = "0.47.0"
 description = "原油研究平台：數據 → 指標 → 模型 → 推演 → 報告"
 requires-python = ">=3.11"
 dependencies = [
@@ -21,7 +21,7 @@ dependencies = [
 [project.optional-dependencies]
 postgres = ["psycopg[binary]>=3.1"]
 anthropic = ["anthropic>=1.0"]
-dev = ["pytest>=8.0", "ruff>=0.6", "xlwt>=1.3.0", "httpx2>=2.16"]   # xlwt 在測試裡造 .xls；httpx2 給測試客戶端
+dev = ["pytest>=8.0", "ruff>=0.6", "xlwt>=1.3.0", "httpx2>=2.16", "anthropic>=1.0"]   # xlwt 造 .xls；httpx2 給測試客戶端；anthropic 測 Claude 的請求格式
 e2e = ["playwright>=1.45"]           # 瀏覽器巡檢（tests/e2e），CI 單獨一步運行
 
 [project.scripts]

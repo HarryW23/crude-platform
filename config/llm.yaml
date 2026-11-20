@@ -26,3 +26,9 @@ max_tokens_per_day: 1500000     # 輸入 + 輸出。按官網的每百萬 token 
 max_concurrent: 2
 min_interval_seconds: 1
 timeout_seconds: 120
+
+# 問答怎麼調用工具：
+#   auto    （預設）DeepSeek、OpenAI、Claude 用各家原生的工具調用；「其他兼容接口」用通用協議
+#   native  一律用原生工具調用（兼容接口確認支持 tools 參數時可以設）
+#   json    一律用通用協議：讓模型輸出 JSON 表示要調哪個工具。原生調用被拒絕（400）時改成這個
+chat_protocol: auto

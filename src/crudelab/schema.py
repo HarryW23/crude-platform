@@ -719,6 +719,8 @@ class LLMSettings(Strict):
     max_concurrent: int = Field(default=2, ge=1, le=20)
     min_interval_seconds: float = Field(default=1.0, ge=0, le=60)
     timeout_seconds: float = Field(default=120, ge=10, le=600)
+    # 問答怎麼調用工具（#42，見 llm/chat.py 開頭）：auto / native（各家原生工具調用）/ json（通用協議）
+    chat_protocol: Literal["auto", "native", "json"] = "auto"
 
 
 # ------------------------------ 金十數據 ------------------------------

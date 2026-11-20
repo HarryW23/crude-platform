@@ -16,7 +16,7 @@ function turnHtml(t) {
   return `<div class="bubble">${t.guard_passed === false
       ? `<div class="msg bad" style="white-space:normal">數字核對未通過：回答裡的這些數字在查到的數據中找不到，請勿採信：${t.unknown_numbers.map(esc).join("、")}</div>` : ""}${esc(t.content)}
     <details><summary>${steps.length ? `依據：查了 ${steps.length} 次數據（${steps.map((s) => esc(s.tool)).join(" → ")}）` : "依據：這個回答沒有查任何數據"}
-      ${t.model ? ` · ${esc(t.provider)} / ${esc(t.model)}` : ""}</summary>
+      ${t.model ? ` · ${esc(t.provider)} / ${esc(t.model)}` : ""}${t.protocol ? ` · ${t.protocol === "native" ? "原生工具調用" : "通用協議"}` : ""}</summary>
       ${steps.map((s, i) => `<div class="mono" style="margin-top:8px">${i + 1}. ${esc(s.tool)}(${esc(JSON.stringify(s.args))})</div>
         <pre>${esc(JSON.stringify(s.result, null, 1))}</pre>`).join("")}</details></div>`;
 }
@@ -54,7 +54,7 @@ export async function render(main) {
     try {
       const r = await api("/chat", { json: { question, history } });
       turns.push({ role: "assistant", content: r.answer, steps: r.steps, guard_passed: r.guard_passed,
-                   unknown_numbers: r.unknown_numbers, provider: r.provider, model: r.model });
+                   unknown_numbers: r.unknown_numbers, provider: r.provider, model: r.model, protocol: r.protocol });
       $("msg").innerHTML = "";
     } catch (e) {
       turns.pop();
