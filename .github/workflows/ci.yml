@@ -17,21 +17,20 @@ jobs:
       - run: crudelab check
       - run: pytest -q
   postgres:
-    # 同一套測試在 PostgreSQL 16 上再跑一遍（#34）：每個測試從遷移好的模板庫複製一個新庫
+    # 同一套測試在 PostgreSQL 上再跑一遍（#34）：每個測試從遷移好的模板庫複製一個新庫。
+    # 服務器版本跟這台機器上 pg_dump / pg_restore 的大版本一致（客戶端比服務器新時，恢復會發出服務器不認識的設定）
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_HOST_AUTH_METHOD: trust      # 只在 CI 的臨時容器裡，不對外
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: 啟動和 pg_dump 同版本的 PostgreSQL
+        run: |
+          major=$(pg_dump --version | grep -oE '[0-9]+' | head -1)
+          echo "pg_dump 大版本：$major"
+          docker run -d --name pg -p 5432:5432 -e POSTGRES_HOST_AUTH_METHOD=trust "postgres:$major"
+          for i in $(seq 1 30); do docker exec pg pg_isready -U postgres && break; sleep 2; done
       - run: pip install -e ".[dev,postgres]"
       - run: pytest -q
         env:

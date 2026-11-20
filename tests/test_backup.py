@@ -255,3 +255,14 @@ def test_pg_restore_refuses_while_another_connection_is_open(loaded, settings, c
     finally:
         holder.close()
         engine.dispose()
+
+
+def test_newer_pg_client_than_server_is_explained(settings, monkeypatch):
+    class Done:
+        returncode = 1
+        stderr = ('pg_restore: error: could not execute query: '
+                  'ERROR:  unrecognized configuration parameter "transaction_timeout"')
+    monkeypatch.setattr(backup.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(backup.subprocess, "run", lambda *a, **k: Done())
+    with pytest.raises(backup.BackupError, match="同一大版本"):
+        backup._run_pg(["pg_restore", "x"], settings)

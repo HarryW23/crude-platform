@@ -195,6 +195,10 @@ def _run_pg(args: list[str], settings: Settings) -> None:
         raise BackupError(f"{args[0]} 超時") from None
     if done.returncode != 0:
         tail = "\n".join(done.stderr.strip().splitlines()[-3:])
+        if "unrecognized configuration parameter" in done.stderr:
+            # 客戶端比服務器新：新版 pg_dump / pg_restore 會發出舊服務器不認識的設定（例如 17 版的 transaction_timeout）
+            raise BackupError(f"{args[0]} 失敗：它的版本比數據庫服務器新，發出了服務器不認識的設定。"
+                              f"請改用和服務器同一大版本的 PostgreSQL 客戶端（{credentials.redact(tail)}）")
         raise BackupError(f"{args[0]} 失敗：{credentials.redact(tail)}")
 
 
