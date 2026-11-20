@@ -47,9 +47,9 @@
    formula: "SC_M1 * BBL_PER_T_CRUDE * (1 + CN_CRUDE_TARIFF) * (1 + CN_VAT_RATE) + CN_PORT_MISC",
    notes: SC 是保稅交割價，加關稅、增值稅和雜費後近似中質含硫原油的到廠成本}
 - {code: CN_CRUDE_ESPO_CNY_T, name_zh: 原油到廠成本（ESPO）, module: refinery, group: 中國原油成本, unit: CNY/t, ffill_limit: 3,
-   formula: "CIF_CN_ESPO * BBL_PER_T_CRUDE * USDCNY * (1 + CN_CRUDE_TARIFF) * (1 + CN_VAT_RATE) + CN_PORT_MISC"}
+   formula: "CIF_CN_ESPO * BBL_PER_T_ESPO * USDCNY * (1 + CN_CRUDE_TARIFF) * (1 + CN_VAT_RATE) + CN_PORT_MISC"}
 - {code: CN_CRUDE_ARAB_MEDIUM_CNY_T, name_zh: 原油到廠成本（沙特中質）, module: refinery, group: 中國原油成本, unit: CNY/t, ffill_limit: 3,
-   formula: "CIF_CN_ARAB_MEDIUM * BBL_PER_T_CRUDE * USDCNY * (1 + CN_CRUDE_TARIFF) * (1 + CN_VAT_RATE) + CN_PORT_MISC"}
+   formula: "CIF_CN_ARAB_MEDIUM * BBL_PER_T_ARAB_MEDIUM * USDCNY * (1 + CN_CRUDE_TARIFF) * (1 + CN_VAT_RATE) + CN_PORT_MISC"}
 
 # ---------- 中國：成品油價差（含稅價相減，人民幣/噸） ----------
 - {code: CRK_SD_GASOLINE, name_zh: 山東汽油 − 原油成本, module: refinery, group: 中國成品油價差, unit: CNY/t, ffill_limit: 3,

@@ -123,13 +123,13 @@
 
 # ---------- 運費（折 美元/桶；需要先錄入當年的基準費率） ----------
 - {code: FRT_TD3C_BBL, name_zh: 中東→中國 VLCC, module: spread, group: 運費, unit: USD/bbl,
-   formula: "TD3C_WS / WS_BASE * FLAT_TD3C / BBL_PER_T_CRUDE"}
+   formula: "TD3C_WS / WS_BASE * FLAT_TD3C / BBL_PER_T_ARAB_LIGHT"}
 - {code: FRT_TD15_BBL, name_zh: 西非→中國 VLCC, module: spread, group: 運費, unit: USD/bbl,
-   formula: "TD15_WS / WS_BASE * FLAT_TD15 / BBL_PER_T_CRUDE"}
+   formula: "TD15_WS / WS_BASE * FLAT_TD15 / BBL_PER_T_BONNY_LIGHT"}
 - {code: FRT_TD20_BBL, name_zh: 西非→歐洲 蘇伊士型, module: spread, group: 運費, unit: USD/bbl,
-   formula: "TD20_WS / WS_BASE * FLAT_TD20 / BBL_PER_T_CRUDE"}
+   formula: "TD20_WS / WS_BASE * FLAT_TD20 / BBL_PER_T_BONNY_LIGHT"}
 - {code: FRT_TD25_BBL, name_zh: 美灣→歐洲 阿芙拉型, module: spread, group: 運費, unit: USD/bbl,
-   formula: "TD25_WS / WS_BASE * FLAT_TD25 / BBL_PER_T_CRUDE"}
+   formula: "TD25_WS / WS_BASE * FLAT_TD25 / BBL_PER_T_WTI_MIDLAND"}
 
 # ---------- 到岸成本：中國（美元/桶，不含稅） ----------
 - {code: CIF_CN_ARAB_LIGHT, name_zh: 沙特輕質到中國, module: spread, group: 中國到岸成本, unit: USD/bbl, ffill_limit: 3,

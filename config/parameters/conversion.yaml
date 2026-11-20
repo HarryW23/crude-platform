@@ -18,4 +18,20 @@
 - {key: BBL_PER_T_FUELOIL, name_zh: 燃料油 桶/噸, value: 6.35, unit: bbl/t, group: 單位換算,
    description: 高硫燃料油折桶常用係數}
 - {key: BBL_PER_T_CRUDE, name_zh: 原油 桶/噸（通用）, value: 7.33, unit: bbl/t, group: 單位換算,
-   description: 中質原油的通用係數；各油種實際值隨 API 度不同，需要精確時請為該油種單獨建參數}
+   description: 中質原油的通用係數；各油種實際值隨 API 度不同，有單獨係數的油種用下面的參數；SC（多個中東中質含硫油可交割）仍用這個}
+
+# ---------- 分油種的桶/噸（#28） ----------
+# 換算：比重 SG = 141.5 / (API + 131.5)；桶/噸 = 1000 / (SG × 158.987)（每桶 158.987 升）。
+# 「API x」寫在 description 開頭，測試會按上式核對數值，改 API 時兩邊要一起改。
+# API 度是各機構公佈的典型值，實際每船隨批次浮動（±1 API ≈ ±0.03 桶/噸）；有 Platts / Argus 的官方折算係數時請以它為準並在後台核對。
+# 噸是公噸（不是英制長噸），按真空質量算；貿易上的空氣中質量約差 0.1%，可忽略。
+- {key: BBL_PER_T_ESPO, name_zh: ESPO 桶/噸, value: 7.39, unit: bbl/t, group: 單位換算,
+   description: "API 34.8（密度約 0.851；公開化驗多在 34–36 之間）。來源：en.wikipedia.org/wiki/List_of_crude_oil_products"}
+- {key: BBL_PER_T_ARAB_MEDIUM, name_zh: 沙特中質 桶/噸, value: 7.19, unit: bbl/t, group: 單位換算,
+   description: "API 30.2（MEES 給的範圍 29–32，對應 7.12–7.31）。來源：en.wikipedia.org/wiki/List_of_crude_oil_products"}
+- {key: BBL_PER_T_ARAB_LIGHT, name_zh: 沙特輕質 桶/噸, value: 7.31, unit: bbl/t, group: 單位換算,
+   description: "API 32.9。中東→中國 VLCC（TD3C）運費折桶用它代表中東出口原油。來源：Oxford Institute for Energy Studies, OEF 128（2021）"}
+- {key: BBL_PER_T_BONNY_LIGHT, name_zh: 邦尼輕質 桶/噸, value: 7.40, unit: bbl/t, group: 單位換算,
+   description: "API 35.0（TotalEnergies 2020 化驗：34.9 API、15°C 密度 850.0）。西非航線（TD15、TD20）運費折桶用它。來源：trading.totalenergies.com 化驗表 BONNY-LIGHT.pdf"}
+- {key: BBL_PER_T_WTI_MIDLAND, name_zh: WTI Midland 桶/噸, value: 7.71, unit: bbl/t, group: 單位換算,
+   description: "API 42.0（Platts 規格 40–44 的中值，對應 7.64–7.79）。美灣出口（TD25）運費折桶用它。來源：Platts WTI Midland 規格說明（2020）"}

@@ -41,7 +41,8 @@ def test_missing_parameter_blocks_indicator_until_provided(session, cfg):
     assert summary["status"] == "missing_parameter" and summary["missing_parameters"] == ["FLAT_TD3C"]
     set_value(session, "FLAT_TD3C", 22.0, valid_from=date(2026, 1, 1))
     session.commit()
-    assert IndicatorEngine(session, cfg).compute("FRT_TD3C_BBL").iloc[0] == pytest.approx(60 / 100 * 22 / 7.33)
+    freight = IndicatorEngine(session, cfg).compute("FRT_TD3C_BBL").iloc[0]
+    assert freight == pytest.approx(60 / 100 * 22 / 7.31)                # 中東→中國按沙特輕質折桶（#28）
 
 
 def test_parameters_apply_by_effective_date(session, cfg):
