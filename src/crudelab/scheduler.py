@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import socket
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -26,7 +27,8 @@ from .models import JobRun, SchedulerHeartbeat, iso_utc, utcnow
 from .schema import WEEKDAYS, JobDef
 from .settings import Settings
 
-TICK_SECONDS = 30
+# 多久檢查一次到點的任務。只給測試調短（多進程測試）；平時不用設
+TICK_SECONDS = max(1, int(os.environ.get("CRUDELAB_SCHEDULER_TICK_SECONDS") or 30))
 HEARTBEAT_FRESH = timedelta(minutes=2)
 log = logging.getLogger("crudelab.scheduler")
 _EPOCH = datetime(2000, 1, 1)

@@ -73,8 +73,7 @@ def init_engine(settings: Settings | None = None) -> Engine:
     global _engine, _factory
     settings = settings or get_settings()
     is_sqlite = settings.database_url.startswith("sqlite")
-    if is_sqlite:
-        settings.data_dir.mkdir(parents=True, exist_ok=True)
+    settings.data_dir.mkdir(parents=True, exist_ok=True)       # 原始文件、收件夾、備份都在這裡，用哪種數據庫都要有
     if _engine is not None:
         _engine.dispose()
     _engine = create_engine(settings.database_url)

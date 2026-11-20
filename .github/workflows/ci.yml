@@ -16,6 +16,26 @@ jobs:
       - run: ruff check src tests scripts
       - run: crudelab check
       - run: pytest -q
+  postgres:
+    # 同一套測試在 PostgreSQL 16 上再跑一遍（#34）：每個測試從遷移好的模板庫複製一個新庫
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust      # 只在 CI 的臨時容器裡，不對外
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev,postgres]"
+      - run: pytest -q
+        env:
+          CRUDELAB_TEST_PG: postgresql+psycopg://postgres@localhost:5432
   e2e:
     # 瀏覽器巡檢：用演示數據啟動前台和後台，逐頁打開（淺色 / 深色），檢查腳本錯誤、錯誤提示、橫向滾動
     runs-on: ubuntu-latest

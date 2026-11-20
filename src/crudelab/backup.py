@@ -168,6 +168,21 @@ def _pg_env(settings: Settings) -> dict[str, str]:
     return env
 
 
+def _other_pg_connections(settings: Settings) -> list[str]:
+    """除了這次檢查本身，還有誰連着這個數據庫。恢復要刪表重建，有別的連接開着事務時 pg_restore 會一直等它
+    （備份文件裡自帶 SET lock_timeout = 0，在外面設超時也沒用），所以恢復前先查。"""
+    from sqlalchemy import create_engine, text
+    engine = create_engine(settings.database_url)
+    try:
+        with engine.connect() as conn:
+            rows = conn.execute(text("SELECT coalesce(nullif(application_name, ''), '未命名客戶端'), "
+                                     "coalesce(host(client_addr), '本機') FROM pg_stat_activity "
+                                     "WHERE datname = current_database() AND pid <> pg_backend_pid()")).fetchall()
+    finally:
+        engine.dispose()
+    return [f"{name}（{addr}）" for name, addr in rows]
+
+
 def _run_pg(args: list[str], settings: Settings) -> None:
     exe = shutil.which(args[0])
     if exe is None:
@@ -497,6 +512,11 @@ def restore(settings: Settings, cfg: Config, path: Path, *, with_config: bool = 
                 target.with_name(target.name + suffix).unlink(missing_ok=True)
             os.replace(staging, target)
         else:
+            others = _other_pg_connections(settings)
+            if others:
+                raise BackupError(f"還有 {len(others)} 個連接開着這個數據庫：{'、'.join(others[:5])}。"
+                                  "恢復要刪表重建，會一直等它們。請先關掉 crudelab serve / scheduler "
+                                  "和其他連着它的客戶端（例如數據庫管理工具）再恢復；數據沒有改動")
             dbname = make_url(settings.database_url).database
             _run_pg(["pg_restore", "--clean", "--if-exists", "--no-owner", "--single-transaction",
                      f"--dbname={dbname}", str(root / DB_PG)], settings)

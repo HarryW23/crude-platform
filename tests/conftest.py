@@ -29,10 +29,56 @@ def isolated_credentials(tmp_path, monkeypatch):
     monkeypatch.setattr(db, "_factory", None)
 
 
+# 在 PostgreSQL 上跑全部測試（#34）：設 CRUDELAB_TEST_PG 為不含庫名的連接串，例如
+#   CRUDELAB_TEST_PG=postgresql+psycopg://postgres@127.0.0.1:5432 pytest
+# 先建一個遷移到最新的模板庫，每個測試從模板複製一個新庫（毫秒級），結束後刪掉。不設就用 SQLite。
+TEST_PG = os.environ.get("CRUDELAB_TEST_PG", "").rstrip("/")
+PG_TEMPLATE = "crudelab_test_template"
+
+
+def _pg_admin():
+    from sqlalchemy import create_engine
+    return create_engine(f"{TEST_PG}/postgres", isolation_level="AUTOCOMMIT")
+
+
+@pytest.fixture(scope="session")
+def pg_template():
+    if not TEST_PG:
+        yield None
+        return
+    from sqlalchemy import create_engine, text
+    admin = _pg_admin()
+    with admin.connect() as c:
+        c.execute(text(f"DROP DATABASE IF EXISTS {PG_TEMPLATE} WITH (FORCE)"))
+        c.execute(text(f"CREATE DATABASE {PG_TEMPLATE}"))
+    engine = create_engine(f"{TEST_PG}/{PG_TEMPLATE}")
+    db.migrate(engine)
+    engine.dispose()
+    yield PG_TEMPLATE
+    with admin.connect() as c:
+        c.execute(text(f"DROP DATABASE IF EXISTS {PG_TEMPLATE} WITH (FORCE)"))
+    admin.dispose()
+
+
 @pytest.fixture()
-def settings(tmp_path: Path) -> Settings:
-    return Settings(config_dir=CONFIG_DIR, data_dir=tmp_path / "data",
-                    database_url=f"sqlite:///{tmp_path / 'data' / 'test.db'}")
+def settings(tmp_path: Path, pg_template) -> Settings:
+    if not pg_template:
+        yield Settings(config_dir=CONFIG_DIR, data_dir=tmp_path / "data",
+                       database_url=f"sqlite:///{tmp_path / 'data' / 'test.db'}")
+        return
+    import uuid
+
+    from sqlalchemy import text
+    name = f"t_{uuid.uuid4().hex[:16]}"
+    admin = _pg_admin()
+    with admin.connect() as c:
+        c.execute(text(f"CREATE DATABASE {name} TEMPLATE {pg_template}"))
+    yield Settings(config_dir=CONFIG_DIR, data_dir=tmp_path / "data", database_url=f"{TEST_PG}/{name}")
+    if db._engine is not None:
+        db._engine.dispose()
+    with admin.connect() as c:
+        c.execute(text(f"DROP DATABASE IF EXISTS {name} WITH (FORCE)"))
+    admin.dispose()
 
 
 @pytest.fixture(scope="session")

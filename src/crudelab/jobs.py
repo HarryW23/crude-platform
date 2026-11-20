@@ -14,7 +14,7 @@ import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -257,16 +257,23 @@ def latest_attempt(session: Session, code: str, slot: datetime) -> JobRun | None
 
 def abandon_retries(code: str, current_slot: datetime | None) -> list[int]:
     """更早時點還掛著「待重試」的（程序關掉了、沒來得及重試，已經到了下一次）：定為失敗，回傳它們的編號。
-    不能讓它們一直掛著：那樣既不算失敗，也不會發通知。"""
+    不能讓它們一直掛著：那樣既不算失敗，也不會發通知。
+
+    逐條用「狀態仍是 retry 才改」的條件更新：好幾個後台進程同時跑調度時，只有真正改到的那個回傳它，
+    通知因此只發一次。"""
     with db.session_scope() as session:
-        stmt = select(JobRun).where(JobRun.job_code == code, JobRun.status == "retry")
+        stmt = select(JobRun.id, JobRun.message).where(JobRun.job_code == code, JobRun.status == "retry")
         if current_slot is not None:
             stmt = stmt.where(JobRun.slot < current_slot)
-        rows = list(session.scalars(stmt))
-        for run in rows:
-            run.status = "failed"
-            run.message = f"{run.message}；沒能重試：已經到了下一次執行時間（程序可能關閉過）"
-        return [r.id for r in rows]
+        candidates = list(session.execute(stmt))
+    changed = []
+    for run_id, message in candidates:
+        with db.session_scope() as session:
+            done = session.execute(update(JobRun).where(JobRun.id == run_id, JobRun.status == "retry").values(
+                status="failed", message=f"{message}；沒能重試：已經到了下一次執行時間（程序可能關閉過）"))
+            if done.rowcount == 1:
+                changed.append(run_id)
+    return changed
 
 
 def retry_due(session: Session, job: JobDef, slot: datetime, now: datetime) -> int | None:
@@ -313,11 +320,13 @@ def prune_history(now: datetime | None = None) -> int:
 
 
 def recover_stale(older_than: timedelta = timedelta(hours=1)) -> int:
-    """把卡在「執行中」太久的記錄改成失敗（通常是執行到一半進程被關掉了）。"""
-    cutoff = utcnow() - older_than
+    """把卡在「執行中」太久的記錄改成失敗（通常是執行到一半進程被關掉了）。
+
+    用條件更新（狀態仍是 running 才改）：剛好在這時做完的任務不會被改回失敗。
+    注意：好幾個後台進程時，一個進程啟動會把別的進程裡已經跑了超過 older_than 的任務也標成中斷；
+    那個任務做完時會照常寫回真正的結果。"""
+    now = utcnow()
     with db.session_scope() as session:
-        rows = list(session.scalars(select(JobRun).where(JobRun.status == "running", JobRun.started_at < cutoff)))
-        for run in rows:
-            run.status, run.finished_at = "failed", utcnow()
-            run.message = "執行中斷：程序在任務完成前被關閉了"
-        return len(rows)
+        done = session.execute(update(JobRun).where(JobRun.status == "running", JobRun.started_at < now - older_than)
+                               .values(status="failed", finished_at=now, message="執行中斷：程序在任務完成前被關閉了"))
+        return done.rowcount

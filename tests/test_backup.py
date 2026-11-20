@@ -39,7 +39,8 @@ def test_backup_contents_and_exclusions(loaded, settings, cfg):
     made = backup.create(settings, cfg, "manual")
     path = backup.directory(settings, cfg) / made["name"]
     names = members(path)
-    assert names[0] == "manifest.json" and backup.DB_SQLITE in names
+    db_arc = backup.DB_SQLITE if backup.database_kind(settings) == "sqlite" else backup.DB_PG
+    assert names[0] == "manifest.json" and db_arc in names
     assert "data/inbox/note.csv" in names and any(n.startswith("data/raw/") for n in names)
     assert any(n == "config/backup.yaml" for n in names)
     assert not any(n.endswith(("secrets.env", ".pem", "test.db", "-wal", "-shm")) for n in names)
@@ -120,7 +121,9 @@ def test_restore_round_trip(loaded, settings, cfg):
     loaded.execute(Observation.__table__.delete())
     loaded.commit()
     loaded.close()
-    assert obs_count(db.get_session()) == 0
+    check = db.get_session()
+    assert obs_count(check) == 0
+    check.close()                       # 不關的話 PostgreSQL 上它一直持有鎖，恢復時刪表會等它
 
     result = backup.restore(settings, cfg, backup.directory(settings, cfg) / made["name"])
     session = db.get_session()
@@ -153,9 +156,11 @@ def test_restore_safety_checks(loaded, settings, cfg):
     with pytest.raises(backup.BackupError, match="更新版本"):
         backup.restore(settings, cfg, future, force=True)
 
+    sqlite = backup.database_kind(settings) == "sqlite"                    # 換成另一種數據庫：拒絕
     other = settings.__class__(config_dir=settings.config_dir, data_dir=settings.data_dir,
-                               database_url="postgresql+psycopg://u@localhost/x")
-    with pytest.raises(backup.BackupError, match="sqlite"):
+                               database_url="postgresql+psycopg://u@localhost/x" if sqlite
+                               else f"sqlite:///{settings.data_dir / 'other.db'}")
+    with pytest.raises(backup.BackupError, match="sqlite" if sqlite else "postgresql"):
         backup.restore(other, cfg, path)
 
 
@@ -222,38 +227,31 @@ def test_postgres_secrets_stay_out_of_arguments(settings, monkeypatch):
     assert "hunter2" not in str(err.value)
 
 
-@pytest.mark.skipif(not os.environ.get("CRUDELAB_TEST_PG_URL"),
-                    reason="需要 CRUDELAB_TEST_PG_URL 指向一個可以清空的 PostgreSQL 數據庫")
-def test_postgres_round_trip(tmp_path, cfg, sample_path):
-    from crudelab.imports import commit_batch, preview_file
-    from crudelab.master import sync_to_db
-    from crudelab.settings import Settings
-    pg = Settings(config_dir=PROJECT_ROOT / "config", data_dir=tmp_path / "data",
-                  database_url=os.environ["CRUDELAB_TEST_PG_URL"])
-    db.init_engine(pg)
-    with db.session_scope() as s:
-        s.execute(Observation.__table__.delete())
-        sync_to_db(s, cfg)
-    with db.session_scope() as s:
-        commit_batch(s, preview_file(s, pg, sample_path.read_bytes(), "s.xlsx", "demo")["batch_id"])
-    with db.session_scope() as s:
-        before = obs_count(s)
-    made = backup.create(pg, cfg, "manual")
-    with db.session_scope() as s:
-        s.execute(Observation.__table__.delete())
-    backup.restore(pg, cfg, backup.directory(pg, cfg) / made["name"])
-    with db.session_scope() as s:
-        assert obs_count(s) == before > 0
-
-
 def test_backup_api(sites, loaded):
     admin, front = sites["admin"], sites["front"]
     assert front.get("/api/backups").status_code == 404
     status = admin.get("/api/backups").json()
-    assert status["backups"] == [] and status["stale"] and status["database"] == "sqlite"
+    assert status["backups"] == [] and status["stale"]
+    assert status["database"] == backup.database_kind(sites["front"].app.state.crudelab.settings)
     made = admin.post("/api/backups").json()
     status = admin.get("/api/backups").json()
     assert [b["name"] for b in status["backups"]] == [made["name"]] and not status["stale"]
     assert admin.post(f"/api/backups/{made['name']}/verify").json()["ok"]
     bad = admin.post("/api/backups/..%2F..%2Fetc%2Fpasswd/verify")
     assert bad.status_code == 404 or bad.json()["ok"] is False
+
+
+@pytest.mark.skipif(not os.environ.get("CRUDELAB_TEST_PG"), reason="只在 PostgreSQL 上：恢復時有連接佔着表")
+def test_pg_restore_refuses_while_another_connection_is_open(loaded, settings, cfg):
+    made = backup.create(settings, cfg, "manual")
+    loaded.close()
+    from sqlalchemy import create_engine, text
+    engine = create_engine(settings.database_url, connect_args={"application_name": "dbeaver"})
+    holder = engine.connect()
+    holder.execute(text("SELECT count(*) FROM observation"))              # 開着事務不提交：持有表鎖
+    try:
+        with pytest.raises(backup.BackupError, match="1 個連接.*dbeaver"):
+            backup.restore(settings, cfg, backup.directory(settings, cfg) / made["name"], force=True)
+    finally:
+        holder.close()
+        engine.dispose()

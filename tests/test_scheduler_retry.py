@@ -155,3 +155,28 @@ def test_dangling_retry_is_finalised_and_notified(only, settings, monkeypatch):
     abandoned = [r for r in next_day if r["message"] == "上次失敗後沒能重試"]
     assert len(abandoned) == 1 and abandoned[0]["notified"] == "failure"
     assert runs("PULL_EIA") == [(1, "failed"), (1, "ok")]                   # 當天的照常執行
+
+
+# ------------------------------ 多個後台進程（#35） ------------------------------
+
+def test_abandoned_retry_is_claimed_by_only_one_process(session):
+    """兩個後台副本同一輪都看到這條「待重試」：只有一個改到它，通知只發一次。"""
+    run_id = jobs.claim("PULL_EIA", EIA_SLOT, "schedule")
+    with db.session_scope() as s:
+        s.get(JobRun, run_id).status = "retry"
+    later = EIA_SLOT + timedelta(days=1)
+    assert jobs.abandon_retries("PULL_EIA", later) == [run_id]
+    assert jobs.abandon_retries("PULL_EIA", later) == []                  # 另一個進程晚一步：什麼都沒改到
+    with db.session_scope() as s:
+        assert s.get(JobRun, run_id).status == "failed"
+
+
+def test_recover_stale_never_overwrites_a_finished_run(session):
+    old = datetime(2026, 1, 1)
+    running = jobs.claim("PULL_EIA", old, "schedule", now=old)
+    finished = jobs.claim("PULL_CFTC", old, "schedule", now=old)
+    with db.session_scope() as s:
+        s.get(JobRun, finished).status = "ok"                              # 恰好在檢查前做完
+    assert jobs.recover_stale() == 1
+    with db.session_scope() as s:
+        assert s.get(JobRun, running).status == "failed" and s.get(JobRun, finished).status == "ok"
