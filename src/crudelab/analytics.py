@@ -32,6 +32,25 @@ def seasonal_stats(series: pd.Series, years: int = 5) -> pd.DataFrame:
     return out
 
 
+def aligned_pairs(y: pd.Series, x: pd.Series, align_tolerance_days: int = 3) -> pd.DataFrame:
+    """在 x 有值的日期上配對 y（y 當天沒有值時取 3 天內最近的前值）。linear_fit 和樣本外檢驗共用。"""
+    if x.empty or y.empty:
+        return pd.DataFrame({"x": [], "y": []}, index=pd.DatetimeIndex([]), dtype=float)
+    y_on_x = y.reindex(x.index, method="ffill", tolerance=pd.Timedelta(days=align_tolerance_days))
+    return pd.DataFrame({"x": x, "y": y_on_x}).dropna()
+
+
+def ols(frame: pd.DataFrame) -> tuple[float, float, float] | None:
+    """y = a + b·x 的最小二乘：（截距, 斜率, R²）。x 沒有變化時回 None。"""
+    if len(frame) < 2 or frame["x"].std() == 0:
+        return None
+    slope, intercept = np.polyfit(frame["x"], frame["y"], 1)
+    fitted = intercept + slope * frame["x"]
+    total = float(((frame["y"] - frame["y"].mean()) ** 2).sum())
+    r2 = 1 - float(((frame["y"] - fitted) ** 2).sum()) / total if total else 0.0
+    return float(intercept), float(slope), r2
+
+
 def linear_fit(y: pd.Series, x: pd.Series, lookback_days: int, min_points: int,
                align_tolerance_days: int = 3) -> dict:
     """在 x 有值的日期上擬合 y = a + b·x。y 當天沒有值時取 3 天內最近的前值（例如 x 是周五、y 是日度）。
@@ -40,22 +59,18 @@ def linear_fit(y: pd.Series, x: pd.Series, lookback_days: int, min_points: int,
     """
     result = {"status": "insufficient", "n": 0, "slope": None, "intercept": None, "r2": None,
               "points": [], "latest": None}
-    if x.empty or y.empty:
-        return result
-    y_on_x = y.reindex(x.index, method="ffill", tolerance=pd.Timedelta(days=align_tolerance_days))
-    frame = pd.DataFrame({"x": x, "y": y_on_x}).dropna()
+    frame = aligned_pairs(y, x, align_tolerance_days)
     if frame.empty:
         return result
     frame = frame[frame.index >= frame.index[-1] - pd.Timedelta(days=lookback_days)]
     result["n"] = len(frame)
     result["points"] = [{"date": ts.date().isoformat(), "x": float(r.x), "y": float(r.y)}
                         for ts, r in frame.iterrows()]
-    if len(frame) < min_points or frame["x"].std() == 0:
+    fit = ols(frame) if len(frame) >= min_points else None
+    if fit is None:
         return result
-    slope, intercept = np.polyfit(frame["x"], frame["y"], 1)
+    intercept, slope, r2 = fit
     fitted = intercept + slope * frame["x"]
-    total = float(((frame["y"] - frame["y"].mean()) ** 2).sum())
-    r2 = 1 - float(((frame["y"] - fitted) ** 2).sum()) / total if total else 0.0
     last = frame.iloc[-1]
     result.update(status="ok", slope=float(slope), intercept=float(intercept), r2=r2,
                   latest={"date": frame.index[-1].date().isoformat(), "x": float(last.x), "y": float(last.y),

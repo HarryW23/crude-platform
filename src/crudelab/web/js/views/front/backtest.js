@@ -103,6 +103,7 @@ function renderResults(view, r) {
         <tr><td>誤差減少</td>${r.horizons.map((x) => { const d = fv.drift[x.code]; return `<td class="n ${d.improvement > 0 ? "up" : d.improvement < 0 ? "down" : ""}"><b>${d.improvement == null ? "—" : signed(d.improvement * 100, 1) + "%"}</b>${d.significant ? '<div><span class="tag ok">顯著</span></div>' : ""}</td>`; }).join("")}</tr>
         <tr><td>方向命中率</td>${r.horizons.map((x) => `<td class="n">${pct(fv.drift[x.code].hit_rate)}</td>`).join("")}</tr>
         <tr><td>有效樣本</td>${r.horizons.map((x) => `<td class="n">${num(fv.drift[x.code].n_eff, 0)}${fv.drift[x.code].status === "insufficient" ? '<div><span class="tag warn">樣本不足</span></div>' : ""}</td>`).join("")}</tr></table></div></div>`).join("")}
+    ${relationsPanel(r, h)}
     ${calibrationPanel(r)}
     <h3>需要知道的局限</h3><ul class="ink2">${r.caveats.map((c) => `<li>${esc(c)}</li>`).join("")}</ul></div>`;
 
@@ -162,4 +163,27 @@ function calibrationPanel(r) {
       ${c.signals.map((x) => line(esc(x.name_zh), x)).join("")}</table></div>
     <div class="scroll"><table><tr><th>模組</th><th class="n">現在</th><th class="n">建議</th><th class="n">IC</th><th>結論</th></tr>
       ${c.modules.map((x) => line(`<b>${esc(x.name_zh)}</b>`, x)).join("")}</table></div></div>`;
+}
+
+// 關係模型的樣本外檢驗：只用當時之前的樣本擬合，看對之後的 y 說得準不準
+function relationsPanel(r, h) {
+  if (!r.relations?.length) return "";
+  const skill = (v) => v == null ? "—" : `<span class="${v > 0 ? "up" : "down"}">${signed(v * 100, 0)}%</span>`;
+  const rows = r.relations.map((x) => {
+    const m = x.by_horizon[h.code], st = x.stability;
+    const flag = m.status === "insufficient" ? '<span class="tag warn">樣本不足</span>' : m.status === "no_data" ? '<span class="tag">無數據</span>' : "";
+    const rev = m.reversion_ic == null ? "—" : `${signed(m.reversion_ic)}<div class="muted">t ${m.reversion_t == null ? "—" : signed(m.reversion_t, 1)}</div>`;
+    return `<tr><td>${esc(x.name_zh)}${x.approx ? ' <span class="tag warn" title="用到修訂後的月度數據">近似</span>' : ""}
+        <div class="muted">${esc(x.y_name)} ← ${esc(x.x_name)}，延遲 ${x.lag_days} 天</div></td>
+      <td class="n">${skill(m.skill_vs_mean)}</td><td class="n">${skill(m.skill_vs_persist)}</td><td class="n">${rev}</td>
+      <td class="n">${st.same_sign == null ? "—" : pct(st.same_sign, 0)}<div class="muted">R² ${st.r2_median == null ? "—" : num(st.r2_median, 2)}</div></td>
+      <td class="n">${num(m.n_eff, 0)}<div>${flag}</div></td></tr>`;
+  }).join("");
+  return `<h3>關係模型的樣本外檢驗（之後 ${esc(h.name_zh)}）</h3>
+    <p class="sub">每個評估日只用當時已知的樣本擬合（扣發佈延遲），再看之後的實際值。
+      「比均值好 / 比不變好」：預測誤差比「y 等於窗口均值」「y 不變」少多少，負數表示還不如這兩個簡單規則；
+      「偏離回歸」：y 高於擬合值時之後是否回落（正 = 會回歸，頁面上的「偏高 / 偏低」有意義）；
+      「斜率同向」：每次重擬合的斜率和中位數方向一致的比例，低說明關係不穩定。</p>
+    <div class="scroll"><table><tr><th>關係</th><th class="n">比均值好</th><th class="n">比不變好</th><th class="n">偏離回歸</th>
+      <th class="n">斜率同向</th><th class="n">有效樣本</th></tr>${rows}</table></div>`;
 }

@@ -40,7 +40,7 @@ import pandas as pd
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from . import credentials, db, fair_value, projection, signals
+from . import analytics, credentials, db, fair_value, projection, signals
 from .config import Config
 from .indicators import IndicatorEngine
 from .models import BacktestRun, Observation, iso_utc, utcnow
@@ -363,6 +363,79 @@ def _evaluate_fair_value(cfg: Config, model, fits: dict, dates: pd.DatetimeIndex
             "drift": drift}, score
 
 
+# ------------------------------ 關係模型的樣本外檢驗（#50） ------------------------------
+#
+# 關係模型回答「按現在的 x，y 通常在什麼水平」。頁面上的擬合優度是全樣本的，看不出拿過去擬合、預測之後準不準。
+# 這裡在每個評估日 t：只用 t − 發佈延遲 之前、回看窗口內的樣本擬合（和頁面同一個 OLS），
+# 再看 t 之後 h 天內最後一個配對點 (x', y')：
+#   預測誤差   y' − (a + b·x')          （知道 x' 時，關係能不能說出 y'）
+#   兩個基準   y' − 窗口均值、y' − 當時的 y（「沒有關係」和「不會變」）
+#   偏離回歸   當時 y 高於擬合值的幅度，和之後 y 的變化方向是否相反（頁面上「偏高 / 偏低」的含義是否成立）
+# 穩定性看每次重擬合的斜率：方向是否一致、相對波動多大。
+
+def evaluate_relation(cfg: Config, engine: IndicatorEngine, code: str, dates: pd.DatetimeIndex,
+                      horizons: list[HorizonDef], step: int, mode: str) -> dict:
+    rel = cfg.relations[code]
+    settings = cfg.backtest
+    pairs = analytics.aligned_pairs(engine.values(rel.y), engine.values(rel.x))
+    freqs = {cfg.frequency_of(rel.x), cfg.frequency_of(rel.y)}
+    lag = max(settings.publication_lag_days[f] for f in freqs)
+    rows: dict[str, list[tuple]] = {h.code: [] for h in horizons}
+    refits = []
+    index = pairs.index
+    for t in dates:
+        known = pairs[index <= t - pd.Timedelta(days=lag)]
+        if known.empty:
+            continue
+        window = known[known.index >= known.index[-1] - pd.Timedelta(days=rel.lookback_days)]
+        fit = analytics.ols(window) if len(window) >= rel.min_points else None
+        if fit is None:
+            continue
+        a, b, r2 = fit
+        refits.append((b, r2))
+        y_now, residual = float(window["y"].iloc[-1]), float(window["y"].iloc[-1] - (a + b * window["x"].iloc[-1]))
+        for h in horizons:
+            ahead = pairs[(index > window.index[-1]) & (index > t) & (index <= t + pd.Timedelta(days=h.calendar_days))]
+            if ahead.empty:
+                continue
+            x1, y1 = float(ahead["x"].iloc[-1]), float(ahead["y"].iloc[-1])
+            rows[h.code].append((y1 - (a + b * x1), y1 - float(window["y"].mean()), y1 - y_now, -residual, y1 - y_now))
+
+    def summarize(h: HorizonDef) -> dict:
+        data = np.array(rows[h.code], dtype=float).reshape(-1, 5)
+        n = len(data)
+        n_eff = n * min(1.0, step / h.trading_days)
+        out = {"n": n, "n_eff": round(n_eff, 1), "rmse": None, "rmse_mean": None, "rmse_persist": None,
+               "skill_vs_mean": None, "skill_vs_persist": None, "reversion_ic": None, "reversion_t": None,
+               "status": "no_data" if n == 0 else ("insufficient" if n_eff < settings.min_effective_samples else "ok")}
+        if n < 3:
+            return out
+        sse = (data[:, :3] ** 2).sum(axis=0)
+        out.update(rmse=float(np.sqrt(sse[0] / n)), rmse_mean=float(np.sqrt(sse[1] / n)),
+                   rmse_persist=float(np.sqrt(sse[2] / n)),
+                   skill_vs_mean=float(1 - sse[0] / sse[1]) if sse[1] > 0 else None,
+                   skill_vs_persist=float(1 - sse[0] / sse[2]) if sse[2] > 0 else None)
+        signal, change = pd.Series(data[:, 3]), pd.Series(data[:, 4])
+        if signal.nunique() > 1 and change.nunique() > 1:
+            ic = float(signal.rank().corr(change.rank()))
+            out["reversion_ic"] = ic
+            if n_eff > 2 and abs(ic) < 1:
+                out["reversion_t"] = ic * math.sqrt((n_eff - 2) / (1 - ic * ic))
+        return out
+
+    slopes = np.array([b for b, _ in refits])
+    stability = {"refits": len(refits), "slope_median": None, "same_sign": None, "slope_cv": None, "r2_median": None}
+    if len(slopes):
+        median = float(np.median(slopes))
+        stability.update(slope_median=median, r2_median=float(np.median([r for _, r in refits])),
+                         same_sign=float((np.sign(slopes) == np.sign(median)).mean()) if median else None,
+                         slope_cv=float(slopes.std() / abs(slopes.mean())) if slopes.mean() else None)
+    return {"code": code, "name_zh": rel.name_zh, "y_name": cfg.name_of(rel.y), "x_name": cfg.name_of(rel.x),
+            "y_unit": cfg.unit_of(rel.y), "lag_days": lag,
+            "approx": mode == "observation" and bool(freqs & {"monthly", "quarterly"}),
+            "by_horizon": {h.code: summarize(h) for h in horizons}, "stability": stability}
+
+
 def _points(scores: pd.Series, returns: pd.Series) -> dict:
     data = pd.DataFrame({"s": scores, "r": returns}).dropna()
     if len(data) > MAX_POINTS:
@@ -493,6 +566,8 @@ def run(session: Session, cfg: Config, options: Options) -> dict:
         "signals": signal_rows, "modules": module_rows,
         "overall": {"scored": int(overall.notna().sum()), "by_horizon": by_horizon(overall)},
         "fair_values": fair_rows,
+        "relations": [evaluate_relation(cfg, engine, code, dates, horizons, step, options.mode)
+                      for code in cfg.relations],
         "calibration": calibration,
         "band": {"expected": EXPECTED_COVERAGE, "by_horizon": _band(prices, vol, dates, horizons)},
         "points": points,
