@@ -94,8 +94,11 @@ def logged_in(browser, url: str, username: str):
 
 
 def open_page(page, url: str, name: str) -> None:
-    page.goto(f"{url}/#{name}")
-    page.wait_for_function("() => !document.querySelector('main').textContent.startsWith('載入中')", timeout=15000)
+    """每頁完整載入一次（只改 # 不會重新載入，舊頁面的內容會讓「載入完了」的判斷提前成立），
+    再等導覽上這一頁亮起、內容不在載入中。"""
+    page.goto(f"{url}/?page={name}#{name}")
+    page.wait_for_function(f"""() => document.querySelector('nav button[data-page="{name}"]')?.classList.contains('on')
+        && !document.querySelector('main').textContent.startsWith('載入中')""", timeout=20000)
     page.wait_for_timeout(500)
 
 
