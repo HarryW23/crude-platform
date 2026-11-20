@@ -381,3 +381,41 @@ config/*.yaml ──校驗──▶ Config ──同步──▶ 數據庫主數
   驗證數據互通、配置各自重新載入、登錄鎖定共享、同一時點的任務只執行一次。
 - 多進程下要注意的幾處都用條件更新或重試處理：同時同步同一份新配置（撞唯一鍵就重試，失敗則保持舊配置、下次再試）、
   放棄待重試（只有改到的進程發通知）、標記中斷的任務（不覆蓋剛做完的）。
+
+### 工程品質：每次提交自動檢查什麼
+
+CI（`.github/workflows/ci.yml`）每次推送都跑，每周一另跑一次（沒有提交的周也能發現依賴裡新公佈的漏洞）：
+
+| 任務 | 檢查 | 失敗時說明什麼 |
+|---|---|---|
+| test | 密鑰掃描、ruff、`crudelab check`、類型檢查棘輪、依賴清單完整、全部測試 + 覆蓋率下限 | 見下 |
+| postgres | 全部測試在 PostgreSQL 上再跑一遍（服務器版本和 pg_dump 一致） | 只在 PostgreSQL 上出現的問題 |
+| oldest-python | 最低支持版本 Python 3.11 上按鎖定版本安裝並跑全部測試 | 用了新版 Python 才有的寫法，或依賴不支持 3.11 |
+| e2e | 瀏覽器逐頁打開前台、後台（淺色 / 深色），只讀帳號看不到寫按鈕 | 頁面腳本錯誤、錯誤提示、橫向滾動、權限洩漏 |
+| supply-chain | 鎖定的依賴在 macOS（Apple / Intel）、Windows、Linux × Python 3.11–3.13 都有現成安裝包；pip-audit 無已知漏洞 | 用戶那邊會裝不上，或依賴有安全問題 |
+
+各項的規矩：
+
+- **數據庫取值約束**（`src/crudelab/domain.py`）：狀態、類別、角色等列只能取規定的值，事件的方向判斷限 −2…+2、機率限 0…1，
+  由數據庫的 CHECK 約束保證。`tests/test_domain.py` 核對它和業務代碼裡的定義一致。要增加一個取值：改 domain.py 和業務定義，
+  再寫遷移重建那個約束（照 0021）。0021 加約束前會先檢查已有數據，不合規就停下列出、不改任何數據。
+- **遷移可以回滾**（`tests/test_schema.py`）：每次都從最新一步步降級到最初再升級回來，表結構必須和 models.py 完全一致；
+  新遷移不許留空的 downgrade（單向的數據遷移要在測試的 NO_DOWNGRADE 裡寫明理由）。SQLite 和 PostgreSQL 都跑。
+- **數據字典**（`docs/data-model.md`）：由 `crudelab data-model` 從表定義生成。每張表的類必須有說明，每一列要麼在 models.py
+  行尾有註釋，要麼是通用列名（data_model.GLOSSARY）；`tests/test_data_model.py` 檢查文檔是最新的、沒有缺說明的列。
+- **類型檢查棘輪**（`scripts/check_types.py`、`scripts/mypy_baseline.json`）：現有的 mypy 錯誤記在基線裡，每個文件只能減不能增；
+  修好一些之後運行 `python scripts/check_types.py --update` 收緊基線（不收緊 CI 也會失敗，免得修好的又壞回去）。
+- **覆蓋率下限**（pyproject.toml 的 `[tool.coverage.report] fail_under`）：只往上調。
+- **依賴鎖定**（`constraints.txt`）：用 `scripts/lock_deps.sh`（uv 通用解析）生成，一份清單適用所有平台和 Python 3.11 起的版本；
+  啟動腳本、CI 都按它安裝。`scripts/check_lock.py` 核對每個直接依賴都鎖了、每個平台都有現成安裝包；已知要編譯的組合
+  （Intel Mac 上的 greenlet、httptools）寫在 KNOWN_SOURCE_BUILDS 裡並說明原因。
+- **性質測試**（`tests/test_properties.py`，hypothesis）：用大量隨機輸入檢查公式解析、單位運算、交易日曆、換月、數字核對、
+  金十時間、文件導入這些「永遠應該成立」的規律。失敗時把縮小後的反例加成普通測試再修。
+- **命令行**（`tests/test_cli.py`）：按管理員實際操作的順序把每個子命令跑一遍，包括出錯時的退出碼和提示。
+
+本地一次跑全部檢查：
+
+```bash
+ruff check src tests scripts && crudelab check && python scripts/check_types.py && python scripts/check_lock.py --offline \
+  && coverage run -m pytest -q && coverage report && python scripts/check_secrets.py
+```

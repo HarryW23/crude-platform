@@ -1,6 +1,6 @@
 [project]
 name = "crudelab"
-version = "0.48.0"
+version = "0.49.0"
 description = "原油研究平台：數據 → 指標 → 模型 → 推演 → 報告"
 requires-python = ">=3.11"
 dependencies = [
@@ -22,7 +22,9 @@ dependencies = [
 [project.optional-dependencies]
 postgres = ["psycopg[binary]>=3.1"]
 anthropic = ["anthropic>=1.0"]
-dev = ["pytest>=8.0", "ruff>=0.6", "xlwt>=1.3.0", "httpx2>=2.16", "anthropic>=1.0"]   # xlwt 造 .xls；httpx2 給測試客戶端；anthropic 測 Claude 的請求格式
+dev = ["pytest>=8.0", "ruff>=0.6", "xlwt>=1.3.0", "httpx2>=2.16", "anthropic>=1.0", "coverage>=7.4", "mypy>=1.10",
+       "types-PyYAML", "hypothesis>=6.100"]   # xlwt 造 .xls；httpx2 給測試客戶端；anthropic 測 Claude 的請求格式；
+                                               # coverage / mypy 是 CI 的品質門檻；hypothesis 做性質測試
 e2e = ["playwright>=1.45"]           # 瀏覽器巡檢（tests/e2e），CI 單獨一步運行
 
 [project.scripts]
@@ -61,3 +63,21 @@ ignore = ["B008", "B905"]
 "src/crudelab/llm/chat.py" = ["E501"]   # 工具說明是給大模型看的整句話，拆行反而難讀
 "src/crudelab/data_needs.py" = ["E501"]   # 文檔的成段文字
 "src/crudelab/cli.py" = ["E501"]          # 命令行輸出的排版行   # FastAPI 的 Depends(...) 寫在參數預設值裡是慣用法
+
+[tool.mypy]
+# 類型檢查。現有的問題記在 scripts/mypy_baseline.json，CI 用 scripts/check_types.py 保證只減不增
+python_version = "3.11"
+ignore_missing_imports = true
+warn_unused_ignores = true
+files = ["src/crudelab"]
+
+[tool.coverage.run]
+branch = true
+source = ["src/crudelab"]
+omit = ["src/crudelab/migrations/env.py"]
+
+[tool.coverage.report]
+# 覆蓋率下限：低於這個數 CI 失敗。只往上調
+fail_under = 90
+skip_covered = true
+show_missing = false

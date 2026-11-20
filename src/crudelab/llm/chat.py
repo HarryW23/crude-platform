@@ -409,7 +409,8 @@ def answer(provider: LLMProvider, session: Session, cfg: Config, question: str,
 
 def _answer_native(provider: LLMProvider, ctx: _Ctx, question: str, turns: list[dict], history_text: str) -> dict:
     messages = [{"role": t["role"], "text": str(t["content"])} for t in turns] + [{"role": "user", "text": question}]
-    specs, system, steps = tool_specs(), _native_system_prompt(), []
+    specs, system = tool_specs(), _native_system_prompt()
+    steps: list[dict] = []
     while True:
         turn = provider.chat_tools(system, messages, specs, max_tokens=2000)
         if not turn.calls:

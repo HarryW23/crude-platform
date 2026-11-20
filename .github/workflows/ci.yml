@@ -3,19 +3,25 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    - cron: "17 2 * * 1"     # 每周一跑一次：沒有提交的周也能發現依賴裡新公佈的漏洞
 jobs:
   test:
+    # 品質門檻：密鑰掃描、代碼風格、配置校驗、類型檢查（只減不增）、全部測試 + 覆蓋率下限
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install -e ".[dev]"
+      - run: pip install -e ".[dev]" -c constraints.txt
       - run: python scripts/check_secrets.py
       - run: ruff check src tests scripts
       - run: crudelab check
-      - run: pytest -q
+      - run: python scripts/check_types.py
+      - run: python scripts/check_lock.py --offline
+      - run: coverage run -m pytest -q
+      - run: coverage report
   postgres:
     # 同一套測試在 PostgreSQL 上再跑一遍（#34）：每個測試從遷移好的模板庫複製一個新庫。
     # 服務器版本跟這台機器上 pg_dump / pg_restore 的大版本一致（客戶端比服務器新時，恢復會發出服務器不認識的設定）
@@ -31,10 +37,20 @@ jobs:
           echo "pg_dump 大版本：$major"
           docker run -d --name pg -p 5432:5432 -e POSTGRES_HOST_AUTH_METHOD=trust "postgres:$major"
           for i in $(seq 1 30); do docker exec pg pg_isready -U postgres && break; sleep 2; done
-      - run: pip install -e ".[dev,postgres]"
+      - run: pip install -e ".[dev,postgres]" -c constraints.txt
       - run: pytest -q
         env:
           CRUDELAB_TEST_PG: postgresql+psycopg://postgres@localhost:5432
+  oldest-python:
+    # 支持的最低版本 Python 3.11：鎖定的依賴在它上面能裝、全部測試能過
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e ".[dev]" -c constraints.txt
+      - run: pytest -q
   e2e:
     # 瀏覽器巡檢：用演示數據啟動前台和後台，逐頁打開（淺色 / 深色），檢查腳本錯誤、錯誤提示、橫向滾動
     runs-on: ubuntu-latest
@@ -43,8 +59,19 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install -e ".[dev,e2e]"
+      - run: pip install -e ".[dev,e2e]" -c constraints.txt
       - run: python -m playwright install --with-deps chromium
       - run: pytest -q tests/e2e
         env:
           CRUDELAB_E2E: "1"
+  supply-chain:
+    # 依賴：鎖定的版本在 macOS / Windows / Linux、Python 3.11–3.13 上都有現成安裝包；沒有已知漏洞
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install packaging pip-audit
+      - run: python scripts/check_lock.py
+      - run: grep -v '^#' constraints.txt > /tmp/locked.txt && pip-audit -r /tmp/locked.txt --progress-spinner off

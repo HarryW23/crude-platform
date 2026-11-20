@@ -19,12 +19,12 @@ if [ ! -x .venv/bin/crudelab ]; then
   "$PY" -m venv .venv || fail "建立 Python 環境失敗。"
 fi
 
-# 依賴清單（pyproject.toml）變了就重新安裝一次：更新代碼後新加的依賴會自動裝上
+# 依賴清單（pyproject.toml）或鎖定的版本（constraints.txt）變了就重新安裝一次：更新代碼後新加的依賴會自動裝上
 STAMP=.venv/.crudelab-installed
-WANT=$(.venv/bin/python -c 'import hashlib; print(hashlib.sha256(open("pyproject.toml", "rb").read()).hexdigest())')
+WANT=$(.venv/bin/python -c 'import hashlib; print(hashlib.sha256(open("pyproject.toml", "rb").read() + open("constraints.txt", "rb").read()).hexdigest())')
 if [ ! -x .venv/bin/crudelab ] || [ "$(cat "$STAMP" 2>/dev/null)" != "$WANT" ]; then
   [ -f "$STAMP" ] && echo "依賴有變化，正在更新，需要聯網，請稍候…"
-  .venv/bin/pip install --quiet --disable-pip-version-check -e . ||
+  .venv/bin/pip install --quiet --disable-pip-version-check -e . -c constraints.txt ||
     fail "安裝依賴失敗。請檢查網絡後再試；把上面的錯誤訊息保存下來。"
   echo "$WANT" > "$STAMP"
   echo "安裝完成。"

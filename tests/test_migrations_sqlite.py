@@ -16,7 +16,7 @@ def old_db(tmp_path, revision: str, leftover: bool = False) -> sa.Engine:
         command.upgrade(alembic, revision)
     with engine.begin() as conn:
         conn.execute(sa.text("INSERT INTO unit (code, name_zh, dimension) VALUES ('x', 'x', 'x')"))
-        conn.execute(sa.text("INSERT INTO commodity (code, name_zh, category) VALUES ('X', 'x', 'x')"))
+        conn.execute(sa.text("INSERT INTO commodity (code, name_zh, category) VALUES ('X', 'x', 'crude')"))
         conn.execute(sa.text("INSERT INTO location (code, name_zh, region) VALUES ('X', 'x', 'x')"))
         conn.execute(sa.text("INSERT INTO series (code, name_zh, commodity_code, location_code, kind, unit_code, "
                              "frequency, valid_days, module, external_ids, active) "
@@ -76,3 +76,20 @@ def test_migration_that_breaks_references_is_rejected(tmp_path, monkeypatch):
     with pytest.raises(db.MigrationError, match="斷掉的引用"):
         db.migrate(engine)
     assert state(engine)["aliases"] == ["A"]                                  # 插入的壞數據已回滾
+
+
+def test_check_constraints_refuse_bad_existing_data_without_changing_it(tmp_path):
+    """0021 加取值約束前先檢查已有數據：有不合規的值就停下、列出來，整個遷移回滾，數據不變。"""
+    engine = old_db(tmp_path, "0020")
+    with engine.begin() as conn:
+        conn.execute(sa.text("UPDATE job_run SET status = 'okay'"))                  # 拼錯的狀態
+    with pytest.raises(Exception, match=r"job_run.status = 'okay'（1 行）"):
+        db.migrate(engine)
+    assert state(engine)["version"] == "0020"
+    with engine.connect() as conn:
+        assert conn.execute(sa.text("SELECT status FROM job_run")).scalar() == "okay"
+    with engine.begin() as conn:
+        conn.execute(sa.text("UPDATE job_run SET status = 'ok'"))
+    db.migrate(engine)
+    with engine.begin() as conn, pytest.raises(sa.exc.IntegrityError):                # 之後數據庫直接拒絕
+        conn.execute(sa.text("UPDATE job_run SET status = 'okay'"))

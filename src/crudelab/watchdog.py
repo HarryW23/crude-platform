@@ -108,8 +108,8 @@ def run_once(cfg: Config, url: str, *, require_scheduler: bool = False, failures
         state = {}
     else:
         count = int(state.get("failures", 0)) + 1
-        since = state.get("since") or now.isoformat()
-        state.update(failures=count, since=since, reason=result.reason)
+        first_failure = str(state.get("since") or now.isoformat())
+        state.update(failures=count, since=first_failure, reason=result.reason)
         last = state.get("alerted_at")
         if count >= failures and not state.get("alerted"):
             event, title = "failure", "平台無法訪問"
@@ -117,7 +117,7 @@ def run_once(cfg: Config, url: str, *, require_scheduler: bool = False, failures
                 hours=cfg.notifications.repeat_hours):
             event, title = "reminder", "平台仍無法訪問"
         if event:
-            start = datetime.fromisoformat(since)
+            start = datetime.fromisoformat(first_failure)
             body = (f"{url}：{result.reason}。\n從 {_local(start, tz)} 起已連續 {count} 次檢查失敗"
                     f"（持續約 {_duration(now - start)}）。\n請檢查程序是否在運行、機器是否開機、網絡是否通。")
     results: dict[str, str] = {}

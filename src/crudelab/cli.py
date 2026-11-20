@@ -12,6 +12,7 @@
   crudelab data-needs [--output 文件] 生成數據與接口需求清單
   crudelab secret set 名稱            保存一個 API key（輸入不回顯；另有 list / unset）
   crudelab user add 名字 --role admin  建立帳號（另有 list / passwd / role / disable / enable / unlock）
+  crudelab data-model --output docs/data-model.md   重新生成數據字典
   crudelab watchdog 平台地址           從另一台機器檢查平台是否在運行，掛了發群通知（見 watchdog.py）
   crudelab purge-source demo          刪除某個數據源的全部數據點
 """
@@ -744,6 +745,18 @@ def credentials_ready() -> None:
     credentials.install_log_redaction()
 
 
+def cmd_data_model(args) -> int:
+    """數據字典：從表定義生成。"""
+    from .data_model import render
+    text = render()
+    if args.output:
+        Path(args.output).write_text(text, encoding="utf-8")
+        print(f"已寫入 {args.output}")
+    else:
+        print(text)
+    return 0
+
+
 def cmd_data_needs(args) -> int:
     from .config import ConfigError, load_config
     from .data_needs import render
@@ -886,6 +899,9 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("data-needs", help="生成數據與接口需求清單")
     p.add_argument("--output", help="寫入這個文件；不給就打印")
     p.set_defaults(func=cmd_data_needs)
+    p = sub.add_parser("data-model", help="生成數據字典（每張表、每一列的含義和約束）")
+    p.add_argument("--output", help="寫入這個文件；不給就打印")
+    p.set_defaults(func=cmd_data_model)
     p = sub.add_parser("secret", help="密鑰管理（API key 等）")
     p.add_argument("action", choices=["list", "set", "unset"])
     p.add_argument("name", nargs="?")

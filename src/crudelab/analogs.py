@@ -9,6 +9,8 @@
 """
 from __future__ import annotations
 
+from typing import Any
+
 import pandas as pd
 
 from .config import Config
@@ -21,7 +23,7 @@ SPREAD = "TS_BRENT_M1_M3"
 
 def reaction(prices: pd.Series, spread: pd.Series, day) -> dict:
     """一個事件日的市場反應。prices 用換月調整後的價格；spread 是月差（可以空）。"""
-    out = {"status": "no_data", "base_date": None, "base_price": None, "moves": {}, "spread": {},
+    out: dict[str, Any] = {"status": "no_data", "base_date": None, "base_price": None, "moves": {}, "spread": {},
            "peak": None, "trough": None}
     prices = prices.dropna().sort_index()
     before = prices[prices.index < pd.Timestamp(day)]

@@ -12,7 +12,7 @@
 
 前台的接口裡不包含導入數據、改參數這些操作，後台的接口裡不包含研究功能。部署到服務器時可以只開放前台。
 
-架構、約定和擴展方法見 [docs/architecture.md](docs/architecture.md)。
+架構、約定和擴展方法見 [docs/architecture.md](docs/architecture.md)；每張表、每一列的含義和約束見 [docs/data-model.md](docs/data-model.md)（由表定義自動生成）。
 
 ## 現在能做什麼
 

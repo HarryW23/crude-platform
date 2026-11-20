@@ -1,14 +1,16 @@
 """數據表定義。表結構的變更一律通過 migrations/ 下的遷移腳本，不要直接改庫。
 
-八類表：
-  主數據     unit / location / commodity / data_source / series / series_alias / parameter
-  事實數據   import_batch / observation / parameter_version
-  判斷       scenario / adjustment / event / projection / projection_case —— 人的判斷，和數據分開存
-  產出       report / backtest_run —— 生成時刻的快照
-  帳號       user_account / user_session
-  調度       job_run / scheduler_heartbeat / switch / notification / login_failure
-  修訂歷史   observation_revision
-  操作日誌   audit_log
+表按用途分組（tests/test_data_model.py 檢查每張表都歸了組）：
+  主數據       unit / location / commodity / data_source / series / series_alias / parameter —— 配置文件的鏡像
+  事實數據     import_batch / observation / observation_vintage / parameter_version
+  外部數據     calendar_event / news_flash / external_call —— 金十財經日曆、快訊、調用記錄
+  判斷         scenario / adjustment / event / projection / projection_case / market_view —— 人的判斷，和數據分開存
+  產出         report / backtest_run —— 生成時刻的快照
+  帳號         user_account / user_session / login_failure
+  調度與運行   job_run / scheduler_heartbeat / switch / notification / app_setting
+  大模型       llm_call / llm_pause
+  修訂歷史     observation_revision
+  操作日誌     audit_log
 
 時間一律存 UTC（不帶時區的 datetime）。
 
@@ -24,6 +26,7 @@ from datetime import UTC, date, datetime
 from sqlalchemy import (
     JSON,
     Boolean,
+    CheckConstraint,
     Date,
     DateTime,
     Float,
@@ -37,6 +40,8 @@ from sqlalchemy import (
     false,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+from . import domain
 
 NAMING = {"ix": "ix_%(column_0_label)s", "uq": "uq_%(table_name)s_%(column_0_name)s",
           "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s", "pk": "pk_%(table_name)s"}
@@ -61,6 +66,7 @@ class Base(DeclarativeBase):
 # ----------------------------- 主數據（來源：config/，由 master.sync_to_db 寫入） -----------------------------
 
 class Unit(Base):
+    """單位字典（config/master/units.yaml），參與公式的量綱檢查。"""
     __tablename__ = "unit"
     code: Mapped[str] = mapped_column(String(32), primary_key=True)
     name_zh: Mapped[str] = mapped_column(String(64))
@@ -68,6 +74,7 @@ class Unit(Base):
 
 
 class Location(Base):
+    """地區字典（config/master/locations.yaml）。"""
     __tablename__ = "location"
     code: Mapped[str] = mapped_column(String(32), primary_key=True)
     name_zh: Mapped[str] = mapped_column(String(64))
@@ -75,6 +82,7 @@ class Location(Base):
 
 
 class Commodity(Base):
+    """品種字典（config/master/commodities.yaml）。"""
     __tablename__ = "commodity"
     code: Mapped[str] = mapped_column(String(32), primary_key=True)
     name_zh: Mapped[str] = mapped_column(String(64))
@@ -82,6 +90,7 @@ class Commodity(Base):
 
 
 class DataSource(Base):
+    """數據源（config/master/sources.yaml）：同一序列有多個來源時按優先級取值。"""
     __tablename__ = "data_source"
     code: Mapped[str] = mapped_column(String(32), primary_key=True)
     name: Mapped[str] = mapped_column(String(128))
@@ -92,6 +101,7 @@ class DataSource(Base):
 
 
 class Series(Base):
+    """序列（config/master/series/*.yaml 的鏡像）：一條時間序列的定義，數據在 observation。"""
     __tablename__ = "series"
     code: Mapped[str] = mapped_column(String(64), primary_key=True)
     name_zh: Mapped[str] = mapped_column(String(128))
@@ -102,7 +112,7 @@ class Series(Base):
     frequency: Mapped[str] = mapped_column(String(16))
     valid_days: Mapped[int] = mapped_column(Integer)                 # 一個值最多沿用幾天
     contract: Mapped[str | None] = mapped_column(String(8))          # 連續合約月序 M1 / M2 …
-    benchmark: Mapped[str | None] = mapped_column(String(64))
+    benchmark: Mapped[str | None] = mapped_column(String(64))  # 對應的基準品種
     module: Mapped[str] = mapped_column(String(16))
     external_ids: Mapped[dict] = mapped_column(JSON)                 # {"eia": "PET.…"}
     notes: Mapped[str | None] = mapped_column(Text)
@@ -115,8 +125,8 @@ class SeriesAlias(Base):
     """列名 → 序列 的對照。導入時自動識別靠它；人工確認過的對應也存回這裡（origin=learned）。"""
     __tablename__ = "series_alias"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    alias_norm: Mapped[str] = mapped_column(String(128), unique=True)
-    alias: Mapped[str] = mapped_column(String(128))
+    alias_norm: Mapped[str] = mapped_column(String(128), unique=True)  # 規範化後的別名（小寫、簡體、去空白，唯一）
+    alias: Mapped[str] = mapped_column(String(128))  # 原文
     series_code: Mapped[str] = mapped_column(ForeignKey("series.code"))
     origin: Mapped[str] = mapped_column(String(16))                  # config / learned
 
@@ -126,8 +136,8 @@ class Parameter(Base):
     __tablename__ = "parameter"
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
     name_zh: Mapped[str] = mapped_column(String(128))
-    unit: Mapped[str] = mapped_column(String(32))
-    group: Mapped[str] = mapped_column("grp", String(64))
+    unit: Mapped[str] = mapped_column(String(32))  # 單位（參與量綱檢查）
+    group: Mapped[str] = mapped_column("grp", String(64))           # 分組（後台顯示用；列名 grp 避開 SQL 保留字）
     description: Mapped[str | None] = mapped_column(Text)
     model: Mapped[str | None] = mapped_column(String(64))            # 由哪個煉廠模型生成
     verified: Mapped[bool] = mapped_column(Boolean, default=False)   # 數值是否已由人核對
@@ -146,7 +156,7 @@ class ParameterVersion(Base):
     __table_args__ = (Index("ix_parameter_version_key_valid_from", "key", "valid_from"),)
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     key: Mapped[str] = mapped_column(ForeignKey("parameter.key"))
-    valid_from: Mapped[date] = mapped_column(Date)
+    valid_from: Mapped[date] = mapped_column(Date)  # 生效日期（業務時間）
     value: Mapped[float] = mapped_column(Float)
     note: Mapped[str | None] = mapped_column(Text)
     created_by: Mapped[str] = mapped_column(String(64))
@@ -158,12 +168,12 @@ class ImportBatch(Base):
     __tablename__ = "import_batch"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     source_code: Mapped[str] = mapped_column(ForeignKey("data_source.code"))
-    filename: Mapped[str] = mapped_column(String(256))
-    sha256: Mapped[str] = mapped_column(String(64), index=True)
-    stored_path: Mapped[str] = mapped_column(String(512))
+    filename: Mapped[str] = mapped_column(String(256))  # 上傳時的文件名
+    sha256: Mapped[str] = mapped_column(String(64), index=True)  # 文件內容的 SHA-256
+    stored_path: Mapped[str] = mapped_column(String(512))  # 原文件保存位置
     status: Mapped[str] = mapped_column(String(16))                  # previewed / committed
-    mapping: Mapped[dict | None] = mapped_column(JSON)
-    stats: Mapped[dict | None] = mapped_column(JSON)
+    mapping: Mapped[dict | None] = mapped_column(JSON)  # 當時用的列對應
+    stats: Mapped[dict | None] = mapped_column(JSON)  # 導入結果統計
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     created_by: Mapped[str] = mapped_column(String(64))
     vintage: Mapped[date | None] = mapped_column(Date)               # 機構報告的發佈日期（補錄歷史報告時填）
@@ -198,7 +208,7 @@ class ObservationVintage(Base):
     series_code: Mapped[str] = mapped_column(ForeignKey("series.code"))
     obs_date: Mapped[date] = mapped_column(Date)
     source_code: Mapped[str] = mapped_column(ForeignKey("data_source.code"))
-    vintage: Mapped[date] = mapped_column(Date)
+    vintage: Mapped[date] = mapped_column(Date)  # 報告期（機構報告的發佈日期）
     value: Mapped[float] = mapped_column(Float)
     batch_id: Mapped[int | None] = mapped_column(ForeignKey("import_batch.id"))
     source_ref: Mapped[str | None] = mapped_column(String(256))
@@ -222,9 +232,9 @@ class Adjustment(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     scenario_code: Mapped[str] = mapped_column(ForeignKey("scenario.code"), index=True)
     target: Mapped[str] = mapped_column(String(64))                  # 序列或指標代碼
-    date_from: Mapped[date] = mapped_column(Date)
+    date_from: Mapped[date] = mapped_column(Date)  # 從哪天起生效
     date_to: Mapped[date | None] = mapped_column(Date)               # 空 = 一直持續
-    delta: Mapped[float] = mapped_column(Float)
+    delta: Mapped[float] = mapped_column(Float)  # 加上的量（單位同目標）
     note: Mapped[str | None] = mapped_column(Text)                   # 依據：為什麼這樣調
     created_by: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
@@ -237,18 +247,18 @@ class Event(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     title: Mapped[str] = mapped_column(String(200))
     category: Mapped[str] = mapped_column(String(16))
-    location_code: Mapped[str | None] = mapped_column(String(32))
+    location_code: Mapped[str | None] = mapped_column(String(32))  # 地區（地區字典的代碼）
     status: Mapped[str] = mapped_column(String(16))      # rumor / confirmed / ongoing / resolved / dismissed
     bias: Mapped[int] = mapped_column(Integer)                       # 對油價的方向判斷：−2 強利空 … +2 強利多
-    started_on: Mapped[date | None] = mapped_column(Date)
-    ended_on: Mapped[date | None] = mapped_column(Date)
+    started_on: Mapped[date | None] = mapped_column(Date)  # 開始日期
+    ended_on: Mapped[date | None] = mapped_column(Date)  # 結束日期（空 = 仍在進行）
     summary: Mapped[str | None] = mapped_column(Text)
     source: Mapped[str | None] = mapped_column(Text)                 # 出處：連結或原文摘錄
     scenario_code: Mapped[str | None] = mapped_column(ForeignKey("scenario.code"))   # 這個事件的量化影響
     probability: Mapped[float | None] = mapped_column(Float)         # 推演期限內發生 / 持續的機率 0–1（人的判斷）
     price_premium: Mapped[float | None] = mapped_column(Float)       # 發生時直接加在價格上的溢價（錨定價格的單位）
     origin: Mapped[str] = mapped_column(String(16))                  # manual / llm
-    draft: Mapped[bool] = mapped_column(Boolean, default=False)
+    draft: Mapped[bool] = mapped_column(Boolean, default=False)  # 大模型抽取、尚未確認的草稿（不參與計算）
     created_by: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
@@ -276,18 +286,18 @@ class MarketView(Base):
     series_code: Mapped[str] = mapped_column(String(64))               # 看的是哪個價格（推演的錨定價格）
     direction: Mapped[int] = mapped_column(Integer)                    # −1 偏空 / 0 中性 / +1 偏多
     low: Mapped[float | None] = mapped_column(Float)                   # 目標區間（可不填）
-    high: Mapped[float | None] = mapped_column(Float)
+    high: Mapped[float | None] = mapped_column(Float)  # 區間上沿
     confidence: Mapped[float | None] = mapped_column(Float)            # 方向判斷對的把握 0.5–1（可不填）
     reasons: Mapped[list] = mapped_column(JSON)                        # 理由的因子標籤
-    rationale: Mapped[str | None] = mapped_column(Text)
+    rationale: Mapped[str | None] = mapped_column(Text)  # 理由
     start_price: Mapped[float] = mapped_column(Float)                  # 起點價格（made_on 當天或之前最近的值）
     start_date: Mapped[date] = mapped_column(Date)
     daily_vol: Mapped[float | None] = mapped_column(Float)            # 當時的日波動率：決定「中性」的範圍
     system: Mapped[dict | None] = mapped_column(JSON)                  # 當時系統信號的快照（綜合與各模組分數）
     created_by: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
-    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime)
-    cancel_reason: Mapped[str | None] = mapped_column(Text)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime)  # 撤回時間（UTC）
+    cancel_reason: Mapped[str | None] = mapped_column(Text)  # 撤回原因
 
 
 class ProjectionCase(Base):
@@ -295,7 +305,7 @@ class ProjectionCase(Base):
     __tablename__ = "projection_case"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     projection_id: Mapped[int] = mapped_column(ForeignKey("projection.id"), index=True)
-    label: Mapped[str] = mapped_column(String(128))
+    label: Mapped[str] = mapped_column(String(128))  # 分支名稱
     scenario_code: Mapped[str | None] = mapped_column(ForeignKey("scenario.code"))
     probability: Mapped[float] = mapped_column(Float)                # 0–1
     price_adjustment: Mapped[float] = mapped_column(Float, default=0.0)   # 直接加在價格上的判斷（如風險溢價）
@@ -313,7 +323,7 @@ class Report(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     kind: Mapped[str] = mapped_column(String(16))                    # daily / weekly / monthly
     title: Mapped[str] = mapped_column(String(200))
-    data_date: Mapped[date | None] = mapped_column(Date)
+    data_date: Mapped[date | None] = mapped_column(Date)  # 報告的數據截至日
     facts: Mapped[dict] = mapped_column(JSON)                        # 結構化的事實：全部來自指標引擎
     markdown: Mapped[str] = mapped_column(Text)                      # 由 facts 按固定模板排出的正文
     narrative: Mapped[str | None] = mapped_column(Text)              # 大模型寫的解讀（可沒有）
@@ -326,24 +336,24 @@ class UserAccount(Base):
     """登錄帳號。密碼只存加鹽哈希（auth.py）。帳號不刪除，只停用，這樣歷史記錄裡的操作者始終對得上。"""
     __tablename__ = "user_account"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    username: Mapped[str] = mapped_column(String(64), unique=True)
-    password_hash: Mapped[str] = mapped_column(String(256))
+    username: Mapped[str] = mapped_column(String(64), unique=True)  # 用戶名（唯一，不分大小寫）
+    password_hash: Mapped[str] = mapped_column(String(256))  # scrypt 加鹽哈希
     role: Mapped[str] = mapped_column(String(16))                    # viewer / analyst / admin
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_by: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
-    last_login_at: Mapped[datetime | None] = mapped_column(DateTime)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime)  # 上次登錄（UTC）
 
 
 class UserSession(Base):
     """一次登錄。瀏覽器拿到的是隨機令牌，這裡只存它的 SHA-256，所以數據庫洩漏也冒充不了任何人。"""
     __tablename__ = "user_session"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)  # 令牌的 SHA-256（不存原文）
     user_id: Mapped[int] = mapped_column(ForeignKey("user_account.id"), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
-    expires_at: Mapped[datetime] = mapped_column(DateTime)
-    revoked_at: Mapped[datetime | None] = mapped_column(DateTime)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)  # 過期時間（UTC）
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime)  # 登出或被撤銷的時間（UTC）
 
 
 class LoginFailure(Base):
@@ -351,7 +361,7 @@ class LoginFailure(Base):
     只記小寫用戶名和時間（不記密碼、不記 IP）；過了計數窗口的記錄在下一次失敗時順手清掉。"""
     __tablename__ = "login_failure"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    username_key: Mapped[str] = mapped_column(String(128), index=True)
+    username_key: Mapped[str] = mapped_column(String(128), index=True)  # 小寫的用戶名
     at: Mapped[datetime] = mapped_column(DateTime, index=True)
 
 
@@ -404,12 +414,12 @@ class CalendarEvent(Base):
     pub_time: Mapped[datetime] = mapped_column(DateTime, index=True)  # UTC
     title: Mapped[str] = mapped_column(String(300))
     star: Mapped[int | None] = mapped_column(Integer)                 # 重要性 1–5
-    previous: Mapped[str | None] = mapped_column(String(64))
-    consensus: Mapped[str | None] = mapped_column(String(64))
-    actual: Mapped[str | None] = mapped_column(String(64))
-    revised: Mapped[str | None] = mapped_column(String(64))
+    previous: Mapped[str | None] = mapped_column(String(64))  # 前值
+    consensus: Mapped[str | None] = mapped_column(String(64))  # 市場預期（最新）
+    actual: Mapped[str | None] = mapped_column(String(64))  # 公佈值
+    revised: Mapped[str | None] = mapped_column(String(64))  # 修正後的前值
     affect: Mapped[str | None] = mapped_column(String(64))            # 對方給的「利多 / 利空」說明
-    consensus_at_release: Mapped[str | None] = mapped_column(String(64))
+    consensus_at_release: Mapped[str | None] = mapped_column(String(64))  # 公佈前凍結的預期（算超預期用）
     released_at: Mapped[datetime | None] = mapped_column(DateTime)    # 我們第一次看到實際值的時間
     first_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
@@ -426,7 +436,7 @@ class NewsFlash(Base):
     content: Mapped[str] = mapped_column(Text)
     url: Mapped[str | None] = mapped_column(String(500))
     keywords: Mapped[list] = mapped_column(JSON)                     # 命中的關鍵詞
-    important: Mapped[bool] = mapped_column(Boolean, default=False)
+    important: Mapped[bool] = mapped_column(Boolean, default=False)  # 金十標記的重要快訊
     first_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     extracted_at: Mapped[datetime | None] = mapped_column(DateTime)  # 交給大模型抽取的時間
     drafts: Mapped[int] = mapped_column(Integer, default=0)          # 抽出了幾條事件草稿
@@ -442,9 +452,9 @@ class LLMCall(Base):
     model: Mapped[str] = mapped_column(String(128))
     purpose: Mapped[str] = mapped_column(String(32))                 # chat / extract / narrative / test
     status: Mapped[str] = mapped_column(String(16))                  # running / ok / failed
-    http_status: Mapped[int | None] = mapped_column(Integer)
-    prompt_tokens: Mapped[int | None] = mapped_column(Integer)
-    completion_tokens: Mapped[int | None] = mapped_column(Integer)
+    http_status: Mapped[int | None] = mapped_column(Integer)  # 對方返回的 HTTP 狀態碼
+    prompt_tokens: Mapped[int | None] = mapped_column(Integer)  # 輸入 token 數
+    completion_tokens: Mapped[int | None] = mapped_column(Integer)  # 輸出 token 數
     message: Mapped[str | None] = mapped_column(Text)                # 失敗原因（我們自己的說明，已脫敏）
 
 
@@ -452,8 +462,8 @@ class LLMPause(Base):
     """某家大模型被自動暫停（密鑰無效、餘額不足、觸發頻率限制、連續出錯）。到期自動恢復，也可以手動解除。"""
     __tablename__ = "llm_pause"
     provider: Mapped[str] = mapped_column(String(32), primary_key=True)
-    until: Mapped[datetime] = mapped_column(DateTime)
-    reason: Mapped[str] = mapped_column(Text)
+    until: Mapped[datetime] = mapped_column(DateTime)  # 暫停到（UTC）
+    reason: Mapped[str] = mapped_column(Text)  # 暫停原因
     strikes: Mapped[int] = mapped_column(Integer, default=0)         # 連續觸發頻率限制的次數，用來加長暫停
 
 
@@ -464,7 +474,7 @@ class Switch(Base):
     """
     __tablename__ = "switch"
     key: Mapped[str] = mapped_column(String(96), primary_key=True)
-    enabled: Mapped[bool] = mapped_column(Boolean)
+    enabled: Mapped[bool] = mapped_column(Boolean)  # 開或關
     updated_by: Mapped[str] = mapped_column(String(64))
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
@@ -492,7 +502,7 @@ class BacktestRun(Base):
     mode: Mapped[str] = mapped_column(String(16))                    # observation / vintage
     start_date: Mapped[date | None] = mapped_column(Date)
     end_date: Mapped[date | None] = mapped_column(Date)
-    step: Mapped[int] = mapped_column(Integer)
+    step: Mapped[int] = mapped_column(Integer)  # 每隔幾個交易日評估一次
     message: Mapped[str | None] = mapped_column(Text)
     results: Mapped[dict | None] = mapped_column(JSON)
 
@@ -502,7 +512,7 @@ class SchedulerHeartbeat(Base):
     __tablename__ = "scheduler_heartbeat"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     at: Mapped[datetime] = mapped_column(DateTime)
-    host: Mapped[str] = mapped_column(String(128))
+    host: Mapped[str] = mapped_column(String(128))  # 寫心跳的機器名
 
 
 # ----------------------------- 修訂歷史與日誌 -----------------------------
@@ -520,15 +530,33 @@ class ObservationRevision(Base):
     source_ref: Mapped[str | None] = mapped_column(String(256))
     recorded_at: Mapped[datetime] = mapped_column(DateTime)          # 舊值當初入庫的時間
     replaced_at: Mapped[datetime] = mapped_column(DateTime)          # 被取代的時間
-    replaced_by: Mapped[str] = mapped_column(String(64))
+    replaced_by: Mapped[str] = mapped_column(String(64))  # 被哪個批次替換
 
 
 class AuditLog(Base):
+    """操作日誌：誰在什麼時候改了什麼。只追加，不修改。"""
     __tablename__ = "audit_log"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     ts: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
-    actor: Mapped[str] = mapped_column(String(64))
-    action: Mapped[str] = mapped_column(String(32))
-    entity: Mapped[str] = mapped_column(String(32))
-    entity_id: Mapped[str] = mapped_column(String(128))
+    actor: Mapped[str] = mapped_column(String(64))  # 操作者
+    action: Mapped[str] = mapped_column(String(32))  # 做了什麼（如 user_create、restore）
+    entity: Mapped[str] = mapped_column(String(32))  # 對象類型
+    entity_id: Mapped[str] = mapped_column(String(128))  # 對象編號或代碼
     detail: Mapped[dict | None] = mapped_column(JSON)
+
+
+# ----------------------------- 取值約束 -----------------------------
+# 「只能取這幾個值」的列和數值範圍，由 domain.py 統一定義，在這裡掛到表上（遷移 0021 建出同樣的約束）。
+
+def _attach_checks() -> None:
+    for table, columns in domain.CHECKED.items():
+        for column, values in columns.items():
+            Base.metadata.tables[table].append_constraint(
+                CheckConstraint(domain.in_list(column, values), name=domain.constraint_name(table, column)))
+    for table, rules in domain.RANGES.items():
+        for suffix, condition in rules:
+            Base.metadata.tables[table].append_constraint(
+                CheckConstraint(condition, name=domain.constraint_name(table, suffix)))
+
+
+_attach_checks()

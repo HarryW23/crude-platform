@@ -17,3 +17,8 @@ secrets*
 *.pfx
 id_rsa*
 credentials*.json
+
+# 測試產生的文件
+.coverage
+.coverage.*
+.hypothesis/
