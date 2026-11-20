@@ -74,11 +74,22 @@ def browser():
 def logged_in(browser, url: str, username: str):
     context = browser.new_context(viewport={"width": 1366, "height": 900})
     page = context.new_page()
+    errors: list[str] = []
+    page.on("pageerror", lambda e: errors.append(f"腳本錯誤：{e}"))
+    page.on("console", lambda m: m.type == "error" and errors.append(f"控制台：{m.text}"))
     page.goto(url)
-    assert page.request.post(f"{url}/api/auth/login", data={"username": username, "password": PASSWORD}).ok
+    login = page.request.post(f"{url}/api/auth/login", data={"username": username, "password": PASSWORD})
+    assert login.ok, login.text()
     page.reload()                                       # 頁面在登錄前載入，要重新載入才知道是誰
-    page.wait_for_function(f"() => document.getElementById('account')?.textContent.includes('{username}')",
-                           timeout=10000)               # 確實登錄了：不然整頁是登錄框，「沒看到按鈕」是假通過
+    try:                                                # 確實登錄了：不然整頁是登錄框，「沒看到按鈕」是假通過
+        page.wait_for_function(f"() => document.getElementById('account')?.textContent.includes('{username}')",
+                               timeout=20000)
+    except playwright.TimeoutError:
+        site = page.request.get(f"{url}/api/site").text()[:300]
+        account = page.evaluate("() => document.getElementById('account')?.outerHTML ?? '（沒有 #account）'")
+        main = page.evaluate("() => document.querySelector('main')?.textContent.slice(0, 200)")
+        raise AssertionError(f"登錄後頁面沒有認出帳號。錯誤：{errors}；#account：{account}；"
+                             f"main：{main}；site：{site}") from None
     return context, page
 
 

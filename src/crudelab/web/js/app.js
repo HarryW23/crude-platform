@@ -105,13 +105,13 @@ try {
     main.querySelector("#out").addEventListener("click", async () => { await api("/auth/logout", { method: "POST" }); location.reload(); });
   } else {
     ready = true;
-    if (user && user.role === "viewer") markReadOnly();
     if (user) {
       const account = document.getElementById("account");
       account.innerHTML = `<button class="link" id="me" title="修改密碼">${esc(user.username)}（${esc(user.role_name)}）</button><button class="link" id="logout">登出</button>`;
       account.querySelector("#me").addEventListener("click", showAccount);
       account.querySelector("#logout").addEventListener("click", async () => { await api("/auth/logout", { method: "POST" }); location.reload(); });
       window.addEventListener("crudelab:login-required", () => { ready = false; showLogin("登錄已過期，請重新登錄。"); });
+      if (user.role === "viewer") markReadOnly();           // 放在帳號顯示之後：就算這裡出錯，登錄狀態也看得到
     }
   }
 } catch (e) {
