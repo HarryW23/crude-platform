@@ -370,6 +370,13 @@ def _validate(cfg: Config) -> list[str]:
     for c in cfg.curves.values():
         if c.calendar is not None and c.calendar not in cfg.calendars:
             errors.append(f"曲線 {c.code}：交易日曆 {c.calendar} 不在 calendars.yaml 裡")
+    if cfg.projection is not None:
+        codes = [m.code for m in cfg.projection.drift_models]
+        if len(codes) != len(set(codes)):
+            errors.append("projection.yaml：drift_models 的代碼重複")
+        clash = set(codes) & set(cfg.fair_values)
+        if clash:
+            errors.append(f"projection.yaml：統計漂移模型和公允價值模型重名：{'、'.join(sorted(clash))}")
     for v in cfg.views.values():
         curve = cfg.curves.get(v.curve)
         if curve is None:

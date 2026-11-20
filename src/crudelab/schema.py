@@ -460,6 +460,18 @@ class SensitivityEstimate(Strict):
     min_points: int = Field(default=36, ge=12)
 
 
+class StatDriftModel(Strict):
+    """統計漂移模型（見 stats_models.py）。推演選它之前，最近一次回測裡它必須讓 1 個月的誤差顯著變小。"""
+    code: str = Code
+    name_zh: str
+    kind: Literal["momentum"] = "momentum"
+    lookback_days: int = Field(default=63, ge=5, le=252)       # 過去多少個交易日的漲跌當 x
+    window_days: int = Field(default=756, ge=126, le=2520)     # 只用最近這麼多個交易日的樣本估計
+    min_points: int = Field(default=120, ge=30)
+    t_min: float = Field(default=2.0, ge=1.0, le=5.0)          # 斜率的 |t| 低於它不給漂移
+    notes: str | None = None
+
+
 class ProjectionSettings(Strict):
     """價格推演的全局設定。算法見 projection.py。"""
     anchor: str                    # 推演的價格：序列代碼
@@ -468,6 +480,9 @@ class ProjectionSettings(Strict):
     sensitivity_estimate: SensitivityEstimate | None = None    # 從歷史估計敏感度的設定（見 sensitivity.py）
     volatility_lookback: int = Field(default=250, ge=20)
     volatility_min_points: int = Field(default=60, ge=20)
+    volatility_method: Literal["historical", "ewma"] = "historical"   # 區間用哪種波動率（回測裡並排比較）
+    ewma_lambda: float = Field(default=0.94, ge=0.8, le=0.995)
+    drift_models: list[StatDriftModel] = []                           # 統計漂移模型，和公允價值模型並列可選
     horizons: list[HorizonDef] = Field(min_length=1)
     module_weights: dict[Literal["spread", "balance", "refinery", "positioning", "geo"], str]   # 模組 → 權重參數 key
 

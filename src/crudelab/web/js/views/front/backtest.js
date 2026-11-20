@@ -103,6 +103,7 @@ function renderResults(view, r) {
         <tr><td>誤差減少</td>${r.horizons.map((x) => { const d = fv.drift[x.code]; return `<td class="n ${d.improvement > 0 ? "up" : d.improvement < 0 ? "down" : ""}"><b>${d.improvement == null ? "—" : signed(d.improvement * 100, 1) + "%"}</b>${d.significant ? '<div><span class="tag ok">顯著</span></div>' : ""}</td>`; }).join("")}</tr>
         <tr><td>方向命中率</td>${r.horizons.map((x) => `<td class="n">${pct(fv.drift[x.code].hit_rate)}</td>`).join("")}</tr>
         <tr><td>有效樣本</td>${r.horizons.map((x) => `<td class="n">${num(fv.drift[x.code].n_eff, 0)}${fv.drift[x.code].status === "insufficient" ? '<div><span class="tag warn">樣本不足</span></div>' : ""}</td>`).join("")}</tr></table></div></div>`).join("")}
+    ${statModelsPanel(r)}
     ${relationsPanel(r, h)}
     ${calibrationPanel(r)}
     <h3>需要知道的局限</h3><ul class="ink2">${r.caveats.map((c) => `<li>${esc(c)}</li>`).join("")}</ul></div>`;
@@ -193,4 +194,22 @@ function relationsPanel(r, h) {
       灰色行是換成其他寫法（穩健回歸、帶轉折點）的結果：明顯更好時，可以在 config/relations/ 裡改 method / shape。</p>
     <div class="scroll"><table><tr><th>關係</th><th class="n">比均值好</th><th class="n">比不變好</th><th class="n">偏離回歸</th>
       <th class="n">斜率同向</th><th class="n">有效樣本</th></tr>${rows}</table></div>`;
+}
+
+// 推演的統計模型：兩種波動率的區間並排；統計漂移模型和「不加漂移」比
+function statModelsPanel(r) {
+  const bc = r.band_compare;
+  if (!bc?.methods) return "";
+  const NAME = { historical: "歷史波動（最近 250 天）", ewma: "EWMA（近期權重高）" };
+  const bandRows = Object.entries(bc.methods).map(([m, by]) => `<tr><td>${NAME[m]}${m === bc.current ? ' <span class="tag">現在用</span>' : ""}</td>
+    ${r.horizons.map((x) => `<td class="n">${pct(by[x.code].coverage)}<div class="muted">評分 ${by[x.code].score == null ? "—" : num(by[x.code].score, 3)}${bc.better[x.code] === m ? " ✓" : ""}</div></td>`).join("")}</tr>`).join("");
+  const drifts = Object.values(r.drift_models ?? {});
+  const driftRows = drifts.map((d) => `<tr><td>${esc(d.name_zh)} ${d.passed ? '<span class="tag ok">通過：可在推演頁選用</span>' : '<span class="tag">未通過</span>'}</td>
+    ${r.horizons.map((x) => { const m = d.by_horizon[x.code]; return `<td class="n">${m.improvement == null ? "—" : `<span class="${m.improvement > 0 ? "up" : m.improvement < 0 ? "down" : ""}">${signed(m.improvement * 100, 1)}%</span>`}
+      <div class="muted">${m.significant ? "顯著" : "不顯著"}；給漂移 ${pct(m.active_share, 0)} 的日子</div></td>`; }).join("")}</tr>`).join("");
+  return `<h3>推演的統計模型</h3>
+    <p class="sub">區間：兩種波動率給出的一倍標準差區間，實際落在區間內的比例（理想約 ${pct(r.band.expected)}）和評分（越小越好，區間太窄或太寬都會變差，✓ 為較好的一種）。
+      改用另一種在 config/projection.yaml 的 volatility_method。漂移：和「不加漂移」比，誤差減少多少；1 個月顯著變好才算通過。</p>
+    <div class="scroll"><table><tr><th>波動率</th>${r.horizons.map((x) => `<th class="n">${esc(x.name_zh)}</th>`).join("")}</tr>${bandRows}</table></div>
+    ${drifts.length ? `<div class="scroll" style="margin-top:10px"><table><tr><th>漂移模型</th>${r.horizons.map((x) => `<th class="n">${esc(x.name_zh)}</th>`).join("")}</tr>${driftRows}</table></div>` : ""}`;
 }

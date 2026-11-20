@@ -88,6 +88,17 @@ def fair_value_detail(code: str, days: int = 500, state: AppState = Depends(get_
     return out
 
 
+@router.get("/projection/drift-sources")
+def drift_sources(session: Session = Depends(get_db), state: AppState = Depends(get_state)):
+    """推演可以選的漂移來源：公允價值模型，以及統計漂移模型（通過回測才能選，否則 why 說明原因）。"""
+    out = [{"code": code, "name_zh": m.name_zh, "kind": "fair_value", "available": True, "why": None}
+           for code, m in state.cfg.fair_values.items()]
+    for code, m in service.stat_models(state.cfg).items():
+        ok, why = service.stat_model_verdict(session, code)
+        out.append({"code": code, "name_zh": m.name_zh, "kind": m.kind, "available": ok, "why": why})
+    return out
+
+
 @router.get("/projections")
 def list_projections(session: Session = Depends(get_db)):
     rows = session.scalars(select(Projection).where(Projection.archived_at.is_(None)).order_by(Projection.id))
@@ -108,7 +119,7 @@ def create_projection(body: NewProjection, session: Session = Depends(get_db), s
 @router.patch("/projections/{projection_id}")
 def update_projection(projection_id: int, body: ProjectionPatch, session: Session = Depends(get_db),
                       state: AppState = Depends(get_state)):
-    """打開或關閉基本面回歸（drift_model 給模型代碼或 null）。"""
+    """選擇漂移來源（公允價值模型或通過回測的統計漂移模型的代碼），null = 不加。"""
     try:
         row = service.set_drift_model(session, state.cfg, projection_id, body.drift_model)
     except service.ProjectionError as exc:

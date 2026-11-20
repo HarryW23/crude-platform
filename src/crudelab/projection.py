@@ -28,7 +28,7 @@ import pandas as pd
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from . import events, fair_value, scenarios
+from . import events, fair_value, scenarios, stats_models
 from .config import Config
 from .indicators import IndicatorEngine, Scenario
 from .models import Projection, ProjectionCase, utcnow
@@ -48,14 +48,47 @@ def horizons_of(cfg: Config) -> list:
 
 # ------------------------------ 設定的增刪 ------------------------------
 
-def _check_drift_model(cfg: Config | None, drift_model: str | None) -> None:
-    if drift_model and (cfg is None or drift_model not in cfg.fair_values):
-        raise ProjectionError(f"沒有名為 {drift_model} 的公允價值模型")
+def stat_models(cfg: Config | None) -> dict:
+    return {m.code: m for m in (cfg.projection.drift_models if cfg and cfg.projection else [])}
+
+
+def _check_drift_model(cfg: Config | None, drift_model: str | None, session: Session | None = None) -> None:
+    """漂移來源：公允價值模型，或統計漂移模型。統計模型要先通過回測（見 stat_model_verdict）。"""
+    if not drift_model:
+        return
+    if cfg is not None and drift_model in cfg.fair_values:
+        return
+    if drift_model not in stat_models(cfg):
+        raise ProjectionError(f"沒有名為 {drift_model} 的公允價值模型或統計漂移模型")
+    if session is not None:
+        ok, why = stat_model_verdict(session, drift_model)
+        if not ok:
+            raise ProjectionError(why)
+
+
+GATE_HORIZON = "M1"
+
+
+def stat_model_verdict(session: Session, code: str) -> tuple[bool, str]:
+    """統計漂移模型能不能用：最近一次完成的回測裡，它讓 1 個月的推演誤差顯著變小（t > 2）。"""
+    from .models import BacktestRun
+    run = session.scalars(select(BacktestRun).where(BacktestRun.status == "done").order_by(BacktestRun.id.desc())
+                          .limit(20))
+    for r in run:
+        result = ((r.results or {}).get("drift_models") or {}).get(code)
+        if result is None:
+            continue
+        m = result["by_horizon"].get(GATE_HORIZON) or {}
+        if m.get("significant") and (m.get("improvement") or 0) > 0:
+            return True, f"回測 #{r.id}：1 個月的誤差減少 {m['improvement']:.1%}（t = {m['t']:.1f}）"
+        return False, (f"最近一次回測（#{r.id}）裡 {code} 沒有讓 1 個月的推演誤差顯著變小，不能用作漂移。"
+                       "等數據更多、重新回測後再試")
+    return False, f"還沒有包含 {code} 的回測結果：先在「回測」頁跑一次，通過後才能用作漂移"
 
 
 def create(session: Session, name_zh: str, actor: str = "local", drift_model: str | None = None,
            cfg: Config | None = None) -> Projection:
-    _check_drift_model(cfg, drift_model)
+    _check_drift_model(cfg, drift_model, session)
     row = Projection(name_zh=name_zh.strip() or "未命名推演", created_by=actor, drift_model=drift_model or None)
     session.add(row)
     session.flush()
@@ -74,7 +107,7 @@ def require(session: Session, projection_id: int) -> Projection:
 
 def set_drift_model(session: Session, cfg: Config, projection_id: int, drift_model: str | None) -> Projection:
     row = require(session, projection_id)
-    _check_drift_model(cfg, drift_model)
+    _check_drift_model(cfg, drift_model, session)
     row.drift_model = drift_model or None
     return row
 
@@ -259,8 +292,7 @@ def _context(session: Session, cfg: Config, as_of: datetime | None) -> tuple[_Co
     prices = prices[prices.index <= today]
     adjusted = base.adjusted_series(settings.anchor)[0]        # 波動率用換月調整後的價格，換月跳動不算波動
     adjusted = adjusted[adjusted.index <= today]
-    volatility = (_volatility(adjusted, settings.volatility_lookback, settings.volatility_min_points)
-                  if len(adjusted) else None)
+    volatility = stats_models.latest_volatility(adjusted, settings) if len(adjusted) else None
     return (_Context(settings, today, float(prices.iloc[-1]) if len(prices) else None, volatility,
                      base.value_at(settings.sensitivity_parameter, today.date()),
                      base.compute(settings.balance_indicator),
@@ -318,6 +350,8 @@ def _drift(cfg: Config, engine: IndicatorEngine, code: str | None, ctx: _Context
     """推演選了公允價值模型時，各期限的基本面回歸（價格單位）。模型不可用時不加，並在 problems 裡說明。"""
     if not code:
         return None, None
+    if code in stat_models(cfg):
+        return _stat_drift(cfg, engine, code, ctx, problems)
     if code not in cfg.fair_values:
         problems.append(f"這個推演選的公允價值模型 {code} 已不存在，沒有加基本面回歸")
         return None, {"model": code, "status": "missing", "reasons": ["模型已不存在"]}
@@ -333,6 +367,34 @@ def _drift(cfg: Config, engine: IndicatorEngine, code: str | None, ctx: _Context
     for h in ctx.settings.horizons:
         move = fair_value.drift_log(fit, h.trading_days)
         effects[h.code] = ctx.price * (math.exp(move) - 1) if model.transform == "log" else move
+    info["effects"] = effects
+    return effects, info
+
+
+def _stat_drift(cfg: Config, engine: IndicatorEngine, code: str, ctx: _Context,
+                problems: list[str]) -> tuple[dict[str, float] | None, dict]:
+    """統計漂移模型（動量）在各期限的漂移（價格單位）。用換月調整後的價格，只用到今天為止的數據。"""
+    model = stat_models(cfg)[code]
+    info = {"model": code, "name_zh": model.name_zh, "kind": model.kind, "status": "ok", "reasons": [],
+            "effects": {}, "estimates": {}}
+    prices = engine.adjusted_series(ctx.settings.anchor)[0]
+    prices = prices[prices.index <= ctx.today]
+    if ctx.price is None or prices.empty:
+        info["status"] = "missing"
+        problems.append("沒有價格數據，統計漂移模型沒有結果")
+        return None, info
+    effects = {}
+    for h in ctx.settings.horizons:
+        row = stats_models.momentum_drift(prices, model, h.trading_days).iloc[-1]
+        info["estimates"][h.code] = {k: (None if pd.isna(row[k]) else float(row[k]))
+                                     for k in ("drift", "slope", "t", "n")}
+        if pd.isna(row["drift"]):
+            continue
+        effects[h.code] = ctx.price * (math.exp(float(row["drift"])) - 1)
+    if not effects:
+        info["status"] = "insufficient"
+        problems.append(f"{model.name_zh}的樣本還不夠，沒有給漂移")
+        return None, info
     info["effects"] = effects
     return effects, info
 

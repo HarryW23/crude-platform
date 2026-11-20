@@ -40,7 +40,7 @@ import pandas as pd
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from . import analytics, credentials, db, fair_value, projection, signals
+from . import analytics, credentials, db, fair_value, projection, signals, stats_models
 from .config import Config
 from .indicators import IndicatorEngine
 from .models import BacktestRun, Observation, iso_utc, utcnow
@@ -160,14 +160,13 @@ def fair_value_scores(cfg: Config, fits: dict[str, dict], dates: pd.DatetimeInde
     return out
 
 
-def _observation_volatility(prices: pd.Series, cfg: Config, dates: pd.DatetimeIndex) -> pd.Series:
-    """每個評估日當時算得出的日波動率：和 projection._volatility 在那一天算出的一樣。"""
-    settings = cfg.projection
-    lookback = settings.volatility_lookback if settings else 250
-    min_points = settings.volatility_min_points if settings else 60
-    returns = np.log(prices[prices > 0]).diff().dropna()
-    vol = returns.rolling(lookback, min_periods=min_points).std()
-    return vol.reindex(dates, method="ffill")
+def _observation_volatility(prices: pd.Series, cfg: Config, dates: pd.DatetimeIndex,
+                            method: str | None = None) -> pd.Series:
+    """每個評估日當時算得出的日波動率：和推演在那一天算出的一樣（按 projection.yaml 的方法，或指定 method）。"""
+    if cfg.projection is None:
+        returns = np.log(prices[prices > 0]).diff().dropna()
+        return returns.rolling(250, min_periods=60).std().reindex(dates, method="ffill")
+    return stats_models.volatility_series(prices, cfg.projection, method).reindex(dates, method="ffill")
 
 
 # ------------------------------ 信號分數（按入庫時間） ------------------------------
@@ -192,8 +191,8 @@ def _vintage(session: Session, cfg: Config, dates: pd.DatetimeIndex,
         prices = engine.adjusted_series(anchor)[0]
         prices = prices[prices.index <= t]
         settings = cfg.projection
-        vols[t] = projection._volatility(prices, settings.volatility_lookback if settings else 250,
-                                         settings.volatility_min_points if settings else 60) if len(prices) else None
+        vols[t] = (stats_models.latest_volatility(prices, settings) if settings else
+                   projection._volatility(prices, 250, 60)) if len(prices) else None
     scores = pd.DataFrame.from_dict(rows, orient="index").reindex(dates).astype(float)
     return scores, pd.Series(vols, dtype=float).reindex(dates), fits
 
@@ -457,6 +456,45 @@ def _relation_with_alternatives(cfg: Config, engine: IndicatorEngine, code: str,
     return main
 
 
+# ------------------------------ 推演的統計模型（#27） ------------------------------
+
+def _band_compare(cfg: Config, prices: pd.Series, dates: pd.DatetimeIndex, horizons: list[HorizonDef]) -> dict:
+    """兩種波動率給出的區間並排：覆蓋率（理想約 68.3%）和評分（負對數似然，越小越好）。"""
+    if cfg.projection is None:
+        return {}
+    prices = prices.sort_index()
+    out = {"current": cfg.projection.volatility_method, "methods": {}}
+    for method in ("historical", "ewma"):
+        vol = _observation_volatility(prices, cfg, dates, method)
+        band = _band(prices, vol, dates, horizons)
+        now = prices.reindex(dates)
+        for h in horizons:
+            realized = np.log(prices.shift(-h.trading_days).reindex(dates) / now)
+            band[h.code]["score"] = stats_models.gaussian_score(realized, vol * math.sqrt(h.trading_days))
+        out["methods"][method] = band
+    better = {}
+    for h in horizons:
+        scores = {m: out["methods"][m][h.code]["score"] for m in out["methods"]}
+        known = {m: v for m, v in scores.items() if v is not None}
+        better[h.code] = min(known, key=known.get) if len(known) == 2 else None
+    out["better"] = better
+    return out
+
+
+def _evaluate_stat_drift(cfg: Config, model, prices: pd.Series, dates: pd.DatetimeIndex, fwd: pd.DataFrame,
+                         horizons: list[HorizonDef], step: int) -> dict:
+    """統計漂移模型：每個評估日只用當時已實現的樣本估計（見 stats_models.momentum_drift），和「不加漂移」比。"""
+    by_horizon = {}
+    for h in horizons:
+        drift = stats_models.momentum_drift(prices, model, h.trading_days)["drift"].reindex(dates)
+        stats = evaluate_drift(drift, fwd[h.code], h.trading_days, step, cfg.backtest.min_effective_samples)
+        stats["active_share"] = float((drift.dropna() != 0).mean()) if drift.notna().any() else None
+        by_horizon[h.code] = stats
+    gate = by_horizon.get("M1") or {}
+    return {"code": model.code, "name_zh": model.name_zh, "kind": model.kind, "by_horizon": by_horizon,
+            "passed": bool(gate.get("significant") and (gate.get("improvement") or 0) > 0)}
+
+
 def _points(scores: pd.Series, returns: pd.Series) -> dict:
     data = pd.DataFrame({"s": scores, "r": returns}).dropna()
     if len(data) > MAX_POINTS:
@@ -587,6 +625,9 @@ def run(session: Session, cfg: Config, options: Options) -> dict:
         "signals": signal_rows, "modules": module_rows,
         "overall": {"scored": int(overall.notna().sum()), "by_horizon": by_horizon(overall)},
         "fair_values": fair_rows,
+        "band_compare": _band_compare(cfg, prices, dates, horizons),
+        "drift_models": {m.code: _evaluate_stat_drift(cfg, m, prices, dates, fwd, horizons, step)
+                         for m in (cfg.projection.drift_models if cfg.projection else [])},
         "relations": [_relation_with_alternatives(cfg, engine, code, dates, horizons, step, options.mode)
                       for code in cfg.relations],
         "calibration": calibration,

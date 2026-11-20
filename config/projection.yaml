@@ -8,6 +8,12 @@ sensitivity_estimate:                     # 從歷史估計這個敏感度：庫
   min_points: 36
 volatility_lookback: 250                  # 用最近多少個交易日的日收益率算波動
 volatility_min_points: 60                 # 少於這個數就不給區間
+volatility_method: historical             # historical 最近 250 天的標準差 / ewma 指數加權（近期波動權重更高）
+ewma_lambda: 0.94                         #   ewma 的衰減係數（RiskMetrics 日度常用 0.94）。回測頁並排比較兩種方法的區間
+# 統計漂移模型：和公允價值模型並列，可以在推演頁選作「漂移」。只有最近一次回測裡它讓 1 個月的誤差顯著變小才允許選
+drift_models:
+  - {code: MOMENTUM_3M, name_zh: 價格動量（過去 3 個月）, kind: momentum, lookback_days: 63, window_days: 756,
+     min_points: 120, notes: 過去 3 個月的漲跌對之後的漲跌有沒有延續性；不顯著時不給漂移}
 horizons:
   - {code: W1, name_zh: 1 周,   calendar_days: 7,  trading_days: 5}
   - {code: M1, name_zh: 1 個月, calendar_days: 30, trading_days: 21}

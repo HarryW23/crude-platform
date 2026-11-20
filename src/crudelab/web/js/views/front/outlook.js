@@ -140,7 +140,8 @@ function estimatePanel(e, a) {
 }
 
 async function renderProjection(box, scenarios, main, fvs) {
-  const [p, est] = await Promise.all([api(`/projections/${state.projection}`), api("/projection/sensitivity")]);
+  const [p, est, sources] = await Promise.all([api(`/projections/${state.projection}`), api("/projection/sensitivity"),
+    api("/projection/drift-sources")]);
   const a = p.anchor, reload = () => render(main);
   const cell = (c) => c.central == null ? `<span class="tag warn" title="${esc(c.reason ?? "")}">無法計算</span>`
     : `<b>${num(c.central)}</b>${c.low == null ? "" : `<div class="muted">${num(c.low)} – ${num(c.high)}</div>`}`;
@@ -149,8 +150,13 @@ async function renderProjection(box, scenarios, main, fvs) {
       <div>年化波動率<b>${p.volatility.annualized == null ? "—" : pct(p.volatility.annualized)}</b></div>
       <div title="庫存每多累積 1 百萬桶，價格跌多少（${esc(p.sensitivity.unit)}）">庫存敏感度<b>${p.sensitivity.value == null ? '<span class="tag warn">未設定</span>' : num(p.sensitivity.value, 3)}</b></div>
       <div>機率合計<b class="${Math.abs(p.total_probability - 1) < 1e-6 ? "" : "down"}">${pct(p.total_probability)}</b></div>
-      ${fvs.length ? `<div>基本面回歸<b><label style="font-weight:400;font-size:14px"><input type="checkbox" id="drift" ${p.drift_model ? "checked" : ""}> ${p.drift_model ? esc(p.drift?.name_zh ?? p.drift_model) : "不加"}</label></b></div>` : ""}</div>
-    ${p.drift?.effects && Object.keys(p.drift.effects).length ? `<div class="msg">已計入基本面回歸（${esc(p.drift.name_zh)}，偏離 ${signed(p.drift.deviation_pct * 100, 1)}%，半衰期約 ${num(p.drift.half_life, 0)} 個交易日）：${p.horizons.map((h) => `${esc(h.name_zh)} ${signed(p.drift.effects[h.code])}`).join("，")}。各分支相同。</div>` : ""}
+      ${sources.length ? `<div>漂移<b><select id="drift" aria-label="漂移來源" style="font-size:14px">
+        <option value="">不加</option>
+        ${sources.map((d) => `<option value="${d.code}" ${p.drift_model === d.code ? "selected" : ""} ${d.available || p.drift_model === d.code ? "" : "disabled"}
+          title="${esc(d.why ?? "")}">${esc(d.name_zh)}${d.kind === "fair_value" ? "（基本面）" : d.available ? "（統計，已通過回測）" : "（統計，未通過回測）"}</option>`).join("")}
+      </select></b></div>` : ""}</div>
+    ${sources.some((d) => !d.available) ? `<p class="muted">統計模型要在最近一次回測裡讓 1 個月的推演誤差顯著變小才能選：${sources.filter((d) => !d.available).map((d) => esc(d.why)).join("；")}。</p>` : ""}
+    ${p.drift?.effects && Object.keys(p.drift.effects).length ? `<div class="msg">已計入漂移（${esc(p.drift.name_zh)}${p.drift.kind ? "" : `，偏離 ${signed(p.drift.deviation_pct * 100, 1)}%，半衰期約 ${num(p.drift.half_life, 0)} 個交易日`}）：${p.horizons.map((h) => `${esc(h.name_zh)} ${p.drift.effects[h.code] == null ? "不給" : signed(p.drift.effects[h.code])}`).join("，")}。各分支相同。</div>` : ""}
     ${p.problems.map((x) => `<div class="msg warn">${esc(x)}。</div>`).join("")}
     ${p.sensitivity.value == null ? `<div class="msg">庫存敏感度（${p.sensitivity.parameter}）還沒有設定：全球庫存每多累積 1 百萬桶，${esc(a.name_zh)} 下跌多少 ${esc(a.unit)}。這是推演的核心假設，請到${adminLink("params", "參數")}給出（可以採用下面的歷史估計）；在那之前，帶供需調整的分支算不出價格。</div>` : ""}
     ${estimatePanel(est, a)}
@@ -178,7 +184,7 @@ async function renderProjection(box, scenarios, main, fvs) {
     <p class="muted" style="margin-top:6px">情境來自「供需平衡」裡建的情境，或「地緣事件」套用預案生成的情境。直接價格調整用來放不經過供需的判斷，例如風險溢價。</p><div id="c-msg"></div>`;
   const fail = (e) => { box.querySelector("#c-msg").innerHTML = errorBox(e); };
   box.querySelector("#drift")?.addEventListener("change", async (ev) => {
-    try { await api(`/projections/${state.projection}`, { method: "PATCH", json: { drift_model: ev.target.checked ? fvs[0].code : null } }); await reload(); }
+    try { await api(`/projections/${state.projection}`, { method: "PATCH", json: { drift_model: ev.target.value || null } }); await reload(); }
     catch (e) { fail(e); }
   });
   box.querySelector("#sync-events").addEventListener("click", async () => {
