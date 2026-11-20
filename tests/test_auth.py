@@ -19,7 +19,6 @@ PASSWORD = "correct horse battery"
 def fast_hash(monkeypatch):
     monkeypatch.setattr(auth, "SCRYPT_N", 2 ** 8)          # 測試裡用弱參數，否則每次哈希要 0.1 秒
     monkeypatch.setattr(auth, "_DUMMY_HASH", None)
-    auth._failures.clear()
 
 
 @pytest.fixture()
@@ -84,7 +83,9 @@ def test_login_lockout_and_no_username_probing(session):
             auth.authenticate(session, "alice", "wrong password")
     with pytest.raises(auth.TooManyAttempts):
         auth.authenticate(session, "ALICE", PASSWORD)                                 # 鎖定期間對的密碼也不行
-    auth._failures.clear()
+    session.commit()
+    assert auth.locked_until(session, "alice") is not None
+    assert auth.unlock(session, "alice") is True                                      # 管理員解鎖
     assert auth.authenticate(session, "ALICE", PASSWORD).username == "alice"          # 用戶名不分大小寫
 
 
@@ -228,3 +229,67 @@ def test_cli_user_commands(settings, monkeypatch, capsys):
     assert run("passwd", "bob", password=PASSWORD + "9")[0] == 0 and run("passwd", "nobody", password=PASSWORD)[0] == 1
     with db.session_scope() as s:
         assert auth.authenticate(s, "bob", PASSWORD + "9").role == "admin"
+
+
+# ------------------------------ 鎖定存數據庫（#36） ------------------------------
+
+def test_lockout_holds_across_processes_and_restarts(settings, session):
+    """兩個「進程」各有自己的數據庫連接（模擬多進程 / 重啟）：在一個裡連錯，另一個裡也鎖著。"""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    auth.create_user(session, "alice", PASSWORD, "admin")
+    session.commit()
+    other = sessionmaker(create_engine(settings.database_url))()
+    t0 = utcnow()
+    for i in range(auth.MAX_FAILURES):
+        with pytest.raises(auth.LoginFailed):
+            auth.authenticate(session, "alice", "wrong password", now=t0 + timedelta(seconds=i))
+        session.commit()                                                    # 接口層在拋錯後也會提交
+    with pytest.raises(auth.TooManyAttempts):
+        auth.authenticate(other, "Alice", PASSWORD, now=t0 + timedelta(minutes=1))
+    until = auth.locked_until(other, "alice", now=t0 + timedelta(minutes=1))
+    assert until == t0 + timedelta(seconds=auth.FAILURE_WINDOW_SECONDS)     # 最早那次失敗滿 15 分鐘後解開
+    later = t0 + timedelta(seconds=auth.FAILURE_WINDOW_SECONDS + 1)
+    assert auth.authenticate(other, "alice", PASSWORD, now=later).username == "alice"
+    other.commit()
+    assert auth.locked_until(session, "alice", now=later) is None
+    other.close()
+
+
+def test_old_failures_are_cleaned_up(session):
+    from crudelab.models import LoginFailure
+    t0 = utcnow() - timedelta(hours=2)
+    for i in range(40):                                                     # 撒網：很多個用戶名各錯一次
+        with pytest.raises(auth.LoginFailed):
+            auth.authenticate(session, f"random-{i}", "x" * 12, now=t0)
+    with pytest.raises(auth.LoginFailed):
+        auth.authenticate(session, "someone", "x" * 12)                     # 一小時後再有一次失敗：舊記錄清掉
+    session.commit()
+    assert [r.username_key for r in session.scalars(select(LoginFailure))] == ["someone"]
+
+
+def test_admin_sees_and_clears_lock(secured):
+    client = secured["front"]()
+    for _ in range(auth.MAX_FAILURES):
+        login(client, "bob", "wrong password")
+    locked = login(client, "bob")
+    assert locked.status_code == 429 and "解鎖" in locked.json()["detail"]
+    admin = secured["admin"]()
+    login(admin, "alice")
+    bob = next(u for u in admin.get("/api/users").json() if u["username"] == "bob")
+    assert bob["locked_until"]
+    assert admin.patch(f"/api/users/{bob['id']}", json={"unlock": True}).json()["locked_until"] is None
+    assert login(client, "bob").status_code == 200
+
+
+def test_cli_unlock(settings, session, capsys, monkeypatch):
+    monkeypatch.setenv("CRUDELAB_DATA_DIR", str(settings.data_dir))
+    monkeypatch.setenv("DATABASE_URL", settings.database_url)
+    auth.create_user(session, "alice", PASSWORD, "admin")
+    for _ in range(auth.MAX_FAILURES):
+        with pytest.raises(auth.LoginFailed):
+            auth.authenticate(session, "alice", "wrong password")
+    session.commit()
+    assert main(["user", "list"]) == 0 and "暫時鎖定" in capsys.readouterr().out
+    assert main(["user", "unlock", "alice"]) == 0 and "已解鎖 alice" in capsys.readouterr().out
+    assert auth.locked_until(session, "alice") is None

@@ -221,7 +221,8 @@ def cmd_user(args) -> int:
             if args.action == "list":
                 rows = list(session.scalars(select(UserAccount).order_by(UserAccount.id)))
                 for u in rows:
-                    print(f"{u.id:>3}  {u.username:<24} {auth.ROLE_NAMES[u.role]:<6} {'' if u.active else '已停用'}")
+                    lock = "暫時鎖定" if auth.locked_until(session, u.username) else ""
+                    print(f"{u.id:>3}  {u.username:<24} {auth.ROLE_NAMES[u.role]:<6} {'' if u.active else '已停用'} {lock}")
                 if not rows:
                     print("還沒有任何帳號。")
                 return 0
@@ -235,6 +236,9 @@ def cmd_user(args) -> int:
             if args.action == "passwd":
                 auth.set_password(session, user.id, ask_password(), actor="cli")
                 print(f"已重設 {user.username} 的密碼，它在各處的登錄都已失效")
+            elif args.action == "unlock":
+                print(f"已解鎖 {user.username}" if auth.unlock(session, user.username, actor="cli")
+                      else f"{user.username} 沒有被鎖定")
             elif args.action == "role":
                 auth.update_user(session, user.id, role=args.role, actor="cli")
                 print(f"{user.username} 的角色已改為 {auth.ROLE_NAMES[args.role]}")
@@ -859,7 +863,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--stdin", action="store_true", help="從標準輸入讀（給腳本用）；預設是不回顯的互動輸入")
     p.set_defaults(func=cmd_secret)
     p = sub.add_parser("user", help="帳號管理")
-    p.add_argument("action", choices=["list", "add", "passwd", "role", "disable", "enable"])
+    p.add_argument("action", choices=["list", "add", "passwd", "role", "disable", "enable", "unlock"])
     p.add_argument("username", nargs="?")
     p.add_argument("--role", choices=["viewer", "analyst", "admin"], default="viewer",
                    help="viewer 只讀 / analyst 研究員 / admin 管理員")

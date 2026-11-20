@@ -4,8 +4,10 @@
   - 密碼用 scrypt 加鹽哈希，參數和鹽一起存，所以以後調高強度不影響舊帳號。
   - 會話令牌是 32 字節隨機數，數據庫只存它的 SHA-256。
   - 帳號不存在和密碼錯誤回同一個錯誤、花差不多的時間，不讓人探測哪些用戶名存在。
-  - 同一個用戶名 15 分鐘內連錯 5 次就暫時鎖定。這個計數只在內存裡，重啟會清零；
-    多進程部署時每個進程各算各的，所以它只是基本防護，對外服務時還應該在反向代理上限流。
+  - 同一個用戶名 15 分鐘內錯 5 次就暫時鎖定，到最早那次失敗滿 15 分鐘後自動解開（管理員也可以手動解鎖）。
+    失敗記錄存在數據庫的 login_failure 表（#36），所以多進程、多台機器共用一個數據庫、重啟後都仍然有效。
+    鎖的是用戶名，不是 IP：放在反向代理後面時所有請求的 IP 一樣，按 IP 鎖會把所有人一起鎖住。
+    對外服務時仍應在反向代理上按 IP 限流，擋住「每個用戶名只試幾次」的撒網式嘗試。
   - 帳號只停用不刪除；停用或改密碼會立刻讓這個帳號的所有會話失效。
 """
 from __future__ import annotations
@@ -15,14 +17,12 @@ import hashlib
 import hmac
 import re
 import secrets
-import time
-from collections import defaultdict, deque
 from datetime import datetime, timedelta
 
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
-from .models import AuditLog, UserAccount, UserSession, utcnow
+from .models import AuditLog, LoginFailure, UserAccount, UserSession, utcnow
 
 ROLES = ("viewer", "analyst", "admin")           # 由低到高：只讀 / 研究員 / 管理員
 ROLE_NAMES = {"viewer": "只讀", "analyst": "研究員", "admin": "管理員"}
@@ -30,7 +30,6 @@ MIN_PASSWORD_LENGTH = 10
 SCRYPT_N, SCRYPT_R, SCRYPT_P = 2 ** 15, 8, 1     # 新密碼用的強度；測試裡會調低以加快速度
 MAX_FAILURES, FAILURE_WINDOW_SECONDS = 5, 15 * 60
 _USERNAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{1,63}$")
-_failures: dict[str, deque[float]] = defaultdict(deque)
 
 
 class AuthError(ValueError):
@@ -168,25 +167,41 @@ def count_admins(session: Session) -> int:
 
 # ------------------------------ 登錄與會話 ------------------------------
 
-MAX_TRACKED_NAMES = 10_000      # 最多記多少個用戶名的失敗次數：防止有人用大量隨機用戶名把內存撐大
+def _key(username: str) -> str:
+    return username.strip().lower()[:128]
 
 
-def _recent_failures(key: str) -> deque[float]:
-    cutoff = time.monotonic() - FAILURE_WINDOW_SECONDS
-    if len(_failures) > MAX_TRACKED_NAMES:                       # 清掉已經過了窗口的記錄
-        for name in [k for k, v in _failures.items() if not v or v[-1] < cutoff]:
-            del _failures[name]
-    attempts = _failures[key]
-    while attempts and attempts[0] < cutoff:
-        attempts.popleft()
-    return attempts
+def _window_failures(session: Session, key: str, now: datetime) -> list[datetime]:
+    cutoff = now - timedelta(seconds=FAILURE_WINDOW_SECONDS)
+    return list(session.scalars(select(LoginFailure.at).where(LoginFailure.username_key == key,
+                                                               LoginFailure.at > cutoff).order_by(LoginFailure.at)))
 
 
-def authenticate(session: Session, username: str, password: str) -> UserAccount:
-    """驗證用戶名和密碼。失敗拋 LoginFailed；連錯太多次拋 TooManyAttempts。"""
-    key = username.strip().lower()
-    attempts = _recent_failures(key)
-    if len(attempts) >= MAX_FAILURES:
+def locked_until(session: Session, username: str, now: datetime | None = None) -> datetime | None:
+    """這個用戶名鎖到甚麼時候（UTC）；沒鎖回 None。"""
+    now = now or utcnow()
+    recent = _window_failures(session, _key(username), now)
+    if len(recent) < MAX_FAILURES:
+        return None
+    return recent[-MAX_FAILURES] + timedelta(seconds=FAILURE_WINDOW_SECONDS)
+
+
+def unlock(session: Session, username: str, actor: str = "local") -> bool:
+    """清掉這個用戶名的失敗記錄。回傳之前是否鎖著。"""
+    was_locked = locked_until(session, username) is not None
+    session.execute(delete(LoginFailure).where(LoginFailure.username_key == _key(username)))
+    if was_locked:
+        session.add(AuditLog(actor=actor, action="user_unlock", entity="user", entity_id=_key(username), detail=None))
+    return was_locked
+
+
+def authenticate(session: Session, username: str, password: str, now: datetime | None = None) -> UserAccount:
+    """驗證用戶名和密碼。失敗拋 LoginFailed；連錯太多次拋 TooManyAttempts。
+
+    失敗記錄寫在傳入的 session 裡，調用方在拋出異常後也要 commit（接口層這樣做了），否則計數不生效。"""
+    now = now or utcnow()
+    key = _key(username)
+    if len(_window_failures(session, key, now)) >= MAX_FAILURES:
         raise TooManyAttempts
     user = find(session, username)
     if user is None:
@@ -195,12 +210,14 @@ def authenticate(session: Session, username: str, password: str) -> UserAccount:
     else:
         ok = verify_password(password, user.password_hash) and user.active
     if not ok:
-        attempts.append(time.monotonic())
-        session.add(AuditLog(actor=key[:64] or "?", action="login_failed", entity="user", entity_id=key[:128] or "?",
+        session.execute(delete(LoginFailure).where(          # 順手清掉所有用戶名過了窗口的舊記錄，表不會無限長
+            LoginFailure.at <= now - timedelta(seconds=FAILURE_WINDOW_SECONDS)))
+        session.add(LoginFailure(username_key=key, at=now))
+        session.add(AuditLog(actor=key[:64] or "?", action="login_failed", entity="user", entity_id=key or "?",
                              detail=None))
         raise LoginFailed
-    attempts.clear()
-    user.last_login_at = utcnow()
+    session.execute(delete(LoginFailure).where(LoginFailure.username_key == key))
+    user.last_login_at = now
     session.add(AuditLog(actor=user.username, action="login", entity="user", entity_id=user.username, detail=None))
     return user
 

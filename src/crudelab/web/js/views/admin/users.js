@@ -7,7 +7,7 @@ const ROLES = { viewer: "只讀：只能看前台", analyst: "研究員：前台
 export async function render(main) {
   const users = await api("/users");
   main.innerHTML = `<h2>帳號</h2>
-    <p class="sub">誰能登錄、能做什麼。帳號不能刪除，只能停用，這樣歷史記錄裡的操作者始終對得上。停用或重設密碼會讓該帳號已有的登錄立刻失效。</p>
+    <p class="sub">誰能登錄、能做什麼。帳號不能刪除，只能停用，這樣歷史記錄裡的操作者始終對得上。停用或重設密碼會讓該帳號已有的登錄立刻失效。同一用戶名 15 分鐘內錯 5 次會暫時鎖定，可在這裡提前解鎖。</p>
     ${SITE.auth.enabled ? "" : `<div class="msg warn">登錄功能目前<b>沒有啟用</b>：所有人都不用登錄，操作者一律記為 local。可以先在這裡把帳號建好；啟用方法見 README 的「登錄」一節。</div>`}
     <div class="panel"><h2>新增帳號</h2>
       <div class="row"><label>用戶名 <input id="u-name" size="16" autocomplete="off"></label>
@@ -18,7 +18,7 @@ export async function render(main) {
       <tr><th>用戶名</th><th>角色</th><th>狀態</th><th>建立（${zoneLabel()}）</th><th>上次登錄（${zoneLabel()}）</th><th>重設密碼</th><th></th></tr>
       ${users.map((u) => `<tr><td><b>${esc(u.username)}</b>${SITE.auth.user?.username === u.username ? ' <span class="tag">你</span>' : ""}</td>
         <td><select data-role="${u.id}" aria-label="角色">${Object.entries(ROLES).map(([k, v]) => `<option value="${k}" ${k === u.role ? "selected" : ""}>${v}</option>`).join("")}</select></td>
-        <td>${u.active ? '<span class="tag ok">可用</span>' : '<span class="tag warn">已停用</span>'}</td>
+        <td>${u.active ? '<span class="tag ok">可用</span>' : '<span class="tag warn">已停用</span>'}${u.locked_until ? ` <span class="tag bad" title="連錯 5 次，到這個時間自動解開">鎖定至 ${time(u.locked_until)}</span> <button class="btn" data-unlock="${u.id}">解鎖</button>` : ""}</td>
         <td class="nw">${time(u.created_at)}</td><td class="nw">${u.last_login_at ? time(u.last_login_at) : '<span class="muted">從未</span>'}</td>
         <td class="nw"><input type="password" size="16" data-pass="${u.id}" placeholder="新密碼" autocomplete="new-password"> <button class="btn" data-reset="${u.id}">重設</button></td>
         <td><button class="btn" data-active="${u.id}" data-to="${!u.active}">${u.active ? "停用" : "啟用"}</button></td></tr>`).join("")}</table></div>`
@@ -36,6 +36,7 @@ export async function render(main) {
   });
   main.querySelectorAll("[data-role]").forEach((s) => s.addEventListener("change", () => patch(s.dataset.role, { role: s.value })));
   main.querySelectorAll("[data-active]").forEach((b) => b.addEventListener("click", () => patch(b.dataset.active, { active: b.dataset.to === "true" })));
+  main.querySelectorAll("[data-unlock]").forEach((b) => b.addEventListener("click", () => patch(b.dataset.unlock, { unlock: true })));
   main.querySelectorAll("[data-reset]").forEach((b) => b.addEventListener("click", () => {
     const input = main.querySelector(`[data-pass="${b.dataset.reset}"]`);
     patch(b.dataset.reset, { password: input.value }, () => { input.value = ""; $("t-msg").innerHTML = '<div class="msg ok">密碼已重設，該帳號已有的登錄已失效。</div>'; });

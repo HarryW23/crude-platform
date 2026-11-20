@@ -161,16 +161,6 @@ def test_prune_history_keeps_meaningful_runs(session):
     assert left == ["failed", "ok", "skipped"]                     # 只刪 30 天前的「跳過」
 
 
-def test_login_failure_tracking_is_bounded(monkeypatch):
-    from crudelab import auth
-    monkeypatch.setattr(auth, "MAX_TRACKED_NAMES", 50)
-    auth._failures.clear()
-    for i in range(200):
-        auth._recent_failures(f"random-{i}")
-    assert len(auth._failures) <= 52
-    auth._failures.clear()
-
-
 def test_chat_history_is_capped(sites):
     long_turn = {"role": "user", "content": "x" * 9000}
     r = sites["front"].post("/api/chat", json={"question": "q", "history": [long_turn]})

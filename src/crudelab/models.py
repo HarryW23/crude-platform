@@ -6,7 +6,7 @@
   判斷       scenario / adjustment / event / projection / projection_case —— 人的判斷，和數據分開存
   產出       report / backtest_run —— 生成時刻的快照
   帳號       user_account / user_session
-  調度       job_run / scheduler_heartbeat / switch / notification
+  調度       job_run / scheduler_heartbeat / switch / notification / login_failure
   修訂歷史   observation_revision
   操作日誌   audit_log
 
@@ -344,6 +344,15 @@ class UserSession(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     expires_at: Mapped[datetime] = mapped_column(DateTime)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class LoginFailure(Base):
+    """一次登錄失敗（#36）。存數據庫而不是內存：多進程、重啟後鎖定仍然有效。
+    只記小寫用戶名和時間（不記密碼、不記 IP）；過了計數窗口的記錄在下一次失敗時順手清掉。"""
+    __tablename__ = "login_failure"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    username_key: Mapped[str] = mapped_column(String(128), index=True)
+    at: Mapped[datetime] = mapped_column(DateTime, index=True)
 
 
 class JobRun(Base):

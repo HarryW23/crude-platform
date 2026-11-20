@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ... import auth
-from ...models import UserAccount
+from ...models import UserAccount, iso_utc
 from ..deps import AppState, get_actor, get_db, get_state
 from ..security import COOKIE, clear_session_cookie, current_user, set_session_cookie
 
@@ -35,6 +35,7 @@ class UserPatch(BaseModel):
     role: str | None = None
     active: bool | None = None
     password: str | None = None        # 管理員重設別人的密碼
+    unlock: bool = False               # 清掉連錯造成的暫時鎖定
 
 
 def _me(user: UserAccount | None) -> dict | None:
@@ -42,9 +43,10 @@ def _me(user: UserAccount | None) -> dict | None:
                                       "role_name": auth.ROLE_NAMES[user.role]}
 
 
-def _user(u: UserAccount) -> dict:
+def _user(session: Session, u: UserAccount) -> dict:
     return {"id": u.id, "username": u.username, "role": u.role, "role_name": auth.ROLE_NAMES[u.role],
-            "active": u.active, "created_at": u.created_at, "last_login_at": u.last_login_at}
+            "active": u.active, "created_at": u.created_at, "last_login_at": u.last_login_at,
+            "locked_until": iso_utc(auth.locked_until(session, u.username))}
 
 
 @router.post("/auth/login")
@@ -56,7 +58,8 @@ def login(body: Login, response: Response, session: Session = Depends(get_db),
         user = auth.authenticate(session, body.username, body.password)
     except auth.TooManyAttempts:
         session.commit()
-        raise HTTPException(429, "連續輸錯太多次，請 15 分鐘後再試") from None
+        raise HTTPException(429, f"連續輸錯太多次，帳號暫時鎖定，請 {auth.FAILURE_WINDOW_SECONDS // 60} 分鐘後再試，"
+                                 "或請管理員在後台「帳號」頁解鎖") from None
     except auth.LoginFailed:
         session.commit()                    # 失敗記錄要留下
         raise HTTPException(401, "用戶名或密碼不正確") from None
@@ -98,13 +101,13 @@ def change_own_password(body: PasswordChange, request: Request, response: Respon
 
 @admin_router.get("/users")
 def list_users(session: Session = Depends(get_db)):
-    return [_user(u) for u in session.scalars(select(UserAccount).order_by(UserAccount.id))]
+    return [_user(session, u) for u in session.scalars(select(UserAccount).order_by(UserAccount.id))]
 
 
 @admin_router.post("/users")
 def create_user(body: NewUser, session: Session = Depends(get_db), actor: str = Depends(get_actor)):
     try:
-        return _user(auth.create_user(session, body.username, body.password, body.role, actor))
+        return _user(session, auth.create_user(session, body.username, body.password, body.role, actor))
     except auth.AuthError as exc:
         raise HTTPException(400, str(exc)) from exc
 
@@ -116,6 +119,8 @@ def update_user(user_id: int, body: UserPatch, session: Session = Depends(get_db
         user = auth.update_user(session, user_id, role=body.role, active=body.active, actor=actor)
         if body.password is not None:
             auth.set_password(session, user_id, body.password, actor)
+        if body.unlock:
+            auth.unlock(session, user.username, actor)
     except auth.AuthError as exc:
         raise HTTPException(400, str(exc)) from exc
-    return _user(user)
+    return _user(session, user)
