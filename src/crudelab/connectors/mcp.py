@@ -116,7 +116,7 @@ class MCPClient:
         if self._open:
             return
         result = self._send("initialize", {"protocolVersion": self.protocol, "capabilities": {},
-                                           "clientInfo": {"name": "crudelab", "version": "1"}})
+                                           "clientInfo": {"name": "crudelab", "version": "1"}}) or {}
         self.protocol = result.get("protocolVersion") or self.protocol
         self.server_info = result.get("serverInfo") or {}
         self._open = True

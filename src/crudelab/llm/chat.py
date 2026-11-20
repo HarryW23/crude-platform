@@ -21,6 +21,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
+from typing import Any
 
 import pandas as pd
 from sqlalchemy import select
@@ -106,8 +107,9 @@ def tool_get_values(ctx: _Ctx, code: str, last: int = 10, scenario: str | None =
     _need(ctx, code)
     engine = _scenario_engine(ctx, scenario)
     values = engine.values(code)
-    out = {"code": code, "name": ctx.cfg.name_of(code), "unit": ctx.cfg.unit_of(code),
-           "frequency": ctx.cfg.frequency_of(code), "points": _points(values, max(1, min(int(last), 60)))}
+    out: dict[str, Any] = {"code": code, "name": ctx.cfg.name_of(code), "unit": ctx.cfg.unit_of(code),
+                           "frequency": ctx.cfg.frequency_of(code),
+                           "points": _points(values, max(1, min(int(last), 60)))}
     if code in ctx.cfg.indicators:
         s = engine.summary(code)
         out.update({k: s[k] for k in ("formula", "status", "last_date", "last_value", "chg_1d", "chg_5d", "chg_20d",

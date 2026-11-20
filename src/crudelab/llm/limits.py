@@ -166,7 +166,7 @@ class LimitedProvider(LLMProvider):
 
     def _finish(self, call_id: int, status: str, http_status: int | None, message: str | None) -> None:
         with db.session_scope() as session:
-            call = session.get(LLMCall, call_id)
+            call = db.require(session, LLMCall, call_id)
             call.status, call.http_status, call.message, call.finished_at = status, http_status, message, utcnow()
             call.prompt_tokens, call.completion_tokens = self.inner.last_usage
             pause = session.get(LLMPause, self.name)

@@ -73,3 +73,26 @@ def test_unknown_calendar_is_a_config_error(cfg):
     series = dict(cfg.series)
     series["TD3C_WS"] = series["TD3C_WS"].model_copy(update={"calendar": "NOPE"})
     assert any("交易日曆 NOPE" in e for e in _validate(dataclasses.replace(cfg, series=series)))
+
+
+# ------------------------------ 逐條審查類型問題時查出的三個問題 ------------------------------
+
+def test_holiday_on_feb_29_only_in_leap_years():
+    from crudelab.calendars import rule_dates
+    from crudelab.schema import HolidayRule
+    rule = HolidayRule(name="閏日", month=2, day=29)
+    assert rule_dates(rule, 2028) == [date(2028, 2, 29)] and rule_dates(rule, 2027) == []   # 以前平年直接崩潰
+
+
+def test_impossible_fixed_date_is_a_config_error():
+    from crudelab.schema import HolidayRule
+    with pytest.raises(ValueError, match="4 月沒有 31 日"):
+        HolidayRule(name="打錯", month=4, day=31)
+
+
+def test_fifth_weekday_does_not_slide_into_next_month():
+    from crudelab.calendars import rule_dates
+    from crudelab.schema import HolidayRule
+    rule = HolidayRule(name="第五個周一", month=2, weekday=0, nth=5)
+    assert rule_dates(rule, 2027) == []                       # 2027 年 2 月只有 4 個周一：以前會變成 3 月 1 日
+    assert rule_dates(rule, 2016) == [date(2016, 2, 29)]      # 有第 5 個的年份照常

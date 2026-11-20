@@ -1,6 +1,7 @@
 """類型檢查的「棘輪」：每個文件的 mypy 錯誤數只能減少，不能增加。
 
-現有的錯誤（大多是 pandas 和 Optional 的類型標註問題，已逐一審查過，見 git 歷史）記在 scripts/mypy_baseline.json。
+基線記在 scripts/mypy_baseline.json。0.49.1 逐條審查了原有的 235 個問題：查出並修了 3 個真 bug，
+其餘改成準確的類型寫法。基線已經是 0：任何新的類型錯誤都會讓 CI 失敗。
   - 某個文件的錯誤比基線多：CI 失敗，列出新增的錯誤 —— 新代碼不能引入類型問題
   - 某個文件的錯誤比基線少：CI 也失敗，提示運行 --update 收緊基線 —— 修好的不能再壞回去
 用法：python scripts/check_types.py            檢查

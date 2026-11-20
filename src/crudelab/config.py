@@ -57,6 +57,7 @@ from .schema import (
     CommodityDef,
     CurveDef,
     FairValueModel,
+    Frequency,
     FreshnessDef,
     IndicatorDef,
     Jin10Settings,
@@ -143,7 +144,7 @@ class Config:
             return self.views[name].name_zh
         return self.indicators[name].name_zh if name in self.indicators else self.series[name].name_zh
 
-    def frequency_of(self, name: str) -> str:
+    def frequency_of(self, name: str) -> Frequency:
         """一個序列或指標的頻率。指標取它依賴的序列裡最粗的頻率；只依賴參數的指標算 daily。"""
         if name in self.series:
             return self.series[name].frequency
@@ -318,8 +319,8 @@ def load_config(config_dir: Path) -> Config:
         cfg.backup = ld.build(BackupSettings, ld.read(backup_path) or {}, backup_path) or BackupSettings()
     cal_path = config_dir / "calendars.yaml"
     if cal_path.exists():
-        doc = ld.build(CalendarsFile, ld.read(cal_path) or {}, cal_path)
-        cfg.calendar_defs = ld.keyed(doc.calendars, "交易日曆") if doc else {}
+        calendars_doc = ld.build(CalendarsFile, ld.read(cal_path) or {}, cal_path)
+        cfg.calendar_defs = ld.keyed(calendars_doc.calendars, "交易日曆") if calendars_doc else {}
         cfg.calendars = {code: build_calendar(d) for code, d in cfg.calendar_defs.items()}
     for curve in cfg.curves.values():                 # 換月的工作日按曲線的日曆算
         if curve.roll is not None and curve.calendar in cfg.calendars:
@@ -400,12 +401,12 @@ def _validate(cfg: Config) -> list[str]:
             if side not in cfg.series and side not in cfg.indicators:
                 errors.append(f"關係模型 {r.code}：{side} 既不是序列也不是指標")
 
-    for s in cfg.signals.values():
-        if s.source == "fair_value":
-            if s.input not in cfg.fair_values:
-                errors.append(f"信號 {s.code}：{s.input} 不是公允價值模型（fair_value.yaml）")
-        elif not cfg.has(s.input):
-            errors.append(f"信號 {s.code}：{s.input} 既不是序列也不是指標")
+    for sig in cfg.signals.values():
+        if sig.source == "fair_value":
+            if sig.input not in cfg.fair_values:
+                errors.append(f"信號 {sig.code}：{sig.input} 不是公允價值模型（fair_value.yaml）")
+        elif not cfg.has(sig.input):
+            errors.append(f"信號 {sig.code}：{sig.input} 既不是序列也不是指標")
     for pb in cfg.playbooks.values():
         errors += [f"事件預案 {pb.code}：{i.target} 既不是序列也不是指標" for i in pb.impacts if not cfg.has(i.target)]
     errors += _validate_projection(cfg)

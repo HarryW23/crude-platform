@@ -137,7 +137,7 @@ def update_user(session: Session, user_id: int, *, role: str | None = None, acti
     loses_admin = user.role == "admin" and user.active and ((role is not None and role != "admin") or active is False)
     if loses_admin and _other_active_admins(session, user) == 0:
         raise AuthError("這是最後一個可用的管理員帳號，不能降級或停用")
-    changes = {}
+    changes: dict[str, list] = {}
     if role is not None and role != user.role:
         changes["role"] = [user.role, role]
         user.role = role
@@ -209,7 +209,7 @@ def authenticate(session: Session, username: str, password: str, now: datetime |
         ok = False
     else:
         ok = verify_password(password, user.password_hash) and user.active
-    if not ok:
+    if not ok or user is None:
         session.execute(delete(LoginFailure).where(          # 順手清掉所有用戶名過了窗口的舊記錄，表不會無限長
             LoginFailure.at <= now - timedelta(seconds=FAILURE_WINDOW_SECONDS)))
         session.add(LoginFailure(username_key=key, at=now))

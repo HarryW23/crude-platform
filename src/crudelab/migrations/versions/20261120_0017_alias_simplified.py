@@ -44,13 +44,13 @@ def upgrade() -> None:
     for i in drop:
         conn.execute(sa.text("DELETE FROM series_alias WHERE id = :id"), {"id": i})
     # 先改成臨時值再改成新值：避免改的過程中和另一條的舊值撞上唯一約束
-    for r in keep.values():
-        if r["new"] != r["alias_norm"]:
+    for kept in keep.values():
+        if kept["new"] != kept["alias_norm"]:
             conn.execute(sa.text("UPDATE series_alias SET alias_norm = :t WHERE id = :id"),
-                         {"t": f"~{r['id']}", "id": r["id"]})
-    for r in keep.values():
-        if r["new"] != r["alias_norm"]:
-            conn.execute(sa.text("UPDATE series_alias SET alias_norm = :n WHERE id = :id"), {"n": r["new"], "id": r["id"]})
+                         {"t": f"~{kept['id']}", "id": kept["id"]})
+    for kept in keep.values():
+        if kept["new"] != kept["alias_norm"]:
+            conn.execute(sa.text("UPDATE series_alias SET alias_norm = :n WHERE id = :id"), {"n": kept["new"], "id": kept["id"]})
 
 
 def downgrade() -> None:

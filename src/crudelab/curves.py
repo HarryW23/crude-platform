@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import Any
 
 import pandas as pd
 
@@ -35,7 +36,8 @@ def _value_on(values: pd.Series, day: pd.Timestamp) -> float | None:
 def shape(points: list[dict]) -> dict:
     """一條曲線的形態：近遠月價差、結構（近強遠弱 / 近弱遠強 / 平坦）、曲率。"""
     have = [p for p in points if p["value"] is not None]
-    out = {"front": None, "back": None, "back_month": None, "spread": None, "structure": None, "fly": None}
+    out: dict[str, Any] = {"front": None, "back": None, "back_month": None, "spread": None, "structure": None,
+                           "fly": None}
     if len(have) < 2:
         return out
     front, back = have[0], have[-1]
@@ -58,7 +60,8 @@ def snapshot(engine: IndicatorEngine, cfg: Config, code: str) -> dict:
     today = pd.Timestamp(engine.as_of.date() if engine.as_of else date.today())
     front = values[columns[0][1]]
     front = front[front.index <= today]
-    out = {"code": code, "name_zh": curve.name_zh, "unit": curve.unit, "months": [n for n, _ in columns],
+    out: dict[str, Any] = {"code": code, "name_zh": curve.name_zh, "unit": curve.unit,
+                           "months": [n for n, _ in columns],
            "snapshots": [], "status": "ok", "roll_rule": curve.roll.note if curve.roll else None,
            "roll_verified": bool(curve.roll and curve.roll.verified)}
     if front.empty:

@@ -81,7 +81,7 @@ def upgrade() -> None:
         bad += [f"{table}.{column} = {value!r}（{n} 行）" for value, n in rows]
     if bad:
         raise RuntimeError("已有數據裡有不合規的值，沒有加約束（數據沒有改動）。請先修正這些行：" + "；".join(bad))
-    by_table = {}
+    by_table: dict[str, list] = {}
     for table, name, condition, _column in _rules():
         by_table.setdefault(table, []).append((name, condition))
     for table, constraints in by_table.items():
@@ -91,7 +91,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    by_table = {}
+    by_table: dict[str, list] = {}
     for table, name, _condition, _column in _rules():
         by_table.setdefault(table, []).append(name)
     for table, names in by_table.items():

@@ -22,6 +22,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from datetime import date, datetime
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -190,15 +191,15 @@ def sync_events(session: Session, cfg: Config, projection_id: int, actor: str = 
             c.removed_at = utcnow()
     manual = [c for c in rows if c.event_id is None and c.scenario_code is not None]
     base = next((c for c in rows if c.event_id is None and c.scenario_code is None), None)
-    taken = sum(e.probability for e in usable) + sum(c.probability for c in manual)
+    taken = sum(e.probability or 0.0 for e in usable) + sum(c.probability for c in manual)   # SQL 已篩掉沒有機率的事件
     if taken > 1 + 1e-9:
         raise ProjectionError(f"事件和手動分支的機率加起來是 {taken:.0%}，超過 100%："
                               "這種情況下不能把它們當作互斥的分支。請先調低事件的機率，或移除部分手動分支")
     for e in usable:
         session.add(ProjectionCase(projection_id=projection_id, label=f"地緣：{e.title}"[:128],
-                                   scenario_code=e.scenario_code, probability=float(e.probability),
+                                   scenario_code=e.scenario_code, probability=float(e.probability or 0.0),
                                    price_adjustment=float(e.price_premium or 0.0), event_id=e.id,
-                                   event_probability=float(e.probability),
+                                   event_probability=float(e.probability or 0.0),
                                    note=f"由事件 #{e.id} 同步", created_by=actor))
     rest = max(0.0, 1.0 - taken)
     if base is None:
@@ -300,7 +301,7 @@ def _context(session: Session, cfg: Config, as_of: datetime | None) -> tuple[_Co
 
 
 def _case_cells(ctx: _Context, scenario_balance: pd.Series | None, price_adjustment: float,
-                drift: dict[str, float] | None = None) -> dict:
+                drift: dict[str, float | None] | None = None) -> dict:
     """一個分支在各期限的結果。
 
     scenario_balance 為 None = 基準分支（平衡不變）。drift：各期限的基本面回歸（價格單位），各分支相同。
@@ -309,20 +310,21 @@ def _case_cells(ctx: _Context, scenario_balance: pd.Series | None, price_adjustm
     for h in ctx.settings.horizons:
         end = ctx.today + pd.Timedelta(days=h.calendar_days)
         drift_effect = (drift or {}).get(h.code) or 0.0
-        cell = {"balance_change": 0.0, "stock_change": 0.0, "periods": 0, "balance_effect": 0.0,
+        cell: dict[str, Any] = {"balance_change": 0.0, "stock_change": 0.0, "periods": 0, "balance_effect": 0.0,
                 "drift_effect": drift_effect, "central": None, "low": None, "high": None, "reason": None}
+        sensitivity = ctx.sensitivity
         if scenario_balance is not None:
             change, stock, n = _balance_change(ctx.base_balance, scenario_balance, ctx.today, end, ctx.period_days)
             cell["balance_change"], cell["stock_change"], cell["periods"] = change, stock, n
-            if change is None:
+            if change is None or stock is None:
                 cell["balance_effect"], cell["reason"] = None, "平衡表在這段期間沒有數據，算不出情境的影響"
             elif stock == 0:
                 cell["balance_effect"] = 0.0
-            elif ctx.sensitivity is None:
+            elif sensitivity is None:
                 cell["balance_effect"] = None
                 cell["reason"] = f"缺參數 {ctx.settings.sensitivity_parameter}（庫存變化對價格的敏感度）"
             else:
-                cell["balance_effect"] = -ctx.sensitivity * stock
+                cell["balance_effect"] = -sensitivity * stock
         if ctx.price is not None and cell["balance_effect"] is not None:
             cell["central"] = ctx.price + drift_effect + cell["balance_effect"] + price_adjustment
             if ctx.volatility is not None:
@@ -346,7 +348,7 @@ def adhoc(session: Session, cfg: Config, scenario: Scenario, price_adjustment: f
 
 
 def _drift(cfg: Config, engine: IndicatorEngine, code: str | None, ctx: _Context,
-           problems: list[str]) -> tuple[dict[str, float] | None, dict | None]:
+           problems: list[str]) -> tuple[dict[str, float | None] | None, dict | None]:
     """推演選了公允價值模型時，各期限的基本面回歸（價格單位）。模型不可用時不加，並在 problems 裡說明。"""
     if not code:
         return None, None
@@ -357,22 +359,21 @@ def _drift(cfg: Config, engine: IndicatorEngine, code: str | None, ctx: _Context
         return None, {"model": code, "status": "missing", "reasons": ["模型已不存在"]}
     fit = fair_value.current(engine, cfg, code, ctx.today.date())
     model = cfg.fair_values[code]
-    info = {"model": code, "name_zh": model.name_zh, "status": fit.status, "reasons": fit.reasons,
+    info: dict[str, Any] = {"model": code, "name_zh": model.name_zh, "status": fit.status, "reasons": fit.reasons,
             "fair": fit.fair, "deviation_pct": fit.deviation_pct, "half_life": fit.half_life, "date": fit.date,
             "effects": {}}
     if fit.status != "ok" or ctx.price is None:
         problems.append(f"公允價值模型目前不給漂移（{'；'.join(fit.reasons) or '沒有結果'}），所以沒有加基本面回歸")
         return None, info
-    effects = {}
-    for h in ctx.settings.horizons:
-        move = fair_value.drift_log(fit, h.trading_days)
-        effects[h.code] = ctx.price * (math.exp(move) - 1) if model.transform == "log" else move
+    effects: dict[str, float | None] = {}
+    for h in ctx.settings.horizons:                 # status 為 ok 時一定有漂移（見 fair_value.drift_log）
+        effects[h.code] = fair_value.drift_effect(fit, model, ctx.price, h.trading_days)
     info["effects"] = effects
     return effects, info
 
 
 def _stat_drift(cfg: Config, engine: IndicatorEngine, code: str, ctx: _Context,
-                problems: list[str]) -> tuple[dict[str, float] | None, dict]:
+                problems: list[str]) -> tuple[dict[str, float | None] | None, dict]:
     """統計漂移模型（動量）在各期限的漂移（價格單位）。用換月調整後的價格，只用到今天為止的數據。"""
     model = stat_models(cfg)[code]
     info = {"model": code, "name_zh": model.name_zh, "kind": model.kind, "status": "ok", "reasons": [],
@@ -383,7 +384,7 @@ def _stat_drift(cfg: Config, engine: IndicatorEngine, code: str, ctx: _Context,
         info["status"] = "missing"
         problems.append("沒有價格數據，統計漂移模型沒有結果")
         return None, info
-    effects = {}
+    effects: dict[str, float | None] = {}
     for h in ctx.settings.horizons:
         row = stats_models.momentum_drift(prices, model, h.trading_days).iloc[-1]
         info["estimates"][h.code] = {k: (None if pd.isna(row[k]) else float(row[k]))
@@ -429,7 +430,7 @@ def compute(session: Session, cfg: Config, projection_id: int, as_of: datetime |
                             f"（同步時是 {c.event_probability or 0:.0%}），請重新同步地緣事件")
 
     drift, drift_info = _drift(cfg, base, row.drift_model, ctx, problems)
-    out_cases = []
+    out_cases: list[dict[str, Any]] = []
     for c in case_rows:
         scenario_balance = (IndicatorEngine(session, cfg, as_of=as_of,
                                             scenario=scenarios.load(session, cfg, c.scenario_code, as_of))

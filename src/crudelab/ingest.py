@@ -86,24 +86,26 @@ def write_observations(session: Session, observations: list[Obs], source_code: s
             latest[(o.series_code, o.obs_date)] = o
         stats.update(_write_vintages(session, ordered, source_code, batch_id, now, latest))
 
-    existing = {(row.series_code, row.obs_date): row for row in session.scalars(
+    existing = {(obs.series_code, obs.obs_date): obs for obs in session.scalars(
         select(Observation).where(Observation.source_code == source_code, Observation.series_code.in_(codes)))}
 
     for key, o in latest.items():
-        row = existing.get(key)
-        if row is None:
+        current = existing.get(key)
+        if current is None:
             session.add(Observation(series_code=o.series_code, obs_date=o.obs_date, value=float(o.value),
                                     source_code=source_code, batch_id=batch_id, source_ref=o.source_ref,
                                     created_at=now, updated_at=now))
             stats["inserted"] += 1
-        elif math.isclose(row.value, o.value, rel_tol=1e-12, abs_tol=1e-12):
+        elif math.isclose(current.value, o.value, rel_tol=1e-12, abs_tol=1e-12):
             stats["unchanged"] += 1
         else:
             session.add(ObservationRevision(
-                series_code=row.series_code, obs_date=row.obs_date, source_code=source_code, value=row.value,
-                batch_id=row.batch_id, source_ref=row.source_ref, recorded_at=row.updated_at,
+                series_code=current.series_code, obs_date=current.obs_date, source_code=source_code,
+                value=current.value, batch_id=current.batch_id, source_ref=current.source_ref,
+                recorded_at=current.updated_at,
                 replaced_at=now, replaced_by=actor))
-            row.value, row.batch_id, row.source_ref, row.updated_at = float(o.value), batch_id, o.source_ref, now
+            current.value, current.batch_id = float(o.value), batch_id
+            current.source_ref, current.updated_at = o.source_ref, now
             stats["updated"] += 1
     return stats
 
@@ -232,7 +234,7 @@ def _fingerprint(session: Session, codes: list[str]) -> tuple:
         select(func.count(), func.max(Observation.updated_at), func.max(Observation.id))).one()
     revisions = session.scalar(select(func.count()).select_from(ObservationRevision))   # 每次改值都會多一條
     priorities = tuple(session.execute(select(DataSource.code, DataSource.priority).order_by(DataSource.code)).all())
-    return (str(session.get_bind().url), tuple(codes), count, last_update, last_id, revisions, priorities)
+    return (str(session.get_bind().engine.url), tuple(codes), count, last_update, last_id, revisions, priorities)
 
 
 def load_points_cached(session: Session, codes: list[str]) -> pd.DataFrame:

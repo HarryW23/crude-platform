@@ -40,8 +40,8 @@ def list_series(session: Session = DB, state: AppState = Depends(get_state)):
         out.append({"code": s.code, "name_zh": s.name_zh, "commodity": s.commodity, "location": s.location,
                     "kind": s.kind, "unit": s.unit, "frequency": s.frequency, "module": s.module,
                     "benchmark": s.benchmark, "n": n, "first_date": first, "last_date": last,
-                    "last_value": float(latest.loc[s.code, "value"]) if n else None,
-                    "last_source": latest.loc[s.code, "source_code"] if n else None})
+                    "last_value": float(latest.loc[s.code, "value"]) if n and latest is not None else None,
+                    "last_source": latest.loc[s.code, "source_code"] if n and latest is not None else None})
     return out
 
 

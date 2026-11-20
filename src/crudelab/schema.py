@@ -5,11 +5,14 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, model_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator, model_validator
 
 from .credentials import base_name
+
+if TYPE_CHECKING:
+    from .calendars import Calendar
 
 Code = Field(pattern=r"^[A-Z][A-Z0-9_]*$", max_length=64)
 EPOCH = date(1900, 1, 1)          # 「自始生效」的生效日期
@@ -17,6 +20,7 @@ EPOCH = date(1900, 1, 1)          # 「自始生效」的生效日期
 Module = Literal["spread", "balance", "geo", "refinery", "positioning", "common"]
 SeriesKind = Literal["futures", "swap", "spot", "diff", "osp", "freight", "fx", "stock", "flow", "ratio", "position"]
 Frequency = Literal["daily", "weekly", "monthly", "quarterly"]      # 由細到粗
+ModuleName = Literal["spread", "balance", "refinery", "positioning", "geo"]      # 方向信號的模組（推演的權重按它分）
 FREQUENCY_ORDER: tuple[str, ...] = ("daily", "weekly", "monthly", "quarterly")
 DEFAULT_VALID_DAYS: dict[str, int] = {"daily": 0, "weekly": 7, "monthly": 35, "quarterly": 100}
 
@@ -118,7 +122,7 @@ class RollRule(Strict):
     verified: bool = False                        # 規則是否已經和交易所 / 數據商的實際換月日核對過
     note: str | None = None
     overrides: dict[str, date] = {}               # 合約月份 "YYYY-MM" → 實際最後交易日（假期等例外）
-    _calendar: object = PrivateAttr(default=None)  # 載入配置時按曲線的 calendar 填上（calendars.Calendar）
+    _calendar: Calendar | None = PrivateAttr(default=None)  # 載入配置時按曲線的 calendar 填上
 
     @model_validator(mode="after")
     def _check(self) -> RollRule:
@@ -188,6 +192,11 @@ class HolidayRule(Strict):
         easter = self.easter_offset is not None and self.month is None
         if [fixed, nth, easter].count(True) != 1:
             raise ValueError(f"假期規則「{self.name}」要寫成固定日期、第 n 個星期幾、或復活節前後之中的一種")
+        if fixed and self.month is not None and self.day is not None:
+            try:
+                date(2000, self.month, self.day)       # 2000 年是閏年：2 月 29 日也算存在（平年那天沒有假期）
+            except ValueError:
+                raise ValueError(f"假期規則「{self.name}」：{self.month} 月沒有 {self.day} 日") from None
         if self.observe != "none" and not fixed:
             raise ValueError(f"假期規則「{self.name}」：observe 只用於固定日期")
         return self
@@ -507,7 +516,7 @@ class ProjectionSettings(Strict):
     ewma_lambda: float = Field(default=0.94, ge=0.8, le=0.995)
     drift_models: list[StatDriftModel] = []                           # 統計漂移模型，和公允價值模型並列可選
     horizons: list[HorizonDef] = Field(min_length=1)
-    module_weights: dict[Literal["spread", "balance", "refinery", "positioning", "geo"], str]   # 模組 → 權重參數 key
+    module_weights: dict[ModuleName, str]   # 模組 → 權重參數 key
 
 
 # ------------------------------ 定時任務 ------------------------------
@@ -691,16 +700,24 @@ class FreshnessDef(Strict):
 
 # ------------------------------ 回測 ------------------------------
 
+DEFAULT_PUBLICATION_LAGS: dict[Frequency, int] = {"daily": 0, "weekly": 5, "monthly": 40, "quarterly": 60}
+
+
 class BacktestSettings(Strict):
     """回測的設定。算法見 backtest.py。"""
     anchor: str | None = None                  # 用哪個價格算之後的收益；不填就用 projection.yaml 的 anchor
     # 按數據日期回測時，每種頻率的數據在它的日期之後幾天才算「已知」（發佈延遲）
-    publication_lag_days: dict[Literal["daily", "weekly", "monthly", "quarterly"], int] = {
-        "daily": 0, "weekly": 5, "monthly": 40, "quarterly": 60}
+    publication_lag_days: dict[Frequency, int] = Field(default_factory=lambda: dict(DEFAULT_PUBLICATION_LAGS))
     neutral_band: float = Field(default=0.15, gt=0, lt=1)    # 分數絕對值小於它算「中性」，不計入命中率
     min_effective_samples: int = Field(default=30, ge=5)      # 有效樣本少於它就標為樣本不足
     vintage_max_dates: int = Field(default=400, ge=10)        # 按入庫時間回測最多評估多少個日期（每個日期都要重算一遍）
     calibration_horizon: str = "M1"                           # 用哪個期限的預測力校準權重（見 backtest.calibrate）
+
+    @field_validator("publication_lag_days")
+    @classmethod
+    def _all_frequencies(cls, value: dict) -> dict:
+        """配置裡只寫了幾種頻率時，其餘用預設值補上：否則那種頻率的數據一回測就因為查不到延遲而中斷。"""
+        return {**DEFAULT_PUBLICATION_LAGS, **value}
 
 
 # ------------------------------ 大模型的調用限制 ------------------------------

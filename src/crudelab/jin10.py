@@ -264,7 +264,8 @@ FLASH_KEEP_DAYS = 90
 
 def flash_text(item: dict) -> str:
     """快訊條目裡的正文：依次試 content / title / introduction（也試套在 data 裡的），去掉 HTML 標籤。"""
-    sources = [item, item.get("data") if isinstance(item.get("data"), dict) else {}]
+    data = item.get("data")
+    sources: list[dict] = [item, data if isinstance(data, dict) else {}]
     for src in sources:
         for key in ("content", "title", "introduction", "text"):
             value = src.get(key)
@@ -335,7 +336,7 @@ def prune_flash(session: Session, now: datetime | None = None) -> int:
 
     from .models import NewsFlash
     cutoff = (now or utcnow()) - timedelta(days=FLASH_KEEP_DAYS)
-    return session.execute(delete(NewsFlash).where(NewsFlash.time < cutoff)).rowcount or 0
+    return db.rowcount(session.execute(delete(NewsFlash).where(NewsFlash.time < cutoff)))
 
 
 # ------------------------------ 每日收盤價（報價和回填共用） ------------------------------

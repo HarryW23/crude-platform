@@ -91,9 +91,10 @@ def cmd_serve(args) -> int:
     import uvicorn
 
     from .api.app import create_app
+    from .api.deps import Site
     from .config import ConfigError
     ports = {"front": args.port, "admin": args.admin_port or args.port + 1}
-    sites = ["front", "admin"] if args.site == "both" else [args.site]
+    sites: list[Site] = ["front", "admin"] if args.site == "both" else [args.site]
     for site in sites:
         if _port_in_use(args.host, ports[site]):
             print(f"端口 {ports[site]} 已經被佔用。如果是之前啟動的 crudelab 還開著，直接用瀏覽器打開 "
@@ -105,8 +106,9 @@ def cmd_serve(args) -> int:
                        admin_url=os.environ.get("CRUDELAB_ADMIN_URL") or f"http://{args.host}:{ports['admin']}")
     from .api.app import NoAdminAccount
     try:
-        servers = [uvicorn.Server(uvicorn.Config(create_app(settings, site), host=args.host, port=ports[site],
-                                                 log_level="warning")) for site in sites]
+        apps = {site: create_app(settings, site) for site in sites}
+        servers = [uvicorn.Server(uvicorn.Config(apps[site], host=args.host, port=ports[site], log_level="warning"))
+                   for site in sites]
     except (ConfigError, NoAdminAccount) as exc:
         print(exc, file=sys.stderr)
         return 1
@@ -129,7 +131,7 @@ def cmd_serve(args) -> int:
     async def schedule_loop() -> None:
         from . import jobs, scheduler
         await asyncio.to_thread(jobs.recover_stale)
-        state = servers[-1].config.app.state.crudelab                # 後台應用的狀態：配置改了它會自動重新載入
+        state = apps["admin"].state.crudelab                         # 後台應用的狀態：配置改了它會自動重新載入
         while True:
             try:
                 await asyncio.to_thread(scheduler.tick, state.cfg, settings)
@@ -260,9 +262,10 @@ def cmd_user(args) -> int:
                 user = auth.create_user(session, args.username, ask_password(), args.role, actor="cli")
                 print(f"已建立帳號 {user.username}（{auth.ROLE_NAMES[user.role]}）")
                 return 0
-            user = auth.find(session, args.username)
-            if user is None:
+            found = auth.find(session, args.username)
+            if found is None:
                 raise auth.AuthError(f"沒有名為 {args.username} 的帳號")
+            user = found
             if args.action == "passwd":
                 auth.set_password(session, user.id, ask_password(), actor="cli")
                 print(f"已重設 {user.username} 的密碼，它在各處的登錄都已失效")
@@ -302,11 +305,11 @@ def cmd_backtest(args) -> int:
     status = backtest.execute(cfg, run_id)
     from .models import BacktestRun
     with db.session_scope() as session:
-        row = session.get(BacktestRun, run_id)
+        row = db.require(session, BacktestRun, run_id)
         if status != "done":
             print(f"失敗：{row.message}", file=sys.stderr)
             return 1
-        r = row.results
+        r: dict = row.results or {}
     pct = lambda v: "   —  " if v is None else f"{v * 100:5.1f}%"  # noqa: E731
     num = lambda v: "   —  " if v is None else f"{v:+.2f}"  # noqa: E731
     print(f"{r['anchor_name']}，{r['start']} 至 {r['end']}，{r['dates']} 個評估日，每 {r['step']} 個交易日一次")
@@ -490,8 +493,8 @@ def cmd_jin10(args) -> int:
             for r in rows[:6]:
                 print(f"  {r.get('pub_time')}  {r.get('star')}★  {r.get('title')}  "
                       f"前值 {r.get('previous')}  預期 {r.get('consensus')}  實際 {r.get('actual')}")
-            matched = [r.get("title") for r in rows if any(rule.match in str(r.get("title")) for rule in cfg.jin10.calendar_rules)]
-            print(f"  能對上 jin10.yaml 換算規則的：{matched[:6] or '本周沒有（或標題寫法不同，請把上面的標題發給負責平台的人）'}")
+            calendar_matched = [r.get("title") for r in rows if any(rule.match in str(r.get("title")) for rule in cfg.jin10.calendar_rules)]
+            print(f"  能對上 jin10.yaml 換算規則的：{calendar_matched[:6] or '本周沒有（或標題寫法不同，請把上面的標題發給負責平台的人）'}")
         flash = show("快訊（list_flash）", lambda: client.call("list_flash"))
         if flash is not None:
             rows = jin10.rows_of(flash)
@@ -503,13 +506,13 @@ def cmd_jin10(args) -> int:
             print(f"  data 的字段（翻頁用）：{keys}；外層字段：{sorted(flash) if isinstance(flash, dict) else '—'}")
             # 用平台的關鍵詞篩一遍這頁快訊（不再調用金十）
             hits = [(jin10.flash_hits(cfg, jin10.flash_text(r)), jin10.flash_text(r)) for r in rows]
-            matched = [(h, t) for h, t in hits if h]
+            matched = [hit for hit in hits if hit[0]]
             print(f"  按 config/jin10.yaml 的關鍵詞篩選：{len(rows)} 條裡命中 {len(matched)} 條")
-            for h, t in matched[:8]:
-                print(f"    [{'、'.join(h)}] {t[:60]}")
+            for keywords, text in matched[:8]:
+                print(f"    [{'、'.join(keywords)}] {text[:60]}")
             counts: dict[str, int] = {}
-            for h, _ in matched:
-                for k in h:
+            for keywords, _ in matched:
+                for k in keywords:
                     counts[k] = counts.get(k, 0) + 1
             if counts:
                 print("  各關鍵詞命中次數：" + "、".join(f"{k} {n}" for k, n in sorted(counts.items(), key=lambda x: -x[1])))

@@ -20,10 +20,14 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from .. import credentials, db
 from ..schema import LLMSettings
 from .base import LLMNotConfigured, LLMProvider
+
+if TYPE_CHECKING:
+    from .limits import LimitedProvider
 
 PROVIDERS = {"none": "不使用", "deepseek": "DeepSeek", "openai": "OpenAI", "anthropic": "Claude",
              "compatible": "其他兼容接口"}
@@ -98,7 +102,7 @@ def save_choice(session, provider: str, model: str, thinking: bool, actor: str, 
     return value
 
 
-def get_provider(purpose: str = "other", limits: LLMSettings | None = None) -> LLMProvider:
+def get_provider(purpose: str = "other", limits: LLMSettings | None = None) -> LimitedProvider:
     """回傳當前配置的大模型（已套上調用限制）。沒配置或配置不全時拋 LLMNotConfigured，訊息說明缺什麼。
 
     purpose 記在用量記錄裡（chat / extract / narrative / test / models）；limits 一般傳 cfg.llm。
@@ -108,7 +112,7 @@ def get_provider(purpose: str = "other", limits: LLMSettings | None = None) -> L
     return LimitedProvider(_raw_provider(limits), limits, purpose)
 
 
-def model_lister(limits: LLMSettings | None = None, provider: str | None = None):
+def model_lister(limits: LLMSettings | None = None, provider: str | None = None) -> LimitedProvider:
     """用來向供應商查模型列表的對象（同樣受調用限制）。provider 不給就用當前選的那家。不需要已經選好型號。"""
     from .limits import LimitedProvider
     limits = limits or LLMSettings()

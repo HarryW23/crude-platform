@@ -65,7 +65,7 @@ def create(session: Session, cfg: Config, *, horizon: str, direction: int, low: 
         raise JournalError("方向必須是偏多、中性或偏空")
     if (low is None) != (high is None):
         raise JournalError("目標區間要同時填下限和上限，或都不填")
-    if low is not None and not (math.isfinite(low) and math.isfinite(high) and 0 < low < high):
+    if low is not None and high is not None and not (math.isfinite(low) and math.isfinite(high) and 0 < low < high):
         raise JournalError("目標區間的下限必須小於上限，而且都要大於 0")
     if confidence is not None and not 0.5 <= confidence <= 1:
         raise JournalError("把握必須在 50% 到 100% 之間（低於 50% 等於判斷相反的方向）")
@@ -86,6 +86,7 @@ def create(session: Session, cfg: Config, *, horizon: str, direction: int, low: 
     adjusted = engine.adjusted_series(anchor)[0]
     adjusted = adjusted[adjusted.index <= pd.Timestamp(made_on)]
     settings = cfg.projection
+    assert settings is not None                  # _anchor() 已經檢查過 projection.yaml 存在
     vol = projection._volatility(adjusted, settings.volatility_lookback, settings.volatility_min_points)
     system = signals.compute(session, engine)
     snapshot = {"overall": system["overall"]["score"], "label": system["overall"]["label"],
@@ -159,20 +160,20 @@ def evaluate(cfg: Config, view: MarketView, raw: pd.Series, adjusted: pd.Series,
         return out
     if view.target_date > today:                             # 進行中：目前的漲跌
         now_adj, now_day = _value_at(adjusted, today)
-        if start_adj and now_adj:
+        if start_adj and now_adj and now_day:
             out["return"], out["end_date"] = now_adj / start_adj - 1, now_day.isoformat()
             out["end_price"] = _value_at(raw, today)[0]
         return out
     end_raw, end_day = _value_at(raw, view.target_date)
     end_adj, _ = _value_at(adjusted, view.target_date)
-    if end_raw is None or end_adj is None or not start_adj:
+    if end_raw is None or end_adj is None or end_day is None or not start_adj:
         out["status"] = "waiting"                          # 到期了，但數據還沒到
         return out
     ret = end_adj / start_adj - 1
     actual = _move(ret, band)
     out.update(status="scored", end_price=end_raw, end_date=end_day.isoformat(), **{"return": ret}, actual=actual,
                hit=view.direction == actual)
-    if view.low is not None:
+    if view.low is not None and view.high is not None:
         out["range_hit"] = view.low <= end_raw <= view.high
     if out["system_direction"] is not None:
         out["system_hit"] = out["system_direction"] == actual

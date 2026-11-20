@@ -17,6 +17,7 @@ from __future__ import annotations
 import copy
 from dataclasses import dataclass, field
 from datetime import date, datetime
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -202,16 +203,17 @@ class IndicatorEngine:
         不憑空編造期號。"""
         from .ingest import vintage_points
         from .models import ObservationVintage
+        vintage = self.vintage
         vintaged = [c for c, s in self.cfg.series.items() if s.vintaged]
-        if not vintaged:
+        if vintage is None or not vintaged:
             return points
         first = dict(self.session.execute(select(ObservationVintage.series_code, func.min(ObservationVintage.vintage))
                                           .where(ObservationVintage.series_code.in_(vintaged))
                                           .group_by(ObservationVintage.series_code)).all())
-        covered = [c for c, d in first.items() if d <= self.vintage]
+        covered = [c for c, d in first.items() if d <= vintage]
         if not covered:
             return points
-        replaced = vintage_points(self.session, covered, self.vintage)
+        replaced = vintage_points(self.session, covered, vintage)
         kept = points[~points["series_code"].isin(covered)]
         return pd.concat([kept, replaced], ignore_index=True)
 
@@ -370,7 +372,7 @@ class IndicatorEngine:
             start = values.index[-1 - back]
             out[key] = last - float(values.iloc[-1 - back])
             rolled = [c for c in curves
-                      if contracts.rolls_between(self.cfg.curves[c].roll, start.date(), end.date())]
+                      if contracts.rolls_between(contracts.roll_of(self.cfg.curves[c]), start.date(), end.date())]
             rolled += [v for v in self.views_used(code)                 # 計價月份切換了（例如跨月）
                        if contracts.view_target(self.cfg.views[v], start.date())
                        != contracts.view_target(self.cfg.views[v], end.date())]
@@ -395,7 +397,7 @@ class IndicatorEngine:
         if name in self.cfg.views:
             return self._trace_view(name, on)
         ind = self.cfg.indicators[name]
-        node = {"kind": "indicator", "code": name, "name_zh": ind.name_zh, "unit": ind.unit,
+        node: dict[str, Any] = {"kind": "indicator", "code": name, "name_zh": ind.name_zh, "unit": ind.unit,
                 "formula": ind.formula, "value": self.value_at(name, on),
                 "children": [self.trace(child, on, self._trace_tolerance(ind, child))
                              for child in fx.names(ind.formula)]}
@@ -405,7 +407,7 @@ class IndicatorEngine:
 
     def _trace_parameter(self, key: str, on: date) -> dict:
         p = self.cfg.parameters[key]
-        node = {"kind": "parameter", "code": key, "name_zh": p.name_zh, "unit": p.unit, "value": None,
+        node: dict[str, Any] = {"kind": "parameter", "code": key, "name_zh": p.name_zh, "unit": p.unit, "value": None,
                 "verified": self._verified.get(key, False)}
         frame = self._versions.get(key)
         past = frame[frame.index <= pd.Timestamp(on)] if frame is not None else None
@@ -426,10 +428,10 @@ class IndicatorEngine:
         values, targets = contracts.view_series(self.cfg, view, self._raw)
         ts = pd.Timestamp(on)
         target = contracts.view_target(view, on)
-        node = {"kind": "view", "code": code, "name_zh": view.name_zh, "unit": self.cfg.unit_of(code),
+        node: dict[str, Any] = {"kind": "view", "code": code, "name_zh": view.name_zh, "unit": self.cfg.unit_of(code),
                 "value": float(values[ts]) if ts in values.index else None,
                 "contract": contracts.contract_label(target), "curve": view.curve}
-        front = contracts.front_ordinal(self.cfg.curves[view.curve].roll, on)
+        front = contracts.front_ordinal(contracts.roll_of(self.cfg.curves[view.curve]), on)
         n = target - front + 1
         if n >= 1:
             node["children"] = [self._trace_series(f"{view.curve}_M{n}", on, 0)]
@@ -440,7 +442,7 @@ class IndicatorEngine:
 
     def _trace_series(self, code: str, on: date, tolerance: int) -> dict:
         s = self.cfg.series[code]
-        node = {"kind": "series", "code": code, "name_zh": s.name_zh, "unit": s.unit, "value": None}
+        node: dict[str, Any] = {"kind": "series", "code": code, "name_zh": s.name_zh, "unit": s.unit, "value": None}
         points = self._all_points()
         part = points[points["series_code"] == code]
         dates = pd.to_datetime(part["obs_date"])

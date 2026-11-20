@@ -35,7 +35,7 @@ import pandas as pd
 
 from .config import Config
 from .indicators import IndicatorEngine
-from .schema import FairValueModel
+from .schema import FairValueModel, Frequency
 
 
 @dataclass
@@ -63,7 +63,7 @@ class Fit:
 
 
 def aligned_frame(engine: IndicatorEngine, cfg: Config, model: FairValueModel,
-                  lags: dict[str, int] | None = None, until: pd.Timestamp | None = None) -> pd.DataFrame:
+                  lags: dict[Frequency, int] | None = None, until: pd.Timestamp | None = None) -> pd.DataFrame:
     """以 target 的交易日為索引：price、y，以及每個因子在那一天已知的最後一個值（扣發佈延遲 lags，按頻率）。"""
     from .backtest import as_available  # 共用同一個「當時已知」的對齊
     prices = engine.values(model.target).dropna()

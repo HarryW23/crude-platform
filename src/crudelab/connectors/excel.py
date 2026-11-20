@@ -121,7 +121,7 @@ def read_grids(path: Path) -> tuple[dict[str, list[list]], dict[str, str]]:
             merges = _xlsx_merges(path)
             grids = {}
             for ws in wb.worksheets:
-                rows = []
+                rows: list[list] = []
                 width = 0
                 for row in ws.iter_rows(values_only=True):       # 不指定 max_col：只讀實際有內容的寬度
                     if len(rows) >= MAX_ROWS:
@@ -347,7 +347,7 @@ def _parse_sheet(name: str, grid: list[list], resolver: Resolver,
         if target:
             observations.extend(Obs(target, d, v, ref) for d, v, ref in points)
 
-    if is_long:
+    if is_long and name_col is not None and value_col is not None:
         groups: dict[str, list] = {}
         skipped: dict[str, int] = {}
         for i in data_rows:

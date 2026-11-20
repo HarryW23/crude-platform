@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -23,9 +24,11 @@ from sqlalchemy.orm import Session
 
 from .indicators import IndicatorEngine
 from .models import Event
+from .schema import ModuleName
 
 MODULE_NAMES = {"spread": "地域價差", "balance": "供需", "refinery": "煉廠", "positioning": "資金持倉", "geo": "地緣"}
-DATA_MODULES = ("spread", "balance", "refinery", "positioning")     # 由數據算信號的模組（地緣來自事件庫）。只在這裡列
+# 由數據算信號的模組（地緣來自事件庫）。只在這裡列
+DATA_MODULES: tuple[ModuleName, ...] = ("spread", "balance", "refinery", "positioning")
 # 最新值的日期離今天超過這麼多天就不出分。比正常的發佈間隔寬鬆：周度數據 21 天 = 錯過兩次發佈
 STALE_DAYS = {"daily": 10, "weekly": 21, "monthly": 70, "quarterly": 200}
 
@@ -160,7 +163,7 @@ def compute(session: Session, engine: IndicatorEngine) -> dict:
     cfg = engine.cfg
     today = pd.Timestamp(engine.as_of.date() if engine.as_of else date.today())
     weights = cfg.projection.module_weights if cfg.projection else {}
-    modules = []
+    modules: list[dict[str, Any]] = []
     for module in DATA_MODULES:
         items = [data_signal(engine, code, today) for code, s in cfg.signals.items() if s.module == module]
         ok = [i for i in items if i["status"] == "ok"]

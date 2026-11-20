@@ -34,6 +34,7 @@ import math
 import threading
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -150,12 +151,12 @@ def _observation_scores(engine: IndicatorEngine, cfg: Config, dates: pd.Datetime
 
 def fair_value_scores(cfg: Config, fits: dict[str, dict], dates: pd.DatetimeIndex) -> dict[str, pd.Series]:
     """公允價值信號在每個評估日的分數：用那一天的擬合（只用當時已知的數據），公式同 signals.fair_value_signal。"""
-    out = {}
+    out: dict[str, Any] = {}
     for code, s in cfg.signals.items():
         if s.source != "fair_value":
             continue
-        z = pd.Series({t: (fits.get(s.input, {}).get(t).z if fits.get(s.input, {}).get(t) else None) for t in dates},
-                      dtype=float).reindex(dates)
+        by_date = fits.get(s.input, {})
+        z = pd.Series({t: (fit.z if (fit := by_date.get(t)) else None) for t in dates}, dtype=float).reindex(dates)
         out[code] = (z * s.direction / 2).clip(-1, 1)
     return out
 
@@ -252,7 +253,7 @@ def weighted_mean(part: pd.DataFrame, weights: pd.DataFrame) -> pd.Series:
 def forward_returns(prices: pd.Series, dates: pd.DatetimeIndex, horizons: list[HorizonDef]) -> pd.DataFrame:
     """從 t 到 t 之後第 h 個交易日（按 anchor 自己的交易日）的對數收益。之後的數據不夠時為 NaN。"""
     prices = prices.sort_index()
-    out = {}
+    out: dict[str, Any] = {}
     for h in horizons:
         ahead = prices.shift(-h.trading_days)
         out[h.code] = np.log(ahead / prices).reindex(dates)
@@ -264,7 +265,8 @@ def evaluate(scores: pd.Series, returns: pd.Series, horizon_days: int, step: int
     data = pd.DataFrame({"s": scores, "r": returns}).dropna()
     n = len(data)
     n_eff = n * min(1.0, step / horizon_days)
-    out = {"n": n, "n_eff": round(n_eff, 1), "hit_rate": None, "hit_low": None, "hit_high": None, "calls": 0,
+    out: dict[str, Any] = {
+           "n": n, "n_eff": round(n_eff, 1), "hit_rate": None, "hit_low": None, "hit_high": None, "calls": 0,
            "up_share": None, "ic": None, "ic_t": None, "mean_bull": None, "mean_bear": None,
            "significant": False, "status": "no_data" if n == 0 else ("insufficient" if n_eff < min_effective else "ok")}
     if n < 3:
@@ -293,7 +295,7 @@ def evaluate(scores: pd.Series, returns: pd.Series, horizon_days: int, step: int
 def _band(prices: pd.Series, vol: pd.Series, dates: pd.DatetimeIndex, horizons: list[HorizonDef]) -> dict:
     prices = prices.sort_index()
     now = prices.reindex(dates)
-    out = {}
+    out: dict[str, Any] = {}
     for h in horizons:
         later = prices.shift(-h.trading_days).reindex(dates)
         half = now * vol * math.sqrt(h.trading_days)
@@ -318,7 +320,7 @@ def evaluate_drift(predicted: pd.Series, realized: pd.Series, horizon_days: int,
     data = pd.DataFrame({"d": predicted, "r": realized}).dropna()
     n = len(data)
     n_eff = n * min(1.0, step / horizon_days)
-    out = {"n": n, "n_eff": round(n_eff, 1), "hit_rate": None, "mae_drift": None, "mae_zero": None,
+    out: dict[str, Any] = {"n": n, "n_eff": round(n_eff, 1), "hit_rate": None, "mae_drift": None, "mae_zero": None,
            "improvement": None, "t": None, "significant": False,
            "status": "no_data" if n == 0 else ("insufficient" if n_eff < min_effective else "ok")}
     if n < 3:
@@ -342,12 +344,15 @@ def _evaluate_fair_value(cfg: Config, model, fits: dict, dates: pd.DatetimeIndex
     z = pd.Series({t: fits[t].z if fits.get(t) else None for t in dates}, dtype=float).reindex(dates)
     score = (-z / 2).clip(-1, 1)
     status = pd.Series({t: fits[t].status if fits.get(t) else "missing" for t in dates}).reindex(dates)
-    drift = {}
+    drift: dict[str, Any] = {}
     for h in horizons:
-        predicted = {}
+        predicted: dict[str, Any] = {}
         for t in dates:
             fit = fits.get(t)
-            effect = fair_value.drift_effect(fit, model, fit.price, h.trading_days) if fit and fit.price else None
+            if fit is None or not fit.price:
+                predicted[t] = None
+                continue
+            effect = fair_value.drift_effect(fit, model, fit.price, h.trading_days)
             predicted[t] = math.log((fit.price + effect) / fit.price) if effect is not None else None
         drift[h.code] = evaluate_drift(pd.Series(predicted, dtype=float).reindex(dates), fwd[h.code], h.trading_days,
                                        step, settings.min_effective_samples)
@@ -412,7 +417,7 @@ def evaluate_relation(cfg: Config, engine: IndicatorEngine, code: str, dates: pd
         data = np.array(rows[h.code], dtype=float).reshape(-1, 5)
         n = len(data)
         n_eff = n * min(1.0, step / h.trading_days)
-        out = {"n": n, "n_eff": round(n_eff, 1), "rmse": None, "rmse_mean": None, "rmse_persist": None,
+        out: dict[str, Any] = {"n": n, "n_eff": round(n_eff, 1), "rmse": None, "rmse_mean": None, "rmse_persist": None,
                "skill_vs_mean": None, "skill_vs_persist": None, "reversion_ic": None, "reversion_t": None,
                "status": "no_data" if n == 0 else ("insufficient" if n_eff < settings.min_effective_samples else "ok")}
         if n < 3:
@@ -431,7 +436,8 @@ def evaluate_relation(cfg: Config, engine: IndicatorEngine, code: str, dates: pd
         return out
 
     slopes = np.array([b for b, _ in refits])
-    stability = {"refits": len(refits), "slope_median": None, "same_sign": None, "slope_cv": None, "r2_median": None}
+    stability: dict[str, Any] = {"refits": len(refits), "slope_median": None, "same_sign": None, "slope_cv": None,
+                                 "r2_median": None}
     if len(slopes):
         median = float(np.median(slopes))
         stability.update(slope_median=median, r2_median=float(np.median([r for _, r in refits])),
@@ -463,7 +469,7 @@ def _band_compare(cfg: Config, prices: pd.Series, dates: pd.DatetimeIndex, horiz
     if cfg.projection is None:
         return {}
     prices = prices.sort_index()
-    out = {"current": cfg.projection.volatility_method, "methods": {}}
+    out: dict[str, Any] = {"current": cfg.projection.volatility_method, "methods": {}}
     for method in ("historical", "ewma"):
         vol = _observation_volatility(prices, cfg, dates, method)
         band = _band(prices, vol, dates, horizons)
@@ -472,11 +478,11 @@ def _band_compare(cfg: Config, prices: pd.Series, dates: pd.DatetimeIndex, horiz
             realized = np.log(prices.shift(-h.trading_days).reindex(dates) / now)
             band[h.code]["score"] = stats_models.gaussian_score(realized, vol * math.sqrt(h.trading_days))
         out["methods"][method] = band
-    better = {}
+    better: dict[str, Any] = {}
     for h in horizons:
         scores = {m: out["methods"][m][h.code]["score"] for m in out["methods"]}
         known = {m: v for m, v in scores.items() if v is not None}
-        better[h.code] = min(known, key=known.get) if len(known) == 2 else None
+        better[h.code] = min(known, key=lambda m: known[m]) if len(known) == 2 else None
     out["better"] = better
     return out
 
@@ -499,7 +505,7 @@ def _points(scores: pd.Series, returns: pd.Series) -> dict:
     data = pd.DataFrame({"s": scores, "r": returns}).dropna()
     if len(data) > MAX_POINTS:
         data = data.iloc[:: math.ceil(len(data) / MAX_POINTS)]
-    fit = {"slope": None, "intercept": None}
+    fit: dict[str, Any] = {"slope": None, "intercept": None}
     if len(data) >= 3 and data["s"].std() > 0:
         slope, intercept = np.polyfit(data["s"], data["r"] * 100, 1)
         fit = {"slope": float(slope), "intercept": float(intercept)}
@@ -563,7 +569,7 @@ def run(session: Session, cfg: Config, options: Options) -> dict:
                                  settings.min_effective_samples) for h in horizons}
 
     coarse = {"monthly", "quarterly"}
-    signal_rows = []
+    signal_rows: list[dict[str, Any]] = []
     for code, s in cfg.signals.items():
         fv = cfg.fair_values.get(s.input) if s.source == "fair_value" else None
         approx_inputs = [f.input for f in fv.factors] if fv else [s.input]
@@ -669,7 +675,7 @@ def proposed_weight(stats: dict, current: float) -> tuple[float, str, str]:
 
 def _modules_from(cfg: Config, scores: pd.DataFrame, weights: pd.DataFrame) -> pd.DataFrame:
     """按給定的信號權重合成各模組分數。"""
-    out = {}
+    out: dict[str, Any] = {}
     for m in DATA_MODULES:
         codes = [c for c, s in cfg.signals.items() if s.module == m]
         out[m] = weighted_mean(scores[codes], weights[codes]) if codes else pd.Series(np.nan, index=scores.index)
@@ -701,7 +707,8 @@ def calibrate(cfg: Config, engine: IndicatorEngine, scores: pd.DataFrame, fwd: p
             sig[c], reason, verdict = proposed_weight(stats, float(current_sig[c].loc[at]))
             sig_rows[c] = {"stats": stats, "reason": reason, "verdict": verdict}
         modules = _modules_from(cfg, scores, pd.DataFrame({c: pd.Series(sig[c], index=dates) for c in codes}))
-        mod, mod_rows = {}, {}
+        mod: dict[str, float] = {}
+        mod_rows: dict[str, dict] = {}
         for m in DATA_MODULES:
             stats = evaluate(modules[m].iloc[part], returns.iloc[part], horizon.trading_days, step,
                              settings.neutral_band, settings.min_effective_samples)
@@ -762,7 +769,7 @@ def create(session: Session, options: Options, actor: str) -> BacktestRun:
 def execute(cfg: Config, run_id: int) -> str:
     """執行一個已建立的回測並記下結果。任何異常都被接住。"""
     with db.session_scope() as session:
-        row = session.get(BacktestRun, run_id)
+        row = db.require(session, BacktestRun, run_id)
         options = Options(row.mode, row.start_date, row.end_date, row.step)
     try:
         with db.session_scope() as session:
@@ -774,7 +781,7 @@ def execute(cfg: Config, run_id: int) -> str:
         log.exception("回測 %s 出錯", run_id)
         results, status, message = None, "failed", f"未預期的錯誤（{type(exc).__name__}），詳情見服務器日誌"
     with db.session_scope() as session:
-        row = session.get(BacktestRun, run_id)
+        row = db.require(session, BacktestRun, run_id)
         row.status, row.results, row.finished_at = status, results, utcnow()
         row.message = credentials.redact(message) if message else None
     return status
@@ -830,7 +837,7 @@ def track_record(session: Session, cfg: Config, now: datetime | None = None) -> 
     out: dict = {"run": None, "horizons": horizons, "signals": {}, "modules": {}, "overall": {}, "notes": []}
     if row is None:
         return out
-    r = row.results
+    r: dict = row.results or {}
     age = ((now or utcnow()) - (row.finished_at or row.created_at)).days
     out["run"] = {"id": row.id, "mode": row.mode, "mode_name": MODES.get(row.mode, row.mode), "start": r["start"],
                   "end": r["end"], "finished_at": iso_utc(row.finished_at or row.created_at), "age_days": age,

@@ -114,7 +114,7 @@ def _latest_calibration(session: Session):
 
 def _calibration_changes(run, engine: IndicatorEngine) -> list[dict]:
     """建議和現在不同的權重。「現在」按今天生效的參數重新取，不用回測當時的快照。"""
-    cal = run.results["calibration"]
+    cal = (run.results or {})["calibration"]
     out = []
     for row in [*cal["signals"], *cal["modules"]]:
         key = row.get("parameter")
@@ -159,7 +159,7 @@ def adopt_calibration(run_id: int, session: Session = DB, engine: IndicatorEngin
     run = session.get(BacktestRun, run_id)
     if run is None or run.status != "done" or not (run.results or {}).get("calibration"):
         raise HTTPException(404, f"編號 {run_id} 的回測沒有權重建議")
-    cal = run.results["calibration"]
+    cal = (run.results or {})["calibration"]
     ok, why = _adoptable(cal)
     if not ok:
         raise HTTPException(409, why + "。可以在參數頁逐個手動修改")

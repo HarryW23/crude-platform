@@ -10,6 +10,8 @@ config/ 是主數據的唯一來源，數據庫裡的主數據表只是它的鏡
 """
 from __future__ import annotations
 
+from typing import Any
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -20,8 +22,8 @@ SYSTEM_ACTOR = "config"
 ALIAS_MAX = 128               # series_alias 兩個字段的長度上限（PostgreSQL 會嚴格檢查）
 
 
-def _mirror(session: Session, model: type, pk: str, rows: list[dict]) -> None:
-    existing = {getattr(obj, pk): obj for obj in session.scalars(select(model))}
+def _mirror(session: Session, model: type[Any], pk: str, rows: list[dict]) -> None:
+    existing: dict = {getattr(obj, pk): obj for obj in session.scalars(select(model))}
     for values in rows:
         obj = existing.get(values[pk])
         if obj is None:
@@ -47,8 +49,8 @@ def sync_to_db(session: Session, cfg: Config) -> dict[str, int]:
         notes=s.notes, active=True, within_period=s.within_period,
         vintaged=s.vintaged) for s in cfg.series.values()])
     session.flush()
-    for row in session.scalars(select(Series).where(Series.code.not_in(list(cfg.series)))):
-        row.active = False
+    for stale in session.scalars(select(Series).where(Series.code.not_in(list(cfg.series)))):
+        stale.active = False
 
     wanted: dict[str, tuple[str, str]] = {}               # 規範化別名 → (原文, 序列)
     for s in cfg.series.values():
@@ -58,13 +60,13 @@ def sync_to_db(session: Session, cfg: Config) -> dict[str, int]:
                 wanted.setdefault(norm, (alias[:ALIAS_MAX], s.code))
     current = {a.alias_norm: a for a in session.scalars(select(SeriesAlias))}
     new_aliases = 0
-    for norm, row in current.items():
-        if row.origin != "config":
+    for norm, entry in current.items():
+        if entry.origin != "config":
             continue
         if norm not in wanted:
-            session.delete(row)                           # 配置裡已經沒有這個別名
+            session.delete(entry)                           # 配置裡已經沒有這個別名
         else:
-            row.alias, row.series_code = wanted[norm]     # 配置改了指向
+            entry.alias, entry.series_code = wanted[norm]     # 配置改了指向
     for norm, (alias, code) in wanted.items():
         if norm not in current:
             session.add(SeriesAlias(alias_norm=norm, alias=alias, series_code=code, origin="config"))
@@ -74,21 +76,21 @@ def sync_to_db(session: Session, cfg: Config) -> dict[str, int]:
     has_versions = set(session.scalars(select(ParameterVersion.key).distinct()))
     seeded = 0
     for p in cfg.parameters.values():
-        row = existing.get(p.key)
-        if row is None:
-            row = Parameter(key=p.key, verified=p.verified)
-            session.add(row)
-        row.name_zh, row.unit, row.group = p.name_zh, p.unit, p.group
-        row.description, row.model, row.active = p.description, p.model, True
+        param = existing.get(p.key)
+        if param is None:
+            param = Parameter(key=p.key, verified=p.verified)
+            session.add(param)
+        param.name_zh, param.unit, param.group = p.name_zh, p.unit, p.group
+        param.description, param.model, param.active = p.description, p.model, True
         if p.key not in has_versions:
             session.flush()
             for v in p.seed_versions:
                 session.add(ParameterVersion(key=p.key, valid_from=v.valid_from, value=v.value,
                                              note=v.note or "配置初始值", created_by=SYSTEM_ACTOR))
                 seeded += 1
-    for key, row in existing.items():
+    for key, param in existing.items():
         if key not in cfg.parameters:
-            row.active = False
+            param.active = False
 
     return {"series": len(cfg.series), "parameters": len(cfg.parameters), "indicators": len(cfg.indicators),
             "refinery_models": len(cfg.refineries), "balances": len(cfg.balances),

@@ -54,7 +54,7 @@ class CFTCConnector(PullConnector):
                 where = f"cftc_contract_market_code='{market}' AND {DATE_FIELD} >= '{start.isoformat()}T00:00:00'"
                 if end:
                     where += f" AND {DATE_FIELD} <= '{end.isoformat()}T23:59:59'"
-                params = {"$select": ",".join([DATE_FIELD, *fields]), "$where": where,
+                params: dict[str, str | int] = {"$select": ",".join([DATE_FIELD, *fields]), "$where": where,
                           "$order": DATE_FIELD, "$limit": PAGE}
                 try:
                     resp = client.get(f"{BASE_URL}{dataset}.json", params=params)

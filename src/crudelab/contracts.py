@@ -46,6 +46,13 @@ def contract_label(o: int) -> str:
     return f"{o // 12}-{o % 12 + 1:02d}"
 
 
+def roll_of(curve: CurveDef) -> RollRule:
+    """有換月規則的曲線的規則。調用處都已經篩過（member()、rolled_curves、配置校驗），這裡把前提寫明。"""
+    if curve.roll is None:
+        raise ValueError(f"曲線 {curve.code} 沒有換月規則（roll），不知道每天的 Mn 是哪個月份")
+    return curve.roll
+
+
 def _calendar(rule: RollRule) -> Calendar:
     """換月規則用的交易日曆（曲線的 calendar；沒指定的只按周一到周五算）。"""
     return rule._calendar or WEEKDAYS
@@ -106,7 +113,7 @@ def rolls_between(rule: RollRule, d0: date, d1: date) -> int:
 
 def roll_dates(rule: RollRule, start: date, end: date) -> list[date]:
     """[start, end] 之間的換月日（最後交易日的下一個工作日，即新合約當上 M1 的第一天）。"""
-    out = []
+    out: list[date] = []
     o = front_ordinal(rule, start)
     while True:
         first_day = last_trading_day(rule, o) + timedelta(days=1)
@@ -144,8 +151,8 @@ def pinned_series(cfg: Config, code: str, anchor: pd.Timestamp, get) -> pd.Serie
         index = index.union(s.index)
     if len(index) == 0:
         return get(code)
-    target = front_ordinal(m.curve.roll, anchor.date()) + m.n - 1
-    need = target - front_ordinals(m.curve.roll, index) + 1          # 每天需要的月序
+    target = front_ordinal(roll_of(m.curve), anchor.date()) + m.n - 1
+    need = target - front_ordinals(roll_of(m.curve), index) + 1          # 每天需要的月序
     values = np.full(len(index), np.nan)
     for n, s in raw.items():
         hit = need == n
@@ -189,7 +196,7 @@ def view_months_needed(cfg: Config, view: PricingView) -> list[int]:
     """計價視角通常會用到曲線上的哪幾個月份（用來列依賴、判斷缺數據）。"""
     curve = cfg.curves[view.curve]
     # 當月 M 的某天，M1 至少是 M + months_before 那個合約（它的最後交易日在 M 月）；計價月份最多是 M + months_ahead (+1)
-    top = view.months_ahead + (view.roll_day is not None) - curve.roll.months_before + 1
+    top = view.months_ahead + (view.roll_day is not None) - roll_of(curve).months_before + 1
     return [n for n in curve.months if n <= max(top, 1)]
 
 
@@ -206,7 +213,7 @@ def view_series(cfg: Config, view: PricingView, get, anchor: pd.Timestamp | None
     empty = pd.Series(dtype=float, index=pd.DatetimeIndex([]), name=view.code)
     if len(index) == 0:
         return empty, pd.Series(dtype=int, index=pd.DatetimeIndex([]))
-    front = front_ordinals(curve.roll, index)
+    front = front_ordinals(roll_of(curve), index)
     targets = (np.full(len(index), view_target(view, anchor.date())) if anchor is not None
                else view_targets(view, index))
     need = targets - front + 1
@@ -241,7 +248,7 @@ def chained_returns(cfg: Config, code: str, get) -> tuple[pd.Series, int]:
     m = member(cfg, code)
     if m is None or len(prices) < 2:
         return raw, 0
-    fronts = front_ordinals(m.curve.roll, prices.index)
+    fronts = front_ordinals(roll_of(m.curve), prices.index)
     k = np.diff(fronts)                                   # 前一天到今天換了幾次月
     out, fallback = raw.copy(), 0
     rolled = np.nonzero(k > 0)[0]

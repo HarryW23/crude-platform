@@ -12,6 +12,7 @@
 """
 from __future__ import annotations
 
+import calendar
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 
@@ -29,7 +30,7 @@ class Calendar:
     holidays: frozenset[date] = frozenset()
     years: frozenset[int] | None = None         # dates 登記全的年份；None = 規則型，每年都有
     verified: bool = True
-    _array: np.ndarray = field(default=None, compare=False, repr=False)   # type: ignore[assignment]
+    _array: np.ndarray = field(default_factory=lambda: np.array([], dtype="datetime64[D]"), compare=False, repr=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "_array", np.array(sorted(self.holidays), dtype="datetime64[D]"))
@@ -78,10 +79,13 @@ def _easter(year: int) -> date:
     return date(year, month, (h + m - 7 * n + 114) % 31 + 1)
 
 
-def _nth_weekday(year: int, month: int, weekday: int, nth: int) -> date:
+def _nth_weekday(year: int, month: int, weekday: int, nth: int) -> date | None:
+    """這個月第 nth 個星期幾（nth = -1 是最後一個）。這個月沒有第 nth 個（例如第 5 個星期一）時回 None：
+    不能讓它滑到下個月去，那樣會多出一個錯誤的假期。"""
     if nth > 0:
         first = date(year, month, 1)
-        return first + timedelta(days=(weekday - first.weekday()) % 7 + 7 * (nth - 1))
+        day = first + timedelta(days=(weekday - first.weekday()) % 7 + 7 * (nth - 1))
+        return day if day.month == month else None
     last = date(year + (month == 12), month % 12 + 1, 1) - timedelta(days=1)
     return last - timedelta(days=(last.weekday() - weekday) % 7)
 
@@ -92,8 +96,14 @@ def rule_dates(rule: HolidayRule, year: int) -> list[date]:
         return []
     if rule.easter_offset is not None:
         return [_easter(year) + timedelta(days=rule.easter_offset)]
+    assert rule.month is not None                  # 校驗保證：非復活節規則一定有月份
     if rule.nth is not None:
-        return [_nth_weekday(year, rule.month, rule.weekday, rule.nth)]
+        assert rule.weekday is not None
+        found = _nth_weekday(year, rule.month, rule.weekday, rule.nth)
+        return [found] if found else []
+    assert rule.day is not None
+    if rule.month == 2 and rule.day == 29 and not calendar.isleap(year):
+        return []                                  # 2 月 29 日的假期：平年沒有
     day = date(year, rule.month, rule.day)
     if rule.observe == "nearest":                 # 周六 → 周五，周日 → 周一
         day = day - timedelta(days=1) if day.weekday() == 5 else day + timedelta(days=1) if day.weekday() == 6 else day

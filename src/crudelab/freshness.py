@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select
@@ -63,13 +64,14 @@ def check(session: Session, cfg: Config, now: datetime | None = None) -> dict:
     for code, s in cfg.series.items():
         has_data = code in received
         if code in fr.ignore:
-            status, rule = "ignored", None
+            status: str | None = "ignored"
+            rule = None
         elif not has_data and not (fr.watch == "all" or code in fr.required):
             continue                                  # 從沒導入過、也沒被要求的序列：不打擾
         else:
             rule = rule_for(cfg, code)
             status = "never" if not has_data else None
-        row = {"code": code, "name_zh": s.name_zh, "frequency": s.frequency,
+        row: dict[str, Any] = {"code": code, "name_zh": s.name_zh, "frequency": s.frequency,
                "frequency_name": FREQUENCY_NAMES[s.frequency], "status": status,
                "rule": describe_rule(rule) if rule else None,
                "basis": rule.basis if rule else None, "max_days": rule.max_days if rule else None,

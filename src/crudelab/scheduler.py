@@ -17,6 +17,7 @@ import logging
 import os
 import socket
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
@@ -44,6 +45,7 @@ def _matches(job: JobDef, day) -> bool:
 
 
 def _at(job: JobDef, day, tz: ZoneInfo) -> datetime:
+    assert job.at is not None                    # 只對按時刻的任務調用；按間隔的走 every_minutes 分支
     hour, minute = map(int, job.at.split(":"))
     return datetime(day.year, day.month, day.day, hour, minute, tzinfo=tz)
 
@@ -64,7 +66,9 @@ def due_slot(job: JobDef, now: datetime, tz: ZoneInfo) -> datetime | None:
 def next_slot(job: JobDef, now: datetime, tz: ZoneInfo) -> datetime | None:
     """下一次該跑的時點（UTC，晚於 now）。"""
     if job.every_minutes is not None:
-        return due_slot(job, now, tz) + timedelta(minutes=job.every_minutes)
+        slot = due_slot(job, now, tz)            # 按間隔的任務總有上一個時點
+        assert slot is not None
+        return slot + timedelta(minutes=job.every_minutes)
     local_now = now.replace(tzinfo=UTC).astimezone(tz)
     for ahead in range(0, 63):
         day = (local_now + timedelta(days=ahead)).date()
@@ -207,7 +211,7 @@ def status(cfg: Config, now: datetime | None = None) -> dict:
         beat = session.get(SchedulerHeartbeat, 1)
         state, changed = switches.load(session, cfg), switches.overridden(session)
         master = state[switches.SCHEDULER]
-        out_jobs = []
+        out_jobs: list[dict[str, Any]] = []
         for job in cfg.schedule.jobs:
             last = next(iter(jobs.recent_runs(session, 1, job.code)), None)
             key = switches.job_key(job.code)

@@ -150,7 +150,7 @@ def _sqlite_facts(path: Path) -> tuple[str | None, dict[str, int]]:
 def _live_facts() -> tuple[str | None, dict[str, int]]:
     from .models import Base
     with db.session_scope() as session:
-        counts = {t.name: session.scalar(select(func.count()).select_from(t)) for t in Base.metadata.sorted_tables}
+        counts = {t.name: session.scalar(select(func.count()).select_from(t)) or 0 for t in Base.metadata.sorted_tables}
         revision = session.connection().exec_driver_sql("SELECT version_num FROM alembic_version").scalar()
     return revision, dict(sorted(counts.items()))
 
@@ -323,7 +323,10 @@ def read_manifest(path: Path) -> dict:
             first = tar.next()
             if first is None or first.name != "manifest.json" or not first.isfile():
                 raise BackupError(f"{path.name} 不是 crudelab 的備份（第一個文件不是 manifest.json）")
-            manifest = json.load(tar.extractfile(first))
+            handle = tar.extractfile(first)
+            if handle is None:
+                raise BackupError(f"{path.name} 的 manifest.json 讀不出來")
+            manifest = json.load(handle)
     except (tarfile.TarError, OSError, EOFError, json.JSONDecodeError, UnicodeDecodeError):
         raise BackupError(f"{path.name} 無法讀取：文件損壞或不是備份文件") from None
     if manifest.get("app") != "crudelab" or not isinstance(manifest.get("files"), list):
@@ -392,6 +395,8 @@ def verify(path: Path) -> dict:
 
 def describe(path: Path) -> dict:
     m = NAME.match(path.name)
+    if m is None:                                  # 調用處都先篩過文件名；這裡防止以後有人漏篩
+        raise BackupError(f"{path.name} 不是 crudelab 的備份文件名")
     stamp = datetime.strptime(m["stamp"], "%Y%m%d-%H%M%S").replace(tzinfo=UTC)
     out = {"name": path.name, "label": m["label"], "label_zh": LABELS[m["label"]],
            "created_at": stamp.isoformat(), "size": path.stat().st_size, "error": None}
@@ -437,7 +442,8 @@ def prune(settings: Settings, cfg: Config) -> list[str]:
     months: set[tuple[int, int]] = set()
     for b in scheduled:
         d = datetime.fromisoformat(b["created_at"]).date()
-        week, month = tuple(d.isocalendar())[:2], (d.year, d.month)
+        iso = d.isocalendar()
+        week, month = (iso[0], iso[1]), (d.year, d.month)
         if d not in days and len(days) < rule.keep_daily:
             days.add(d)
             keep.add(b["name"])

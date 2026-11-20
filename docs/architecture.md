@@ -403,8 +403,8 @@ CI（`.github/workflows/ci.yml`）每次推送都跑，每周一另跑一次（�
   新遷移不許留空的 downgrade（單向的數據遷移要在測試的 NO_DOWNGRADE 裡寫明理由）。SQLite 和 PostgreSQL 都跑。
 - **數據字典**（`docs/data-model.md`）：由 `crudelab data-model` 從表定義生成。每張表的類必須有說明，每一列要麼在 models.py
   行尾有註釋，要麼是通用列名（data_model.GLOSSARY）；`tests/test_data_model.py` 檢查文檔是最新的、沒有缺說明的列。
-- **類型檢查棘輪**（`scripts/check_types.py`、`scripts/mypy_baseline.json`）：現有的 mypy 錯誤記在基線裡，每個文件只能減不能增；
-  修好一些之後運行 `python scripts/check_types.py --update` 收緊基線（不收緊 CI 也會失敗，免得修好的又壞回去）。
+- **類型檢查**（`scripts/check_types.py`、`scripts/mypy_baseline.json`）：基線是 0 個錯誤（0.49.1 逐條清完原有的 235 個），
+  任何新的類型錯誤都讓 CI 失敗。萬一將來要暫時接受某個錯誤，基線機制仍在：每個文件只能減不能增。
 - **覆蓋率下限**（pyproject.toml 的 `[tool.coverage.report] fail_under`）：只往上調。
 - **依賴鎖定**（`constraints.txt`）：用 `scripts/lock_deps.sh`（uv 通用解析）生成，一份清單適用所有平台和 Python 3.11 起的版本；
   啟動腳本、CI 都按它安裝。`scripts/check_lock.py` 核對每個直接依賴都鎖了、每個平台都有現成安裝包；已知要編譯的組合

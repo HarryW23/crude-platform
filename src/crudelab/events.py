@@ -10,7 +10,7 @@ from datetime import date, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from . import scenarios
+from . import db, scenarios
 from .config import Config
 from .models import AuditLog, Event, ScenarioRow, utcnow
 
@@ -122,4 +122,4 @@ def apply_playbook(session: Session, cfg: Config, event_id: int, playbook_code: 
     except scenarios.ScenarioError as exc:
         raise EventError(str(exc)) from exc
     event.updated_at = utcnow()
-    return session.get(ScenarioRow, event.scenario_code)
+    return db.require(session, ScenarioRow, event.scenario_code)

@@ -40,7 +40,7 @@ def estimate(engine: IndicatorEngine, cfg: Config, today: date | None = None) ->
                  "n": 0, "start": None, "end": None, "slope_pct": None, "se_pct": None, "t": None, "r2": None,
                  "price": None, "value": None, "low": None, "high": None, "per_month_1mbd": None,
                  "points": [], "message": ""}
-    if spec is None:
+    if spec is None or settings is None:
         out["message"] = "projection.yaml 裡沒有 sensitivity_estimate 設定"
         return out
     today = pd.Timestamp(today or (engine.as_of.date() if engine.as_of else date.today()))

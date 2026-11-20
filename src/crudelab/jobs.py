@@ -42,9 +42,21 @@ class JobError(Exception):
 
 # ------------------------------ 三種動作 ------------------------------
 
+def _source(job: JobDef) -> str:
+    if job.source is None:                      # JobDef 的校驗保證 pull / import_folder 一定有 source
+        raise JobError(f"任務 {job.code} 沒有設定 source")
+    return job.source
+
+
+def _kind(job: JobDef) -> str:
+    if job.kind is None:                        # JobDef 的校驗保證 report 一定有 kind
+        raise JobError(f"任務 {job.code} 沒有設定 kind")
+    return job.kind
+
+
 def _pull(session: Session, cfg: Config, settings: Settings, job: JobDef) -> Result:
     try:
-        connector = get_connector(job.source)
+        connector = get_connector(_source(job))
         observations = connector.fetch(list(session.scalars(select(Series).where(Series.active))), None, None)
     except KeyError:
         raise JobError(f"數據源 {job.source} 沒有對應的取數接口") from None
@@ -52,7 +64,7 @@ def _pull(session: Session, cfg: Config, settings: Settings, job: JobDef) -> Res
         return "skipped", str(exc), {}
     except ConnectorError as exc:
         raise JobError(str(exc)) from None
-    stats = write_observations(session, observations, job.source, actor=ACTOR)
+    stats = write_observations(session, observations, _source(job), actor=ACTOR)
     session.add(AuditLog(actor=ACTOR, action="pull", entity="data_source", entity_id=job.source, detail=stats))
     return "ok", f"新增 {stats['inserted']}，更新 {stats['updated']}，未變 {stats['unchanged']}", stats
 
@@ -76,7 +88,7 @@ def _import_folder(session: Session, cfg: Config, settings: Settings, job: JobDe
         entry: dict = {"file": path.name}
         try:
             with session.begin_nested():
-                preview = preview_file(session, settings, path.read_bytes(), path.name, job.source, ACTOR)
+                preview = preview_file(session, settings, path.read_bytes(), path.name, _source(job), ACTOR)
                 result = commit_batch(session, preview["batch_id"], actor=ACTOR)
             entry.update(inserted=result["inserted"], updated=result["updated"],
                          unmapped=result["unmapped_columns"], warnings=preview["warnings"])
@@ -100,7 +112,7 @@ def _import_folder(session: Session, cfg: Config, settings: Settings, job: JobDe
 
 def _report(session: Session, cfg: Config, settings: Settings, job: JobDef) -> Result:
     try:
-        report = report_service.generate(session, cfg, job.kind, actor=ACTOR)
+        report = report_service.generate(session, cfg, _kind(job), actor=ACTOR)
     except report_service.ReportError as exc:
         raise JobError(str(exc)) from None
     message, detail = f"已生成《{report.title}》", {"report_id": report.id}
@@ -109,7 +121,7 @@ def _report(session: Session, cfg: Config, settings: Settings, job: JobDef) -> R
         from .llm.tasks import write_narrative
         try:
             provider = get_provider("narrative", cfg.llm)
-            result = write_narrative(provider, report.markdown, report_service.KINDS[job.kind])
+            result = write_narrative(provider, report.markdown, report_service.KINDS[_kind(job)])
             report.narrative, report.narrative_meta = result.pop("text"), result
             message += "，含大模型解讀" + ("" if result["guard_passed"] else "（數字核對未通過）")
         except LLMNotConfigured:
@@ -244,7 +256,7 @@ def execute(cfg: Config, settings: Settings, job: JobDef, run_id: int, retries_l
     if note:
         message = f"{note}；{message}"
     with db.session_scope() as session:
-        run = session.get(JobRun, run_id)
+        run = db.require(session, JobRun, run_id)
         run.status, run.message, run.detail, run.finished_at = status, message, detail, utcnow()
         return {"id": run.id, "job": run.job_code, "status": status, "message": message, "attempt": run.attempt}
 
@@ -271,7 +283,7 @@ def abandon_retries(code: str, current_slot: datetime | None) -> list[int]:
         with db.session_scope() as session:
             done = session.execute(update(JobRun).where(JobRun.id == run_id, JobRun.status == "retry").values(
                 status="failed", message=f"{message}；沒能重試：已經到了下一次執行時間（程序可能關閉過）"))
-            if done.rowcount == 1:
+            if db.rowcount(done) == 1:
                 changed.append(run_id)
     return changed
 
@@ -316,7 +328,7 @@ def prune_history(now: datetime | None = None) -> int:
         session.execute(delete(UserSession).where(UserSession.expires_at < cutoff))
         from .jin10 import prune_flash
         prune_flash(session, now)                                    # 快訊保留 90 天
-        return result.rowcount or 0
+        return db.rowcount(result)
 
 
 def recover_stale(older_than: timedelta = timedelta(hours=1)) -> int:
@@ -329,4 +341,4 @@ def recover_stale(older_than: timedelta = timedelta(hours=1)) -> int:
     with db.session_scope() as session:
         done = session.execute(update(JobRun).where(JobRun.status == "running", JobRun.started_at < now - older_than)
                                .values(status="failed", finished_at=now, message="執行中斷：程序在任務完成前被關閉了"))
-        return done.rowcount
+        return db.rowcount(done)

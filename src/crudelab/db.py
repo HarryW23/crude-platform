@@ -4,11 +4,12 @@ from __future__ import annotations
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import TypeVar, cast
 
 from alembic import command
 from alembic.config import Config as AlembicConfig
 from sqlalchemy import create_engine, event
-from sqlalchemy.engine import Engine
+from sqlalchemy.engine import CursorResult, Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from .settings import Settings, get_settings
@@ -86,6 +87,23 @@ def init_engine(settings: Settings | None = None) -> Engine:
     _factory = sessionmaker(_engine, expire_on_commit=False)
     migrate(_engine)
     return _engine
+
+
+_T = TypeVar("_T")
+
+
+def require(session: Session, model: type[_T], key) -> _T:
+    """按主鍵取一條「一定存在」的記錄（剛建立的、或剛查到編號的）。真的不在時報出是哪張表哪個編號，
+    而不是之後在別處出現看不懂的 'NoneType' object has no attribute。"""
+    row = session.get(model, key)
+    if row is None:
+        raise LookupError(f"{getattr(model, '__tablename__', model.__name__)} 裡找不到 {key}")
+    return row
+
+
+def rowcount(result) -> int:
+    """UPDATE / DELETE 實際改了幾行（條件更新用它判斷「是不是我改到的」）。"""
+    return cast(CursorResult, result).rowcount or 0
 
 
 def get_session() -> Session:

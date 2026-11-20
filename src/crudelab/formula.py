@@ -46,6 +46,18 @@ def _month_to_date_mean(x: pd.Series) -> pd.Series:
     return x.groupby(months).cumsum() / x.groupby(months).cumcount().add(1)
 
 
+def _func(node: ast.Call) -> str:
+    """函數名（parse 已保證只能是 FUNCTIONS 裡的名字，不能是 a.b() 之類）。"""
+    assert isinstance(node.func, ast.Name)
+    return node.func.id
+
+
+def _number(node: ast.Constant) -> float:
+    """常數的值（parse 已保證只能是整數或小數，不能是字串、布爾值）。"""
+    assert isinstance(node.value, (int, float))
+    return float(node.value)
+
+
 def parse(formula: str) -> ast.Expression:
     try:
         tree = ast.parse(str(formula), mode="eval")
@@ -70,7 +82,7 @@ def parse(formula: str) -> ast.Expression:
 
 
 def _check_call(node: ast.Call, formula: str) -> None:
-    name = node.func.id
+    name = _func(node)
     low, high = ARITY[name]
     if not low <= len(node.args) <= high:
         expected = str(low) if low == high else f"{low} 到 {high}"
@@ -93,7 +105,7 @@ def names(formula: str) -> list[str]:
 
 
 def uses_window(formula: str) -> bool:
-    return any(isinstance(n, ast.Call) and n.func.id in WINDOW_FUNCTIONS for n in ast.walk(parse(formula)))
+    return any(isinstance(n, ast.Call) and _func(n) in WINDOW_FUNCTIONS for n in ast.walk(parse(formula)))
 
 
 def infer_unit(formula: str, unit_of: Callable[[str], Dim]) -> Dim:
@@ -115,9 +127,9 @@ def infer_unit(formula: str, unit_of: Callable[[str], Dim]) -> Dim:
         if isinstance(node.op, ast.Pow):
             exponent = node.right
             if isinstance(exponent, ast.UnaryOp) and isinstance(exponent.operand, ast.Constant):
-                value = -exponent.operand.value if isinstance(exponent.op, ast.USub) else exponent.operand.value
+                value = -_number(exponent.operand) if isinstance(exponent.op, ast.USub) else _number(exponent.operand)
             elif isinstance(exponent, ast.Constant):
-                value = exponent.value
+                value = _number(exponent)
             else:
                 raise FormulaError("** 的指數必須是整數常數")
             if value != int(value):
@@ -141,7 +153,7 @@ def evaluate(formula: str, env: dict):
         if isinstance(node, ast.Expression):
             return visit(node.body)
         if isinstance(node, ast.Constant):
-            return float(node.value)
+            return _number(node)
         if isinstance(node, ast.Name):
             return env[node.id]
         if isinstance(node, ast.UnaryOp):
@@ -151,8 +163,9 @@ def evaluate(formula: str, env: dict):
             return _BINOPS[type(node.op)](visit(node.left), visit(node.right))
         assert isinstance(node, ast.Call)
         args = [visit(a) for a in node.args]
-        if node.func.id in WINDOW_FUNCTIONS and not isinstance(args[0], pd.Series):
-            raise FormulaError(f"{node.func.id}() 的第一個參數必須是序列或指標")
-        return FUNCTIONS[node.func.id](*args)
+        name = _func(node)
+        if name in WINDOW_FUNCTIONS and not isinstance(args[0], pd.Series):
+            raise FormulaError(f"{name}() 的第一個參數必須是序列或指標")
+        return FUNCTIONS[name](*args)
 
     return visit(parse(formula))

@@ -94,14 +94,17 @@ def _send_email(channel: ChannelDef, title: str, body: str) -> str:
     message["Subject"], message["From"], message["To"] = PREFIX + title, channel.mail_from, ", ".join(channel.mail_to)
     message.set_content(body)
     context = ssl.create_default_context()
+    # email 渠道的校驗保證 smtp_host 和 mail_from 都有
+    host, user = channel.smtp_host or "", channel.smtp_username or channel.mail_from or ""
     try:
+        server: smtplib.SMTP
         if channel.smtp_security == "ssl":
-            server = smtplib.SMTP_SSL(channel.smtp_host, channel.smtp_port, timeout=TIMEOUT, context=context)
+            server = smtplib.SMTP_SSL(host, channel.smtp_port, timeout=TIMEOUT, context=context)
         else:
-            server = smtplib.SMTP(channel.smtp_host, channel.smtp_port, timeout=TIMEOUT)
+            server = smtplib.SMTP(host, channel.smtp_port, timeout=TIMEOUT)
             server.starttls(context=context)
         with server:
-            server.login(channel.smtp_username or channel.mail_from, password)
+            server.login(user, password)
             server.send_message(message)
     except smtplib.SMTPAuthenticationError:
         return "郵箱拒絕登錄：用戶名或密碼（授權碼）不對"
@@ -195,7 +198,7 @@ def decide(session: Session, cfg: Config, run: JobRun) -> str | None:
 def after_run(cfg: Config, job: JobDef, run_id: int) -> str | None:
     """任務執行完後調用：按規則決定是否通知並發出。回傳發了哪一種，沒發回 None。"""
     with db.session_scope() as session:
-        run = session.get(JobRun, run_id)
+        run = db.require(session, JobRun, run_id)
         event = decide(session, cfg, run)
         message = run.message or ""
     if event is None:

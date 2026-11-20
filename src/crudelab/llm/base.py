@@ -57,7 +57,11 @@ class LLMProvider(ABC):
     name: str       # 供應商代號
     model: str      # 實際調用的模型
     last_usage: tuple[int | None, int | None] = (None, None)    # 最近一次調用的（輸入, 輸出）token 數
-    supports_tools = False
+
+    @property
+    def supports_tools(self) -> bool:
+        """是否實現了原生工具調用（chat_tools）。實現了的子類寫 supports_tools = True。"""
+        return False
 
     def chat_tools(self, system: str, messages: list[dict], tools: list[ToolSpec], *,
                    max_tokens: int = 4000) -> ToolTurn:

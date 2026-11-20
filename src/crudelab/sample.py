@@ -37,7 +37,8 @@ def last_weekday(today: date | None = None) -> date:
 
 
 def _weekdays_ending(end: date, count: int) -> list[date]:
-    out, d = [], end
+    out: list[date] = []
+    d = end
     while len(out) < count:
         if d.weekday() < 5:
             out.append(d)
@@ -199,7 +200,8 @@ def _back_months(wb: Workbook, dates: list[date], curves: dict[str, dict[int, li
 
 def _positioning(wb: Workbook, end: date, rng: random.Random) -> None:
     """持倉演示數據：每周二一行，三年多。淨多頭佔比在 −5% 到 25% 之間慢慢擺動。"""
-    tuesdays, d = [], end - timedelta(days=(end.weekday() - 1) % 7)
+    tuesdays: list[date] = []
+    d = end - timedelta(days=(end.weekday() - 1) % 7)
     while len(tuesdays) < 170:
         tuesdays.append(d)
         d -= timedelta(days=7)
@@ -210,7 +212,7 @@ def _positioning(wb: Workbook, end: date, rng: random.Random) -> None:
     crowd = 0.1
     for i, day in enumerate(tuesdays):
         crowd = 0.1 + 0.85 * (crowd - 0.1) + rng.gauss(0, 0.025)
-        row = [day]
+        row: list[date | int] = [day]
         for oi_base, scale in ((1_800_000, 1.0), (2_400_000, 1.3)):
             oi = oi_base + 150_000 * math.sin(2 * math.pi * i / 52) + rng.gauss(0, 20_000)
             net = oi * (crowd * scale)

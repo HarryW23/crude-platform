@@ -226,7 +226,8 @@ def lseg_rics_text(cfg: Config) -> str:
     lines = ["# crudelab 從 LSEG Workspace 導出的序列清單（由 crudelab lseg-rics 從配置生成，不要手改這個文件）",
              "# 每行：序列代碼  RIC  [字段]。字段不寫時依次試 SETTLE、TRDPRC_1、CLOSE、MID_PRICE、BID。",
              "# 要加 RIC：在 config/master/series/ 裡給那條序列的 aliases 加上 RIC，再運行 crudelab lseg-rics。", ""]
-    known, unknown = [], []
+    known: list[tuple[SeriesDef, str | None]] = []
+    unknown: list[tuple[SeriesDef, str | None]] = []
     for s in cfg.series.values():
         if provider_of(s) not in LSEG_PROVIDERS:
             continue
