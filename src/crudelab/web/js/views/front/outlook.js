@@ -52,9 +52,9 @@ export async function render(main) {
     <div id="fv"></div>
     <div class="panel"><h2>價格推演</h2>
         <div class="row" style="margin-bottom:10px">${projections.length ? `<select id="pick" aria-label="推演">${projections.map((p) => `<option value="${p.id}" ${p.id === state.projection ? "selected" : ""}>${esc(p.name_zh)}</option>`).join("")}</select>` : ""}
-          <input id="new-name" placeholder="新推演的名稱" size="18">
-          ${fvs.length ? `<label><input type="checkbox" id="new-drift"> 加上基本面回歸</label>` : ""}
-          <button class="btn" id="new">新建推演</button></div>
+          <input id="new-name" placeholder="新推演的名稱" size="18" data-write>
+          ${fvs.length ? `<label data-write><input type="checkbox" id="new-drift"> 加上基本面回歸</label>` : ""}
+          <button class="btn" id="new" data-write>新建推演</button></div>
         <div id="projection">${projections.length ? "" : '<p class="muted">還沒有推演。新建一個之後，加入情境分支並分配機率。</p>'}</div></div>`;
   const $ = (id) => main.querySelector("#" + id);
 
@@ -150,7 +150,7 @@ async function renderProjection(box, scenarios, main, fvs) {
       <div>年化波動率<b>${p.volatility.annualized == null ? "—" : pct(p.volatility.annualized)}</b></div>
       <div title="庫存每多累積 1 百萬桶，價格跌多少（${esc(p.sensitivity.unit)}）">庫存敏感度<b>${p.sensitivity.value == null ? '<span class="tag warn">未設定</span>' : num(p.sensitivity.value, 3)}</b></div>
       <div>機率合計<b class="${Math.abs(p.total_probability - 1) < 1e-6 ? "" : "down"}">${pct(p.total_probability)}</b></div>
-      ${sources.length ? `<div>漂移<b><select id="drift" aria-label="漂移來源" style="font-size:14px">
+      ${sources.length ? `<div>漂移<b><select id="drift" data-write-field aria-label="漂移來源" style="font-size:14px">
         <option value="">不加</option>
         ${sources.map((d) => `<option value="${d.code}" ${p.drift_model === d.code ? "selected" : ""} ${d.available || p.drift_model === d.code ? "" : "disabled"}
           title="${esc(d.why ?? "")}">${esc(d.name_zh)}${d.kind === "fair_value" ? "（基本面）" : d.available ? "（統計，已通過回測）" : "（統計，未通過回測）"}</option>`).join("")}
@@ -163,14 +163,14 @@ async function renderProjection(box, scenarios, main, fvs) {
     <div class="scroll"><table><tr><th>分支</th><th class="n">機率</th><th class="n">直接價格調整</th><th class="n" title="期限內平衡的平均變化 / 累積的庫存變化（過剩 × 天數）">平衡變化 / 累庫（1 個月）</th>
       ${p.horizons.map((h) => `<th class="n">${esc(h.name_zh)}</th>`).join("")}<th></th></tr>
       ${p.cases.map((c) => `<tr><td style="min-width:220px"><b>${esc(c.label)}</b>${c.event_id ? ' <span class="tag" title="機率和溢價跟著事件走：在「地緣事件」頁改，再回來同步">事件同步</span>' : ""}<div class="muted">${c.scenario_code ? "情境 " + c.scenario_code : c.event_id ? "只有風險溢價" : "基準（不加調整）"}</div>${c.note ? `<div class="ink2">${esc(c.note)}</div>` : ""}</td>
-        <td class="n"><input class="num" style="width:64px" data-prob="${c.id}" value="${num(c.probability * 100, 0)}" inputmode="decimal" aria-label="機率"> %</td>
-        <td class="n"><input class="num" style="width:70px" data-adj="${c.id}" value="${c.price_adjustment}" inputmode="decimal" aria-label="直接價格調整"></td>
+        <td class="n"><input class="num" style="width:64px" data-write-field data-prob="${c.id}" value="${num(c.probability * 100, 0)}" inputmode="decimal" aria-label="機率"> %</td>
+        <td class="n"><input class="num" style="width:70px" data-write-field data-adj="${c.id}" value="${c.price_adjustment}" inputmode="decimal" aria-label="直接價格調整"></td>
         <td class="n nw">${c.horizons.M1?.balance_change == null ? "—" : `${signed(c.horizons.M1.balance_change)}<div class="muted">累庫 ${signed(c.horizons.M1.stock_change, 0)}</div>`}</td>
         ${p.horizons.map((h) => `<td class="n">${cell(c.horizons[h.code])}</td>`).join("")}
-        <td class="nw"><button class="btn" data-save="${c.id}">保存</button> <button class="btn" data-remove="${c.id}">刪除</button></td></tr>`).join("")}
+        <td class="nw" data-write><button class="btn" data-save="${c.id}">保存</button> <button class="btn" data-remove="${c.id}">刪除</button></td></tr>`).join("")}
       <tr class="total"><td>機率加權</td><td></td><td></td><td></td>${p.horizons.map((h) => `<td class="n">${num(p.expected[h.code])}</td>`).join("")}<td></td></tr></table></div>
     <p class="muted" style="margin:8px 0">每格上面是中樞，下面是一倍標準差區間（${esc(a.unit)}）。中樞 = 當前價格 + 基本面回歸 − 敏感度 × 累庫 + 直接價格調整（累庫 = 平衡變化 × 期限內的天數，所以同樣的過剩，期限越長影響越大）；區間 = ± 當前價格 × 日波動率 × √交易日數。不加基本面回歸時，基準分支的中樞就是當前價格。區間只反映歷史波動的大小，不是保證。</p>
-    <h3>從地緣事件同步</h3>
+    <div data-write><h3>從地緣事件同步</h3>
     <div class="row"><button class="btn" id="sync-events">同步地緣事件</button>
       <span class="muted">把「地緣事件」頁裡填了機率、且量化過（套用了預案或填了風險溢價）的事件，各變成一個分支；剩下的機率歸基準。可以反覆同步。</span></div>
     <p class="muted" style="margin-top:6px">這是「各事件互斥」的近似：不單獨列出幾個事件同時發生的組合，各事件機率都不大時誤差很小；機率加起來超過 100% 時不能這樣算，會提示你先調低。</p>
@@ -181,7 +181,7 @@ async function renderProjection(box, scenarios, main, fvs) {
       <label>機率 <input class="num" style="width:64px" id="c-prob" inputmode="decimal"> %</label>
       <label>直接價格調整 <input class="num" style="width:70px" id="c-adj" value="0" inputmode="decimal"></label>
       <input id="c-note" placeholder="依據" style="flex:1;min-width:140px"><button class="btn primary" id="c-add">加入</button></div>
-    <p class="muted" style="margin-top:6px">情境來自「供需平衡」裡建的情境，或「地緣事件」套用預案生成的情境。直接價格調整用來放不經過供需的判斷，例如風險溢價。</p><div id="c-msg"></div>`;
+    <p class="muted" style="margin-top:6px">情境來自「供需平衡」裡建的情境，或「地緣事件」套用預案生成的情境。直接價格調整用來放不經過供需的判斷，例如風險溢價。</p><div id="c-msg"></div></div>`;
   const fail = (e) => { box.querySelector("#c-msg").innerHTML = errorBox(e); };
   box.querySelector("#drift")?.addEventListener("change", async (ev) => {
     try { await api(`/projections/${state.projection}`, { method: "PATCH", json: { drift_model: ev.target.value || null } }); await reload(); }

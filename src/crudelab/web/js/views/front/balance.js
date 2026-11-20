@@ -27,7 +27,7 @@ export async function render(main) {
       <span style="flex:1"></span>
       <label>視圖 <select id="scenario"><option value="">基準（只看數據）</option>
         ${scenarios.map((s) => `<option value="${s.code}">情境：${esc(s.name_zh)}（${s.adjustments} 條調整）</option>`).join("")}</select></label>
-      <button class="btn" id="new-scenario">新建情境</button></div>
+      <button class="btn" id="new-scenario" data-write>新建情境</button></div>
     <div id="new-form"></div>
     <div id="table"></div>
     <div class="cols">
@@ -139,18 +139,18 @@ async function renderAdjustments(box, t, main) {
   const targets = t.rows.filter((r) => r.adjustable);
   box.innerHTML = `<h2>情境調整</h2>
     <p class="sub">在某段時間裡給某一項加減一個量。調整不改動數據，撤銷後記錄仍保留。</p>
-    <div class="row"><select id="adj-target" aria-label="調整哪一項">${targets.map((r) => `<option value="${r.indicator}">${esc(r.label)}</option>`).join("")}</select>
+    <div class="row" data-write><select id="adj-target" aria-label="調整哪一項">${targets.map((r) => `<option value="${r.indicator}">${esc(r.label)}</option>`).join("")}</select>
       <label>從 <input type="date" id="adj-from"></label><label>到 <input type="date" id="adj-to" title="不填 = 一直持續"></label>
       <label>加減 <input class="num" id="adj-delta" inputmode="decimal" placeholder="例如 -0.3"></label><span class="ink2">${esc(t.unit)}</span></div>
-    <div class="row" style="margin-top:8px"><input id="adj-note" placeholder="依據：為什麼這樣調" style="flex:1;min-width:200px">
+    <div class="row" style="margin-top:8px" data-write><input id="adj-note" placeholder="依據：為什麼這樣調" style="flex:1;min-width:200px">
       <button class="btn primary" id="adj-add">加入調整</button></div><div id="adj-msg"></div>
     ${rows.length ? `<div class="scroll" style="margin-top:12px"><table><tr><th>項目</th><th>時段</th><th class="n">加減</th><th>依據</th><th>錄入（${zoneLabel()}）</th><th></th></tr>
       ${rows.map((a) => `<tr><td>${esc(a.target_name ?? a.target)}${a.orphaned ? ' <span class="tag warn">目標已不存在</span>' : ""}<div class="mono muted">${a.target}</div></td>
         <td class="nw">${a.date_from} → ${a.date_to ?? "持續"}</td><td class="n">${signed(a.delta)} ${esc(a.unit ?? "")}</td>
         <td>${esc(a.note ?? "")}</td><td class="nw">${time(a.created_at)}</td>
-        <td><button class="btn" data-remove="${a.id}">撤銷</button></td></tr>`).join("")}</table></div>`
+        <td><button class="btn" data-remove="${a.id}" data-write>撤銷</button></td></tr>`).join("")}</table></div>`
       : '<p class="muted" style="margin-top:12px">這個情境還沒有調整。</p>'}
-    <div class="row" style="margin-top:12px"><button class="btn" id="sc-archive">歸檔這個情境</button></div>`;
+    <div class="row" style="margin-top:12px"><button class="btn" id="sc-archive" data-write>歸檔這個情境</button></div>`;
   const firstForecast = t.periods.find((p) => p.forecast) ?? t.periods.at(-1);
   if (firstForecast) box.querySelector("#adj-from").value = firstForecast.date;
   const fail = (e) => { box.querySelector("#adj-msg").innerHTML = errorBox(e); };

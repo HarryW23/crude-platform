@@ -19,7 +19,7 @@ export async function render(main) {
     <p class="sub">記錄會影響供需或價格的事件，並給出方向判斷。已確認且持續中的事件構成地緣模組的信號；需要量化時，套用預案把事件變成一個情境，它的影響就能在供需平衡表和推演裡使用。
     再填上<b>機率</b>（推演期限內發生或持續的可能性）和<b>風險溢價</b>（發生時直接加在價格上、供需以外的部分），就能看到它的期望影響，並在「推演」頁一鍵同步成分支。</p>
     <div class="cols">
-      <div class="panel"><h2>新增事件</h2>
+      <div class="panel" data-write><h2>新增事件</h2>
         <div class="row"><input id="e-title" placeholder="一句話標題" style="flex:1;min-width:260px">
           <select id="e-category" aria-label="類別">${options(CATEGORY, "other")}</select>
           <select id="e-status" aria-label="狀態">${options({ rumor: STATUS.rumor, confirmed: STATUS.confirmed, ongoing: STATUS.ongoing }, "confirmed")}</select></div>
@@ -31,7 +31,7 @@ export async function render(main) {
         <textarea id="e-summary" rows="2" placeholder="摘要（可不填）" style="margin-top:8px"></textarea>
         <div class="row" style="margin-top:8px"><input id="e-source" placeholder="出處：連結或來源（可不填）" style="flex:1">
           <button class="btn primary" id="e-add">加入事件庫</button></div><div id="e-msg"></div></div>
-      <div class="panel"><h2>從文字抽取 <span class="tag ${llm.configured ? "ok" : "warn"}">${llm.configured ? esc(llm.provider + " / " + llm.model) : "大模型未配置"}</span></h2>
+      <div class="panel" data-write><h2>從文字抽取 <span class="tag ${llm.configured ? "ok" : "warn"}">${llm.configured ? esc(llm.provider + " / " + llm.model) : "大模型未配置"}</span></h2>
         <p class="sub">貼一段新聞或筆記，讓大模型整理成事件草稿。草稿不參與任何計算，要你逐條確認後才生效。${llm.configured ? "" : "<br>" + esc(llm.message) + "。配置方法見 README。"}</p>
         <textarea id="x-text" rows="5" placeholder="貼上文字…" ${llm.configured ? "" : "disabled"}></textarea>
         <div class="row" style="margin-top:8px"><button class="btn" id="x-run" ${llm.configured ? "" : "disabled"}>抽取成草稿</button></div><div id="x-msg"></div></div>
@@ -43,7 +43,7 @@ export async function render(main) {
           <td>${f.important ? '<span class="tag warn">重要</span> ' : ""}${esc(f.content)}${f.url ? ` <a href="${esc(f.url)}" target="_blank" rel="noopener noreferrer">原文</a>` : ""}
             <div>${f.keywords.map((k) => `<span class="tag">${esc(k)}</span>`).join(" ")}</div></td>
           <td class="nw">${f.extracted ? `<span class="muted">已抽取${f.drafts ? ` ${f.drafts} 條草稿` : "，沒有事件"}</span>`
-            : `<button class="btn" data-flash="${f.id}" ${llm.configured ? "" : 'disabled title="大模型未配置"'}>抽成草稿</button>`}</td></tr>`).join("")}</table></div>`
+            : `<button class="btn" data-write data-flash="${f.id}" ${llm.configured ? "" : 'disabled title="大模型未配置"'}>抽成草稿</button>`}</td></tr>`).join("")}</table></div>`
         : '<p class="muted">還沒有收錄的快訊。</p>'}
       <p class="muted" style="margin:8px 0 0">點「抽成草稿」才會調用大模型（只發這一條快訊）；抽出的草稿出現在下面「待確認的草稿」，確認後才生效。關鍵詞在 config/jin10.yaml。</p>
       <div id="f-msg"></div></div>
@@ -110,16 +110,16 @@ export async function render(main) {
       ${rows.map((e) => `<tr><td><b>${esc(e.title)}</b>${e.origin === "llm" ? ' <span class="tag">大模型抽取</span>' : ""}
           ${e.summary ? `<div class="ink2">${esc(e.summary)}</div>` : ""}${e.source ? `<div class="muted" style="max-width:60ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(e.source)}">出處：${esc(e.source)}</div>` : ""}</td>
         <td class="nw">${CATEGORY[e.category] ?? esc(e.category)}</td><td class="nw">${esc(e.location_name ?? "")}</td><td class="nw">${e.started_on ?? ""}</td>
-        <td><select data-field="status" data-id="${e.id}" aria-label="狀態">${options(STATUS, e.status)}</select></td>
-        <td><select data-field="bias" data-id="${e.id}" aria-label="方向判斷">${options(BIAS, e.bias)}</select></td>
+        <td><select data-write-field data-field="status" data-id="${e.id}" aria-label="狀態">${options(STATUS, e.status)}</select></td>
+        <td><select data-write-field data-field="bias" data-id="${e.id}" aria-label="方向判斷">${options(BIAS, e.bias)}</select></td>
         <td class="nw">${e.scenario_code ? `<button class="btn" data-view="${e.scenario_code}">${e.adjustments} 條調整，在平衡表查看</button>` : '<span class="muted">未量化</span>'}</td>
-        ${isDraft ? "" : `<td class="n"><input class="num" style="width:56px" data-num="probability" data-id="${e.id}" value="${e.probability == null ? "" : num(e.probability * 100, 0)}" aria-label="機率（%）">%</td>
-          <td class="n"><input class="num" style="width:64px" data-num="price_premium" data-id="${e.id}" value="${e.price_premium ?? ""}" aria-label="風險溢價"></td>
+        ${isDraft ? "" : `<td class="n"><input class="num" style="width:56px" data-write-field data-num="probability" data-id="${e.id}" value="${e.probability == null ? "" : num(e.probability * 100, 0)}" aria-label="機率（%）">%</td>
+          <td class="n"><input class="num" style="width:64px" data-write-field data-num="price_premium" data-id="${e.id}" value="${e.price_premium ?? ""}" aria-label="風險溢價"></td>
           <td class="nw">${impactCell(impacts.events[e.id]?.[month?.code], e)}</td>`}
         <td class="nw">${time(e.updated_at)}</td>
-        <td class="nw">${isDraft ? `<button class="btn primary" data-id="${e.id}" data-set='{"draft":false}'>確認</button>
-            <button class="btn" data-id="${e.id}" data-set='{"draft":false,"status":"dismissed"}'>不採納</button>`
-          : `<button class="btn" data-quantify="${e.id}">套用預案</button>`}</td></tr>`).join("")}</table>`;
+        <td class="nw">${isDraft ? `<button class="btn primary" data-write data-id="${e.id}" data-set='{"draft":false}'>確認</button>
+            <button class="btn" data-write data-id="${e.id}" data-set='{"draft":false,"status":"dismissed"}'>不採納</button>`
+          : `<button class="btn" data-write data-quantify="${e.id}">套用預案</button>`}</td></tr>`).join("")}</table>`;
   }
 }
 

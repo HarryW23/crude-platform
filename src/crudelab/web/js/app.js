@@ -105,6 +105,7 @@ try {
     main.querySelector("#out").addEventListener("click", async () => { await api("/auth/logout", { method: "POST" }); location.reload(); });
   } else {
     ready = true;
+    if (user && user.role === "viewer") markReadOnly();
     if (user) {
       const account = document.getElementById("account");
       account.innerHTML = `<button class="link" id="me" title="修改密碼">${esc(user.username)}（${esc(user.role_name)}）</button><button class="link" id="logout">登出</button>`;
@@ -134,3 +135,17 @@ setInterval(refreshAlerts, 60000);
 
 window.addEventListener("hashchange", () => { if (ready) show(location.hash.slice(1)); });
 if (ready) show(location.hash.slice(1));
+
+// 只讀帳號：前台會改東西的控件不顯示。頁面裡標了 data-write 的元素由 CSS 隱藏；
+// 標了 data-write-field 的（表格裡可就地修改的值，例如事件狀態、分支機率）照樣顯示但不能改。
+// 權限真正的把關在服務器（api/security.py）：這裡只是不讓人看到點了也沒用的按鈕。
+function markReadOnly() {
+  document.body.classList.add("readonly");
+  const lock = (root) => root.querySelectorAll?.("[data-write-field]").forEach((el) => {
+    el.disabled = true;
+    el.title = "只讀帳號不能修改";
+  });
+  lock(document);
+  new MutationObserver((changes) => changes.forEach((c) => c.addedNodes.forEach((n) => n.nodeType === 1 && lock(n.parentNode ?? n))))
+    .observe(document.getElementById("main") ?? document.body, { childList: true, subtree: true });
+}

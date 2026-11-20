@@ -29,8 +29,9 @@ export async function render(main) {
     ${llm.configured ? `<p class="ink2"><span class="tag ok">${esc(llm.provider)} / ${esc(llm.model)}</span></p>`
       : `<div class="msg warn">大模型未配置，問答暫時不能用。${esc(llm.message)}。配置方法見 README 的「大模型」一節。</div>`}
     <div id="log"></div>
-    <div class="chips" id="chips">${EXAMPLES.map((q) => `<button>${esc(q)}</button>`).join("")}</div>
-    <div class="row"><textarea id="q" rows="2" placeholder="輸入問題，Enter 送出，Shift+Enter 換行" style="flex:1" ${llm.configured ? "" : "disabled"}></textarea>
+    <p class="muted" data-readonly-only>只讀帳號不能使用問答（需要研究員權限）。</p>
+    <div class="chips" id="chips" data-write>${EXAMPLES.map((q) => `<button>${esc(q)}</button>`).join("")}</div>
+    <div class="row" data-write><textarea id="q" rows="2" placeholder="輸入問題，Enter 送出，Shift+Enter 換行" style="flex:1" ${llm.configured ? "" : "disabled"}></textarea>
       <button class="btn primary" id="send" ${llm.configured ? "" : "disabled"}>送出</button>
       <button class="btn" id="clear">清空對話</button></div><div id="msg"></div></div>`;
   const $ = (id) => main.querySelector("#" + id);

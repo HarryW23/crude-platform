@@ -30,7 +30,7 @@ export async function render(main) {
   if (!reports.some((r) => r.id === state.report)) state.report = reports[0]?.id ?? null;
   main.innerHTML = `<div class="noprint"><h2>報告</h2>
     <p class="sub">報告是生成那一刻的快照：正文由系統按固定模板排出，每個數字都來自指標計算；之後數據或參數怎麼變，已生成的報告都不會變。大模型的解讀是可選的附加部分，單獨標明。</p>
-    <div class="row" style="margin-bottom:14px"><select id="kind" aria-label="類型"><option value="daily">日報</option><option value="weekly">周報</option><option value="monthly">月報</option></select>
+    <div class="row" style="margin-bottom:14px" data-write><select id="kind" aria-label="類型"><option value="daily">日報</option><option value="weekly">周報</option><option value="monthly">月報</option></select>
       <select id="proj" aria-label="推演"><option value="">推演：用最新建立的</option>${projections.map((p) => `<option value="${p.id}">推演：${esc(p.name_zh)}</option>`).join("")}</select>
       <button class="btn primary" id="make">生成報告</button><span id="msg"></span></div></div>
     <div class="split" style="grid-template-columns:320px minmax(0,1fr)">
@@ -53,7 +53,7 @@ export async function render(main) {
   view.innerHTML = `<div class="panel"><div class="row noprint" style="margin-bottom:8px">
       <a class="btn" style="text-decoration:none" href="/api/reports/${r.id}/markdown" download>下載 Markdown</a>
       <button class="btn" id="print">列印 / 存成 PDF</button>
-      <button class="btn" id="narrate" ${llm.configured ? "" : "disabled"} title="${esc(llm.configured ? "" : llm.message)}">${r.narrative ? "重寫解讀" : "讓大模型寫解讀"}</button>
+      <button class="btn" id="narrate" data-write ${llm.configured ? "" : "disabled"} title="${esc(llm.configured ? "" : llm.message)}">${r.narrative ? "重寫解讀" : "讓大模型寫解讀"}</button>
       <span class="tag ${llm.configured ? "ok" : "warn"}">${llm.configured ? esc(llm.provider + " / " + llm.model) : "大模型未配置"}</span><span id="nmsg"></span></div>
     <div class="report">${markdownToHtml(r.markdown)}
       ${r.narrative ? `<h2>解讀</h2>

@@ -27,7 +27,7 @@ export async function render(main) {
       命中率要和「這段時間裡一直看多（或看空）」的命中率比，高出的部分才是信號的價值。</p>
     <div class="split" style="grid-template-columns:340px minmax(0,1fr)">
       <div>
-        <div class="panel"><h2>新的回測</h2>
+        <div class="panel" data-write><h2>新的回測</h2>
           <label class="ink2" style="display:block;margin:6px 0">模式 <select id="mode">
             <option value="observation">按數據日期（回測導入的歷史）</option>
             <option value="vintage">按入庫時間（嚴格，需要持續收集過的數據）</option></select></label>

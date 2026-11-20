@@ -159,3 +159,7 @@ textarea { font: inherit; color: var(--ink); background: var(--surface); border:
 .legend { display: flex; gap: 14px; flex-wrap: wrap; color: var(--ink-2); font-size: 12px; margin: 4px 0 8px; }
 .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
 pre.mono { background: var(--soft); padding: 8px 10px; border-radius: 6px; overflow-x: auto; margin: 6px 0; }
+
+/* 只讀帳號：會改東西的控件不顯示（見 app.js 的 markReadOnly）；只給只讀帳號看的說明 */
+body.readonly [data-write] { display: none !important; }
+body:not(.readonly) [data-readonly-only] { display: none !important; }

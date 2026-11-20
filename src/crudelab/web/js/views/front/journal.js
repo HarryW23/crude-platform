@@ -18,7 +18,7 @@ export async function render(main) {
     時間一長，就能看出自己在什麼情況下判斷得準、什麼情況下不準。</p>
 
     <div class="cols">
-      <div class="panel"><h2>記一筆</h2>
+      <div class="panel" data-write><h2>記一筆</h2>
         <div class="row"><span class="ink2">期限</span><div class="tabs">${d.horizons.map((h) => `<button data-h="${h.code}" class="${h.code === state.horizon ? "on" : ""}">${esc(h.name_zh)}</button>`).join("")}</div></div>
         <div class="row" style="margin-top:10px"><span class="ink2">方向</span><div class="tabs">${[[1, "偏多"], [0, "中性"], [-1, "偏空"]].map(([v, n]) => `<button data-dir="${v}" class="${v === state.direction ? "on" : ""}">${n}</button>`).join("")}</div></div>
         <div class="row" style="margin-top:10px">
@@ -56,7 +56,7 @@ export async function render(main) {
         <td style="max-width:36ch">${v.reason_names.map((r) => `<span class="tag">${esc(r)}</span>`).join(" ")}${v.rationale ? `<div class="ink2">${esc(v.rationale)}</div>` : ""}</td>
         <td class="n nw">${num(v.start_price)}<div class="muted">${v.start_date}</div></td><td class="nw">${v.target_date}</td>
         <td class="nw">${result(v)}</td>
-        <td>${v.status === "open" ? `<button class="btn" data-cancel="${v.id}">撤銷</button>` : ""}</td></tr>`).join("")}</table></div>`
+        <td>${v.status === "open" ? `<button class="btn" data-write data-cancel="${v.id}">撤銷</button>` : ""}</td></tr>`).join("")}</table></div>`
       : '<p class="muted">還沒有記錄。</p>'}<div id="list-msg"></div></div>`;
 
   const $ = (id) => main.querySelector("#" + id);
