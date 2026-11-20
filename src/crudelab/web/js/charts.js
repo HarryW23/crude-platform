@@ -221,8 +221,10 @@ export function scatterChart(fit, { height = 300 } = {}) {
     const x = (v) => L + (W - L - R) * (v - xlo) / (xhi - xlo);
     const y = (v) => T + (H - T - B) * (1 - (v - ylo) / (yhi - ylo));
     const last = pts.at(-1);
+    // 有 curve（擬合線經過的點，帶轉折點時是折線）就照它畫；否則按截距和斜率畫直線
+    const curve = fit.curve?.length >= 2 ? fit.curve : [{ x: xlo, y: fit.intercept + fit.slope * xlo }, { x: xhi, y: fit.intercept + fit.slope * xhi }];
     const fitLine = fit.status === "ok"
-      ? `<line x1="${x(xlo)}" y1="${y(fit.intercept + fit.slope * xlo)}" x2="${x(xhi)}" y2="${y(fit.intercept + fit.slope * xhi)}" stroke="var(--series-1)" stroke-width="2"/>` : "";
+      ? `<polyline points="${curve.map((c) => `${x(c.x).toFixed(1)},${y(c.y).toFixed(1)}`).join(" ")}" fill="none" stroke="var(--series-1)" stroke-width="2"/>` : "";
     box.innerHTML = `<div class="legend"><span><i style="background:var(--muted);border-radius:50%"></i>歷史樣本</span>
         <span><i style="background:var(--series-2);border-radius:50%"></i>最新（${last.date}）</span>
         ${fit.status === "ok" ? '<span><i style="background:var(--series-1);height:2px;vertical-align:3px"></i>擬合線</span>' : ""}</div>

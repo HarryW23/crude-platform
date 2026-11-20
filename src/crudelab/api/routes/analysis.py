@@ -50,7 +50,8 @@ def seasonal(name: str, years: int = Query(5, ge=1, le=10), window_days: int = Q
 
 def _relation(engine: IndicatorEngine, code: str, with_points: bool) -> dict:
     r = engine.cfg.relations[code]
-    fit = analytics.linear_fit(_values(engine, r.y), _values(engine, r.x), r.lookback_days, r.min_points)
+    fit = analytics.relation_fit(_values(engine, r.y), _values(engine, r.x), r.lookback_days, r.min_points,
+                                 r.method, r.shape, r.lag_days)
     if not with_points:
         fit.pop("points")
     return {"code": r.code, "name_zh": r.name_zh, "notes": r.notes, "lookback_days": r.lookback_days,

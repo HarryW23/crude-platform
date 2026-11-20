@@ -373,11 +373,18 @@ def _evaluate_fair_value(cfg: Config, model, fits: dict, dates: pd.DatetimeIndex
 #   偏離回歸   當時 y 高於擬合值的幅度，和之後 y 的變化方向是否相反（頁面上「偏高 / 偏低」的含義是否成立）
 # 穩定性看每次重擬合的斜率：方向是否一致、相對波動多大。
 
+RELATION_SPECS = (("ols", "linear"), ("huber", "linear"), ("ols", "hinge"))   # 回測裡並排比較的寫法
+SPEC_NAMES = {("ols", "linear"): "直線", ("huber", "linear"): "直線（穩健）", ("ols", "hinge"): "帶轉折點",
+              ("huber", "hinge"): "帶轉折點（穩健）"}
+
+
 def evaluate_relation(cfg: Config, engine: IndicatorEngine, code: str, dates: pd.DatetimeIndex,
-                      horizons: list[HorizonDef], step: int, mode: str) -> dict:
+                      horizons: list[HorizonDef], step: int, mode: str, spec: tuple[str, str] | None = None) -> dict:
+    """spec = (method, shape)：不給就用配置裡的寫法；給了就換成這種寫法檢驗（用來並排比較）。"""
     rel = cfg.relations[code]
+    method, shape = spec or (rel.method, rel.shape)
     settings = cfg.backtest
-    pairs = analytics.aligned_pairs(engine.values(rel.y), engine.values(rel.x))
+    pairs = analytics.aligned_pairs(engine.values(rel.y), engine.values(rel.x), lag_days=rel.lag_days)
     freqs = {cfg.frequency_of(rel.x), cfg.frequency_of(rel.y)}
     lag = max(settings.publication_lag_days[f] for f in freqs)
     rows: dict[str, list[tuple]] = {h.code: [] for h in horizons}
@@ -388,18 +395,19 @@ def evaluate_relation(cfg: Config, engine: IndicatorEngine, code: str, dates: pd
         if known.empty:
             continue
         window = known[known.index >= known.index[-1] - pd.Timedelta(days=rel.lookback_days)]
-        fit = analytics.ols(window) if len(window) >= rel.min_points else None
-        if fit is None:
+        model = analytics.fit_relation(window, method, shape) if len(window) >= rel.min_points else None
+        if model is None:
             continue
-        a, b, r2 = fit
-        refits.append((b, r2))
-        y_now, residual = float(window["y"].iloc[-1]), float(window["y"].iloc[-1] - (a + b * window["x"].iloc[-1]))
+        refits.append((model.slope, model.r2))
+        y_now = float(window["y"].iloc[-1])
+        residual = y_now - float(model.predict(window["x"].iloc[-1]))
         for h in horizons:
             ahead = pairs[(index > window.index[-1]) & (index > t) & (index <= t + pd.Timedelta(days=h.calendar_days))]
             if ahead.empty:
                 continue
             x1, y1 = float(ahead["x"].iloc[-1]), float(ahead["y"].iloc[-1])
-            rows[h.code].append((y1 - (a + b * x1), y1 - float(window["y"].mean()), y1 - y_now, -residual, y1 - y_now))
+            rows[h.code].append((y1 - float(model.predict(x1)), y1 - float(window["y"].mean()), y1 - y_now,
+                                 -residual, y1 - y_now))
 
     def summarize(h: HorizonDef) -> dict:
         data = np.array(rows[h.code], dtype=float).reshape(-1, 5)
@@ -431,9 +439,22 @@ def evaluate_relation(cfg: Config, engine: IndicatorEngine, code: str, dates: pd
                          same_sign=float((np.sign(slopes) == np.sign(median)).mean()) if median else None,
                          slope_cv=float(slopes.std() / abs(slopes.mean())) if slopes.mean() else None)
     return {"code": code, "name_zh": rel.name_zh, "y_name": cfg.name_of(rel.y), "x_name": cfg.name_of(rel.x),
-            "y_unit": cfg.unit_of(rel.y), "lag_days": lag,
+            "y_unit": cfg.unit_of(rel.y), "lag_days": lag, "x_lead_days": rel.lag_days,
+            "method": method, "shape": shape, "spec_name": SPEC_NAMES[(method, shape)],
             "approx": mode == "observation" and bool(freqs & {"monthly", "quarterly"}),
             "by_horizon": {h.code: summarize(h) for h in horizons}, "stability": stability}
+
+
+def _relation_with_alternatives(cfg: Config, engine: IndicatorEngine, code: str, dates: pd.DatetimeIndex,
+                                horizons: list[HorizonDef], step: int, mode: str) -> dict:
+    """配置的寫法，加上其他幾種寫法的樣本外結果並排：換寫法要有依據。"""
+    rel = cfg.relations[code]
+    main = evaluate_relation(cfg, engine, code, dates, horizons, step, mode)
+    main["alternatives"] = [
+        {k: v for k, v in evaluate_relation(cfg, engine, code, dates, horizons, step, mode, spec).items()
+         if k in ("method", "shape", "spec_name", "by_horizon", "stability")}
+        for spec in RELATION_SPECS if spec != (rel.method, rel.shape)]
+    return main
 
 
 def _points(scores: pd.Series, returns: pd.Series) -> dict:
@@ -566,7 +587,7 @@ def run(session: Session, cfg: Config, options: Options) -> dict:
         "signals": signal_rows, "modules": module_rows,
         "overall": {"scored": int(overall.notna().sum()), "by_horizon": by_horizon(overall)},
         "fair_values": fair_rows,
-        "relations": [evaluate_relation(cfg, engine, code, dates, horizons, step, options.mode)
+        "relations": [_relation_with_alternatives(cfg, engine, code, dates, horizons, step, options.mode)
                       for code in cfg.relations],
         "calibration": calibration,
         "band": {"expected": EXPECTED_COVERAGE, "by_horizon": _band(prices, vol, dates, horizons)},

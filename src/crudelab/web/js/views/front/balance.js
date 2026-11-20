@@ -34,7 +34,7 @@ export async function render(main) {
       <div class="panel"><h2>庫存季節性</h2><p class="sub">當前值對比前五年同期的區間和均值。</p>
         <select id="stock" aria-label="庫存序列">${stocks.map((s) => `<option value="${s.code}">${esc(s.name_zh)}${s.n ? "" : "（缺數據）"}</option>`).join("")}</select>
         <div id="seasonal" style="margin-top:10px"></div></div>
-      <div class="panel"><h2>庫存與月差的關係</h2><p class="sub">用歷史樣本擬合的線性關係：按現在的庫存水平，月差通常在哪裡。描述性統計，不是因果。</p>
+      <div class="panel"><h2>庫存與月差的關係</h2><p class="sub">用歷史樣本擬合的關係：按現在的庫存水平，月差通常在哪裡。描述性統計，不是因果。</p>
         <select id="relation" aria-label="關係模型">${relations.map((r) => `<option value="${r.code}">${esc(r.name_zh)}</option>`).join("")}</select>
         <div id="scatter" style="margin-top:10px"></div></div></div>
     <h2 style="margin-top:26px">供需指標</h2><p class="sub">庫存偏離、表觀需求、同比變化和機構口徑對照。</p><div id="board"></div>`;
@@ -172,6 +172,9 @@ async function renderAdjustments(box, t, main) {
   });
 }
 
+// 斜率可能很小（例如 每千桶庫存 0.00002 美元）：按有效數字顯示，不按固定小數位
+const sig = (v) => v == null ? "—" : `${v > 0 ? "+" : ""}${Number(v.toPrecision(3))}`;
+
 async function renderRelation(box) {
   const fit = await api(`/relations/${state.relation}`);
   box.innerHTML = `<p class="sub" style="margin-bottom:6px">${esc(fit.notes ?? "")}</p>`;
@@ -181,7 +184,11 @@ async function renderRelation(box) {
       <div>樣本數<b>${fit.n}</b></div><div>R²<b>${num(fit.r2, 2)}</b></div>
       <div>最新實際值<b>${num(l.y)}</b></div><div>按關係應在<b>${num(l.fitted)}</b></div>
       <div>偏離<b>${signed(l.residual)}</b></div><div>偏離 ÷ 殘差標準差<b>${l.residual_std ? signed(l.residual / l.residual_std, 1) : "—"}</b></div></div>
-      ${fit.r2 < 0.3 ? '<div class="msg warn">擬合優度低（R² 小於 0.3），這條關係目前解釋力弱，不宜當結論用。</div>' : ""}`);
+      ${fit.r2 < 0.3 ? '<div class="msg warn">擬合優度低（R² 小於 0.3），這條關係目前解釋力弱，不宜當結論用。</div>' : ""}
+      <p class="muted">寫法：${{ ols: "最小二乘", huber: "穩健回歸（少數異常值帶不動整條線）" }[fit.method]}，${fit.shape === "hinge"
+        ? `帶轉折點：x ≤ ${num(fit.hinge)} 時斜率 ${sig(fit.slope)}，以上 ${sig(fit.slope_above)}` : `直線，斜率 ${sig(fit.slope)}`}${fit.lag_days ? `；x 領先 y ${fit.lag_days} 天` : ""}。
+        ${fit.stability?.pieces ? `把樣本按時間切成 ${fit.stability.pieces} 段分別擬合，斜率同向的比例 ${num(fit.stability.same_sign * 100, 0)}%${fit.stability.same_sign < 1 ? "：<b>關係方向不穩定</b>" : ""}。` : ""}
+        這條關係在回測裡的樣本外表現，見「回測」頁。</p>`);
   } else {
     box.insertAdjacentHTML("beforeend", `<div class="msg">樣本不足，沒有擬合：目前只有 ${fit.n} 個可用樣本，至少需要 ${fit.min_points} 個。${fit.n ? "下面只列出已有的點。" : "y 和 x 還沒有重疊的日期。"}</div>`);
   }

@@ -55,12 +55,12 @@ def test_mean_reverting_deviation_is_detected(session, cfg):
 def test_fit_never_uses_data_after_the_evaluation_date(session, cfg, monkeypatch):
     """把 ols 包一層，記下每次擬合用到的最晚日期：必須早於（評估日 − 發佈延遲）。"""
     from crudelab import analytics
-    seen, original = [], analytics.ols
+    seen, original = [], analytics.fit_relation
 
-    def spy(frame):
+    def spy(frame, *args):
         seen.append(frame.index.max())
-        return original(frame)
-    monkeypatch.setattr(analytics, "ols", spy)
+        return original(frame, *args)
+    monkeypatch.setattr(analytics, "fit_relation", spy)
     out = setup(session, cfg, lambda x, rng: 0.1 * x + rng.normal(0, 300, len(x)))
     assert out["stability"]["refits"] == len(seen)
     dates = pd.bdate_range("2021-06-01", "2025-12-31")[::5]           # 和 setup 裡的評估日相同；樣本夠了之後每天都擬合

@@ -2,6 +2,10 @@
 #   y / x          序列或指標代碼
 #   lookback_days  用最近多少天的樣本
 #   min_points     樣本少於這個數就不擬合（不硬算）
+#   method         ols（預設）最小二乘 / huber 穩健回歸：少數異常值帶不動整條線
+#   shape          linear（預設）直線 / hinge 自動找一個轉折點，兩側斜率不同（例如庫存很低時月差特別敏感）
+#   lag_days       x 領先 y 幾天（預設 0）：配對 y(t) 和 x(t − lag_days)
+#   換寫法之前先看「回測」頁的樣本外比較：灰色行就是其他寫法的結果
 # 這是描述性的統計關係，不是因果；擬合優度（R²）低的時候不要當結論用。
 
 - {code: BRENT_STRUCTURE_VS_US_STOCKS, name_zh: Brent 月差 與 美國原油庫存偏離,

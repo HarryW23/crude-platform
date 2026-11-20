@@ -173,17 +173,24 @@ function relationsPanel(r, h) {
     const m = x.by_horizon[h.code], st = x.stability;
     const flag = m.status === "insufficient" ? '<span class="tag warn">樣本不足</span>' : m.status === "no_data" ? '<span class="tag">無數據</span>' : "";
     const rev = m.reversion_ic == null ? "—" : `${signed(m.reversion_ic)}<div class="muted">t ${m.reversion_t == null ? "—" : signed(m.reversion_t, 1)}</div>`;
+    const alt = (x.alternatives ?? []).map((a) => {
+      const am = a.by_horizon[h.code];
+      return `<tr class="muted"><td style="padding-left:22px">換成「${esc(a.spec_name)}」</td><td class="n">${skill(am.skill_vs_mean)}</td>
+        <td class="n">${skill(am.skill_vs_persist)}</td><td class="n">${am.reversion_ic == null ? "—" : signed(am.reversion_ic)}</td>
+        <td class="n">${a.stability.same_sign == null ? "—" : pct(a.stability.same_sign, 0)}</td><td class="n">${num(am.n_eff, 0)}</td></tr>`;
+    }).join("");
     return `<tr><td>${esc(x.name_zh)}${x.approx ? ' <span class="tag warn" title="用到修訂後的月度數據">近似</span>' : ""}
-        <div class="muted">${esc(x.y_name)} ← ${esc(x.x_name)}，延遲 ${x.lag_days} 天</div></td>
+        <div class="muted">${esc(x.y_name)} ← ${esc(x.x_name)}${x.x_lead_days ? `（x 領先 ${x.x_lead_days} 天）` : ""}，延遲 ${x.lag_days} 天；現在的寫法：${esc(x.spec_name)}</div></td>
       <td class="n">${skill(m.skill_vs_mean)}</td><td class="n">${skill(m.skill_vs_persist)}</td><td class="n">${rev}</td>
       <td class="n">${st.same_sign == null ? "—" : pct(st.same_sign, 0)}<div class="muted">R² ${st.r2_median == null ? "—" : num(st.r2_median, 2)}</div></td>
-      <td class="n">${num(m.n_eff, 0)}<div>${flag}</div></td></tr>`;
+      <td class="n">${num(m.n_eff, 0)}<div>${flag}</div></td></tr>${alt}`;
   }).join("");
   return `<h3>關係模型的樣本外檢驗（之後 ${esc(h.name_zh)}）</h3>
     <p class="sub">每個評估日只用當時已知的樣本擬合（扣發佈延遲），再看之後的實際值。
       「比均值好 / 比不變好」：預測誤差比「y 等於窗口均值」「y 不變」少多少，負數表示還不如這兩個簡單規則；
       「偏離回歸」：y 高於擬合值時之後是否回落（正 = 會回歸，頁面上的「偏高 / 偏低」有意義）；
-      「斜率同向」：每次重擬合的斜率和中位數方向一致的比例，低說明關係不穩定。</p>
+      「斜率同向」：每次重擬合的斜率和中位數方向一致的比例，低說明關係不穩定。
+      灰色行是換成其他寫法（穩健回歸、帶轉折點）的結果：明顯更好時，可以在 config/relations/ 裡改 method / shape。</p>
     <div class="scroll"><table><tr><th>關係</th><th class="n">比均值好</th><th class="n">比不變好</th><th class="n">偏離回歸</th>
       <th class="n">斜率同向</th><th class="n">有效樣本</th></tr>${rows}</table></div>`;
 }

@@ -379,13 +379,17 @@ class BalanceDef(Strict):
 # ------------------------------ 關係模型 ------------------------------
 
 class RelationDef(Strict):
-    """兩個量之間的線性關係：y = a + b·x。用來回答「按現在的 x，y 通常在什麼水平」。"""
+    """兩個量之間的關係：y = a + b·x（可帶轉折點、穩健回歸、滯後，見 analytics.fit_relation）。
+    用來回答「按現在的 x，y 通常在什麼水平」。換寫法之前先看回測裡的樣本外比較。"""
     code: str = Code
     name_zh: str
     y: str                         # 序列或指標代碼
     x: str
     lookback_days: int = Field(default=1095, ge=30)     # 用最近多少天的樣本來擬合
     min_points: int = Field(default=30, ge=10)          # 樣本少於這個數就不擬合
+    method: Literal["ols", "huber"] = "ols"             # huber：穩健回歸，少數異常值帶不動整條線
+    shape: Literal["linear", "hinge"] = "linear"        # hinge：自動找一個轉折點，兩側斜率不同
+    lag_days: int = Field(default=0, ge=0, le=365)      # x 領先 y 幾天：配對 y(t) 和 x(t − lag_days)
     notes: str | None = None
 
 
