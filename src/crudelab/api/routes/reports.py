@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, Response
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -63,16 +63,23 @@ def get_report(report_id: int, session: Session = DB):
 def download_markdown(report_id: int, session: Session = DB):
     """正文加解讀的 Markdown 全文，可直接存檔或貼到別處。"""
     r = _require(session, report_id)
-    text = r.markdown
-    if r.narrative:
-        meta = r.narrative_meta or {}
-        text += (f"\n## 解讀\n\n由大模型（{meta.get('provider')} / {meta.get('model')}）"
-                 "根據以上正文撰寫，不是系統計算的結果。")
-        if not meta.get("guard_passed", False):
-            text += f"其中這些數字在正文裡找不到，請勿採信：{'、'.join(meta.get('unknown_numbers', []))}。"
-        text += f"\n\n{r.narrative}\n"
+    text = service.full_markdown(r)
     return PlainTextResponse(text, media_type="text/markdown; charset=utf-8",
                              headers={"Content-Disposition": f'attachment; filename="report-{r.id}.md"'})
+
+
+@router.get("/reports/{report_id}/docx")
+def download_docx(report_id: int, session: Session = DB, state: AppState = Depends(get_state)):
+    """Word 版（#40）：和 Markdown 下載同一份全文。config/reports/template.docx 存在時用它的樣式。"""
+    from ...report_docx import to_docx
+    r = _require(session, report_id)
+    template = state.settings.config_dir / "reports" / "template.docx"
+    data = to_docx(service.full_markdown(r), title=r.title, template=template)
+    return Response(data, media_type=DOCX_TYPE,
+                    headers={"Content-Disposition": f'attachment; filename="report-{r.id}.docx"'})
+
+
+DOCX_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 
 @router.post("/reports/{report_id}/narrative")

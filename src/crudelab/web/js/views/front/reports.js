@@ -51,6 +51,7 @@ export async function render(main) {
   const r = await api(`/reports/${state.report}`);
   const meta = r.narrative_meta ?? {};
   view.innerHTML = `<div class="panel"><div class="row noprint" style="margin-bottom:8px">
+      <a class="btn" style="text-decoration:none" href="/api/reports/${r.id}/docx" download>下載 Word</a>
       <a class="btn" style="text-decoration:none" href="/api/reports/${r.id}/markdown" download>下載 Markdown</a>
       <button class="btn" id="print">列印 / 存成 PDF</button>
       <button class="btn" id="narrate" data-write ${llm.configured ? "" : "disabled"} title="${esc(llm.configured ? "" : llm.message)}">${r.narrative ? "重寫解讀" : "讓大模型寫解讀"}</button>

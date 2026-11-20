@@ -220,6 +220,19 @@ def render_markdown(facts: dict) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+def full_markdown(report: Report) -> str:
+    """正文加解讀（有的話）的全文。Markdown 下載和 Word 導出都用它，兩者內容永遠一致。"""
+    text = report.markdown
+    if report.narrative:
+        meta = report.narrative_meta or {}
+        text += (f"\n## 解讀\n\n由大模型（{meta.get('provider')} / {meta.get('model')}）"
+                 "根據以上正文撰寫，不是系統計算的結果。")
+        if not meta.get("guard_passed", False):
+            text += f"其中這些數字在正文裡找不到，請勿採信：{'、'.join(meta.get('unknown_numbers', []))}。"
+        text += f"\n\n{report.narrative}\n"
+    return text
+
+
 def generate(session: Session, cfg: Config, kind: str, projection_id: int | None = None,
              actor: str = "local") -> Report:
     if kind not in KINDS:
