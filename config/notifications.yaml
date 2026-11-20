@@ -14,6 +14,14 @@
 #     crudelab secret set NOTIFY_WEBHOOK_URL         自定義地址（收到一個 JSON）
 #     crudelab secret set SMTP_PASSWORD              郵箱密碼或授權碼
 #   沒保存地址的渠道不會發送，也不算失敗。只保留你要用的渠道即可，其餘可以刪掉。
+#
+# 不同任務通知不同的群（#44）：
+#   同一種類型有好幾個群時，每個群一個渠道，用 credential 指定帶後綴的密鑰名（後綴用大寫字母和數字）：
+#     - {code: TRADING, name_zh: 交易群, type: wecom, credential: NOTIFY_WECOM_WEBHOOK_TRADING, default: false}
+#     然後 crudelab secret set NOTIFY_WECOM_WEBHOOK_TRADING
+#   default: false 表示沒寫 notify 的任務不發到這裡。
+#   在 schedule.yaml 的任務上寫 notify: [TRADING, WECOM] 指定它發到哪些渠道；notify: [] 表示這個任務不發通知。
+#   不寫 notify 的任務發到所有 default 為 true（預設）的渠道。
 on_failure: true
 on_recovery: true
 repeat_hours: 6

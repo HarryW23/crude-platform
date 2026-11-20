@@ -591,7 +591,7 @@ def cmd_local(args) -> int:
             shown = f"{value}" + ("（被同名環境變量蓋過）" if env and env != value else "") if value else "—"
             print(f"  {name:<24} {shown:<24} {description}")
         return 0
-    if args.name in credentials.KNOWN:
+    if credentials.is_known(args.name):
         print(f"{args.name} 是密鑰，請用 crudelab secret set {args.name} 保存", file=sys.stderr)
         return 1
     try:
@@ -736,11 +736,12 @@ def cmd_secret(args) -> int:
         if args.action == "list":
             path = credentials.secrets_path()
             print(f"密鑰文件：{path}（{'存在' if path.exists() else '尚未建立'}）")
-            for name, description in credentials.KNOWN.items():
+            for name in credentials.names():
                 where = credentials.source(name)
-                print(f"  {'✓' if where else '·'} {name:<22} {where or '未設定':<6}  {description}")
+                print(f"  {'✓' if where else '·'} {name:<22} {where or '未設定':<6}  {credentials.describe(name)}")
+            print("通知類的密鑰可以加後綴存好幾個群，例如 NOTIFY_WECOM_WEBHOOK_TRADING（見 config/notifications.yaml）")
             return 0
-        if args.name not in credentials.KNOWN:
+        if not credentials.is_known(args.name):
             print(f"不認識的密鑰名 {args.name}。運行 crudelab secret list 查看可用的名字", file=sys.stderr)
             return 1
         if args.action == "set":

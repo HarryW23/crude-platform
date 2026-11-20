@@ -256,6 +256,8 @@ Windows 把 `.venv/bin/` 換成 `.venv\Scripts\`。
 | 自定義地址 | `NOTIFY_WEBHOOK_URL` | 同上，`type: webhook`；收到一個 JSON |
 | 郵件 | `SMTP_PASSWORD` | 郵箱服務器等設定寫在 `config/notifications.yaml`，裡面有示例 |
 
+不同任務要通知不同的群：同類型的第二個群用帶後綴的密鑰名（例如 `NOTIFY_WECOM_WEBHOOK_TRADING`），在渠道上寫 `credential`，再在 `config/schedule.yaml` 的任務上寫 `notify: [渠道代碼]`。細節見 `config/notifications.yaml` 的註釋。
+
 保存後到「定時任務」頁點該渠道的「發送測試」，確認群裡收到。每個渠道有自己的開關，另有一個「通知總開關」。
 **群機器人的地址等同於密碼**：拿到它的人就能往你的群裡發消息，所以和 API key 一樣保管，不要貼到別處。
 

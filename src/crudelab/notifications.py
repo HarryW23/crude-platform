@@ -28,11 +28,8 @@ from sqlalchemy.orm import Session
 from . import credentials, db, switches
 from .config import Config
 from .models import JobRun, Notification, utcnow
-from .schema import ChannelDef, JobDef
+from .schema import CHANNEL_CREDENTIALS, ChannelDef, JobDef
 
-WEBHOOK_CREDENTIALS = {"wecom": "NOTIFY_WECOM_WEBHOOK", "dingtalk": "NOTIFY_DINGTALK_WEBHOOK",
-                       "feishu": "NOTIFY_FEISHU_WEBHOOK", "slack": "NOTIFY_SLACK_WEBHOOK",
-                       "webhook": "NOTIFY_WEBHOOK_URL"}
 TYPE_NAMES = {"wecom": "企業微信群機器人", "dingtalk": "釘釘群機器人", "feishu": "飛書群機器人", "slack": "Slack",
               "webhook": "自定義地址", "email": "郵件"}
 PREFIX = "【crudelab】"       # 釘釘機器人如果設了「自定義關鍵詞」安全設置，把關鍵詞設成 crudelab 即可
@@ -41,7 +38,14 @@ log = logging.getLogger("crudelab.notifications")
 
 
 def credential_name(channel: ChannelDef) -> str:
-    return "SMTP_PASSWORD" if channel.type == "email" else WEBHOOK_CREDENTIALS[channel.type]
+    return channel.credential or CHANNEL_CREDENTIALS[channel.type]
+
+
+def job_channels(cfg: Config, job: JobDef) -> list[str]:
+    """這個任務的通知發到哪些渠道：notify 寫了就按它，沒寫就是 default 為 true 的渠道。"""
+    if job.notify is not None:
+        return list(job.notify)
+    return [c.code for c in cfg.notifications.channels if c.default]
 
 
 def is_configured(channel: ChannelDef) -> bool:
@@ -83,9 +87,9 @@ def _send_webhook(channel: ChannelDef, title: str, body: str, extra: dict) -> st
 
 
 def _send_email(channel: ChannelDef, title: str, body: str) -> str:
-    password = credentials.get("SMTP_PASSWORD")
+    password = credentials.get(credential_name(channel))
     if not password:
-        return "還沒有設定 SMTP_PASSWORD"
+        return f"還沒有設定 {credential_name(channel)}"
     message = EmailMessage()
     message["Subject"], message["From"], message["To"] = PREFIX + title, channel.mail_from, ", ".join(channel.mail_to)
     message.set_content(body)
@@ -107,10 +111,11 @@ def _send_email(channel: ChannelDef, title: str, body: str) -> str:
 
 
 def send(cfg: Config, title: str, body: str, *, event: str, job_code: str | None = None,
-         only: str | None = None, ignore_switches: bool = False) -> dict[str, str]:
-    """發一條通知到所有開著且已配置的渠道，並記錄。回傳 {渠道代碼: "ok" 或原因}。
+         only: str | None = None, channels: list[str] | None = None,
+         ignore_switches: bool = False) -> dict[str, str]:
+    """發一條通知到開著且已配置的渠道，並記錄。回傳 {渠道代碼: "ok" 或原因}。
 
-    only 指定只發某一個渠道；ignore_switches 用於「發送測試」。
+    channels 限定發到哪些渠道（任務的 notify）；only 指定只發某一個渠道；ignore_switches 用於「發送測試」。
     """
     title, body = credentials.redact(title)[:200], credentials.redact(body)[:3000]
     with db.session_scope() as session:
@@ -118,7 +123,7 @@ def send(cfg: Config, title: str, body: str, *, event: str, job_code: str | None
     results: dict[str, str] = {}
     if ignore_switches or state[switches.NOTIFY]:
         for channel in cfg.notifications.channels:
-            if only and channel.code != only:
+            if (only and channel.code != only) or (channels is not None and channel.code not in channels):
                 continue
             if not ignore_switches and not state[switches.channel_key(channel.code)]:
                 continue
@@ -181,7 +186,10 @@ def after_run(cfg: Config, job: JobDef, run_id: int) -> str | None:
                  "recovery": f"定時任務已恢復：{job.name_zh}"}[event]
         tail = "" if event == "recovery" else "\n到後台的「定時任務」頁查看詳情。"
         body = f"任務：{job.name_zh}（{job.code}）\n結果：{message}{tail}"
-    send(cfg, title, body, event=event, job_code=job.code)
+    targets = job_channels(cfg, job)
+    if not targets:                                     # notify: [] 的任務不發通知
+        return None
+    send(cfg, title, body, event=event, job_code=job.code, channels=targets)
     return event
 
 

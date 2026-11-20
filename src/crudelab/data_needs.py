@@ -193,7 +193,9 @@ def render(cfg: Config) -> str:
               "系統認得的全部憑證。除了它們，沒有別的地方需要密鑰。", "",
               "| 名稱 | 用途 |", "|---|---|"]
     lines += [f"| `{name}` | {description} |" for name, description in credentials.KNOWN.items()]
-    lines += ["",
+    lines += ["", "通知類的密鑰（`NOTIFY_*`、`SMTP_PASSWORD`）可以加大寫後綴存好幾個群，例如 `NOTIFY_WECOM_WEBHOOK_TRADING`，"
+              "保管規則完全相同（脫敏、文件權限都一樣適用）。",
+              "",
               "保管規則：", "",
               "- **放在哪裡**：密鑰文件 `~/.crudelab/secrets.env`（在項目文件夾之外，權限僅本人可讀寫），或環境變量。"
               "用 `crudelab secret set 名稱` 寫入，輸入不回顯，也不會留在終端的歷史記錄裡。",

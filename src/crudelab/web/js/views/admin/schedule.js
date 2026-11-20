@@ -16,6 +16,9 @@ export async function render(main) {
   const [s, runs, n] = await Promise.all([api("/schedule"), api("/schedule/runs?limit=60"), api("/notifications")]);
   const ready = n.channels.filter((c) => c.enabled && c.configured);
   const actions = Object.fromEntries(s.jobs.map((j) => [j.code, j.action]));
+  const channelName = Object.fromEntries(n.channels.map((c) => [c.code, c.name_zh]));
+  // 每個任務的通知發到哪些群（schedule.yaml 的 notify；沒寫就是 default 的渠道）
+  const notifyLine = (j) => `<div class="muted">通知：${j.notify.length ? j.notify.map((c) => esc(channelName[c] ?? c)).join("、") : "不發"}${j.notify_default ? "（默認）" : ""}</div>`;
   main.innerHTML = `<h2>定時任務</h2>
     <p class="sub">任務在 config/schedule.yaml 裡聲明。每個任務有自己的開關，另有一個總開關；在這裡點過之後以這裡為準。任務的「時間」一列按 schedule.yaml 的時區（${esc(zoneLabel(s.timezone))}）寫；其他時間按右上角選的${esc(zoneLabel())}顯示，現在是 ${time(s.now)}。</p>
     ${!s.running ? `<div class="msg warn">調度器目前沒有在運行${s.last_heartbeat ? `（上次檢查在 ${time(s.last_heartbeat)}）` : ""}，到點的任務不會自動執行。它隨 crudelab serve 一起啟動；「立即運行」仍然可用。</div>`
@@ -26,7 +29,7 @@ export async function render(main) {
       <div id="msg"></div><div class="scroll"><table>
       <tr><th>自動運行</th><th>任務</th><th>動作</th><th>時間（${esc(zoneLabel(s.timezone))}）</th><th>下次運行（${esc(zoneLabel())}）</th><th>最近一次</th><th></th></tr>
       ${s.jobs.map((j) => `<tr><td>${toggle(j.switch, j.enabled, j.name_zh + "：自動運行")}</td>
-        <td><b>${esc(j.name_zh)}</b><div class="mono muted">${j.code}</div></td>
+        <td><b>${esc(j.name_zh)}</b><div class="mono muted">${j.code}</div>${notifyLine(j)}</td>
         <td class="nw">${ACTION[j.action]}</td><td class="nw">${esc(j.schedule)}</td>
         <td class="nw">${j.next_run ? time(j.next_run) : `<span class="muted">${j.enabled ? "總開關關著" : "已關閉"}</span>`}</td>
         <td>${j.last ? `${tag(j.last.status, j.action)} <span class="muted">${time(j.last.at)}${j.last.trigger === "manual" ? " · 手動" : ""}</span><div style="white-space:pre-line">${esc(j.last.message ?? "")}</div>` : '<span class="muted">還沒有運行過</span>'}</td>
@@ -35,13 +38,13 @@ export async function render(main) {
 
     <div class="panel"><div class="row"><h2 style="margin:0">失敗通知</h2><span style="flex:1"></span>
         <span class="ink2">通知總開關</span>${toggle("notify", n.enabled, "通知總開關")}</div>
-      <p class="sub" style="margin-top:6px">任務${n.on_failure ? "剛失敗時發一條；持續失敗每 " + n.repeat_hours + " 小時提醒一次" : "失敗時不通知"}${n.on_recovery ? "；恢復時再發一條" : ""}。只針對定時觸發的執行。規則和渠道在 config/notifications.yaml 裡改。</p>
+      <p class="sub" style="margin-top:6px">任務${n.on_failure ? "剛失敗時發一條；持續失敗每 " + n.repeat_hours + " 小時提醒一次" : "失敗時不通知"}${n.on_recovery ? "；恢復時再發一條" : ""}。只針對定時觸發的執行。規則和渠道在 config/notifications.yaml 裡改；某個任務只發到哪些群，在 schedule.yaml 該任務寫 notify。</p>
       ${!n.enabled ? '<div class="msg warn">通知總開關關著，不會發出任何通知。</div>'
         : ready.length ? "" : '<div class="msg warn">目前沒有可用的渠道：任務失敗時不會有人收到通知，只會在這一頁和導覽列的紅點上顯示。要啟用，先保存某個渠道的地址（見下表的命令）。</div>'}
       <div id="nmsg"></div><div class="scroll"><table>
         <tr><th>啟用</th><th>渠道</th><th>類型</th><th>狀態</th><th>怎麼配置</th><th></th></tr>
         ${n.channels.map((c) => `<tr><td>${toggle(c.switch, c.enabled, c.name_zh + "：啟用")}</td>
-          <td><b>${esc(c.name_zh)}</b><div class="mono muted">${c.code}</div></td><td class="nw">${esc(c.type_name)}${c.target ? `<div class="muted">${esc(c.target)}</div>` : ""}</td>
+          <td><b>${esc(c.name_zh)}</b><div class="mono muted">${c.code}</div>${c.default ? "" : '<div class="muted">只發給點名的任務</div>'}</td><td class="nw">${esc(c.type_name)}${c.target ? `<div class="muted">${esc(c.target)}</div>` : ""}</td>
           <td>${c.configured ? '<span class="tag ok">已配置</span>' : '<span class="tag warn">未配置</span>'}</td>
           <td class="mono">crudelab secret set ${c.credential}</td>
           <td><button class="btn" data-test="${c.code}" ${c.configured ? "" : "disabled"}>發送測試</button></td></tr>`).join("") || '<tr><td colspan="6" class="muted">還沒有定義渠道。</td></tr>'}</table></div>

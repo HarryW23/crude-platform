@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import pytest
@@ -20,7 +21,7 @@ def isolated_credentials(tmp_path, monkeypatch):
     monkeypatch.setenv("CRUDELAB_LOCAL_FILE", str(tmp_path / "home" / "local.env"))     # 也不讀使用者的本機設定
     monkeypatch.setenv("CRUDELAB_DATA_DIR", str(tmp_path / "data"))      # 走命令行的測試也不能碰項目裡的 data/
     monkeypatch.delenv("CRUDELAB_BACKUP_DIR", raising=False)
-    for name in credentials.KNOWN:
+    for name in [*credentials.KNOWN, *(n for n in os.environ if credentials.is_known(n))]:
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(credentials, "_cache", None)
     # 數據庫連接是模塊級的：每個測試開始時清掉，免得讀到上一個測試的數據庫（需要數據庫的測試用 session 夾具重新連）

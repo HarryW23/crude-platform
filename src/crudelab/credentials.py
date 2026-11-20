@@ -45,6 +45,11 @@ KNOWN: dict[str, str] = {
     "KPLER_API_TOKEN": "Kpler 數據 API（預留）",
     "CN_VENDOR_API_KEY": "國內資訊商數據 API（預留）",
 }
+# 同一種通知可以有好幾個群（#44）：這幾個名字可以加後綴，例如 NOTIFY_WECOM_WEBHOOK_TRADING，
+# 在 notifications.yaml 的渠道上用 credential 指定。後綴只能是大寫字母、數字（1–24 位），以免和別的名字混淆。
+VARIANT_BASES = ("NOTIFY_WECOM_WEBHOOK", "NOTIFY_DINGTALK_WEBHOOK", "NOTIFY_FEISHU_WEBHOOK", "NOTIFY_SLACK_WEBHOOK",
+                 "NOTIFY_WEBHOOK_URL", "SMTP_PASSWORD")
+_VARIANT = re.compile(r"^(" + "|".join(VARIANT_BASES) + r")_([A-Z0-9]{1,24})$")
 MASK = "***"
 _MIN_REDACT_LENGTH = 6          # 比這更短的值不做全文替換，否則會把正常文字遮得面目全非
 _LINE = re.compile(r"^([A-Z][A-Z0-9_]*)=(.*)$")
@@ -56,6 +61,35 @@ _PATTERNS = (
     (re.compile(r"(?i)(://[^:/\s@]+):([^@/\s]+)@"), r"\1:" + MASK + "@"),      # 連接串裡的 用戶:密碼@
 )
 _cache: tuple[tuple, dict[str, str]] | None = None
+
+
+def base_name(name: str) -> str | None:
+    """登記過的名字回它本身；帶後綴的通知密鑰回它的基本名；都不是回 None。"""
+    if name in KNOWN:
+        return name
+    match = _VARIANT.match(name)
+    return match.group(1) if match else None
+
+
+def is_known(name: str) -> bool:
+    return base_name(name) is not None
+
+
+def describe(name: str) -> str:
+    base = base_name(name)
+    if base is None:
+        raise KeyError(name)
+    return KNOWN[base] if base == name else f"{KNOWN[base]}（另一個：{name[len(base) + 1:]}）"
+
+
+def names() -> list[str]:
+    """登記的名字，加上環境變量或密鑰文件裡已經設了的帶後綴名字。"""
+    try:
+        from_file = _read_file()
+    except CredentialError:
+        from_file = {}
+    extra = sorted({n for n in (*os.environ, *from_file) if _VARIANT.match(n)})
+    return [*KNOWN, *extra]
 
 
 class CredentialError(RuntimeError):
@@ -97,7 +131,7 @@ def _read_file() -> dict[str, str]:
 
 def get(name: str) -> str | None:
     """取一個密鑰。沒設定回 None。環境變量優先於密鑰文件。"""
-    if name not in KNOWN:
+    if not is_known(name):
         raise KeyError(f"{name} 沒有在 credentials.KNOWN 裡登記")
     return os.environ.get(name) or _read_file().get(name) or None
 
@@ -129,8 +163,9 @@ def _write_file(values: dict[str, str]) -> None:
 
 
 def set_secret(name: str, value: str) -> None:
-    if name not in KNOWN:
-        raise CredentialError(f"不認識的密鑰名 {name}。可用的：{'、'.join(KNOWN)}")
+    if not is_known(name):
+        raise CredentialError(f"不認識的密鑰名 {name}。可用的：{'、'.join(KNOWN)}"
+                              f"（通知類的可以加後綴，例如 NOTIFY_WECOM_WEBHOOK_TRADING）")
     value = value.strip()
     if not value or "\n" in value or "\r" in value:
         raise CredentialError("密鑰不能為空，也不能包含換行")
@@ -154,7 +189,8 @@ def _known_values() -> list[str]:
     except CredentialError:
         from_file = {}
     values = set()
-    for name in KNOWN:
+    extra = {n for n in (*os.environ, *from_file) if _VARIANT.match(n)}
+    for name in [*KNOWN, *extra]:
         for value in (os.environ.get(name), from_file.get(name)):
             if not value:
                 continue

@@ -9,6 +9,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, model_validator
 
+from .credentials import base_name
+
 Code = Field(pattern=r"^[A-Z][A-Z0-9_]*$", max_length=64)
 EPOCH = date(1900, 1, 1)          # 「自始生效」的生效日期
 
@@ -549,6 +551,8 @@ class JobDef(Strict):
     # 最多等 wait_minutes 分鐘；等不到就照常執行，並在結果裡註明。手動運行不等
     after: list[str] = []
     wait_minutes: int = Field(default=120, ge=0, le=720)
+    # 通知發到哪些渠道（notifications.yaml 的渠道代碼）。不寫 = 所有 default 為 true 的渠道；寫 [] = 這個任務不發通知
+    notify: list[str] | None = None
 
     @model_validator(mode="after")
     def _check(self):
@@ -604,6 +608,11 @@ class ScheduleDef(Strict):
 
 # ------------------------------ 通知 ------------------------------
 
+CHANNEL_CREDENTIALS = {"wecom": "NOTIFY_WECOM_WEBHOOK", "dingtalk": "NOTIFY_DINGTALK_WEBHOOK",
+                       "feishu": "NOTIFY_FEISHU_WEBHOOK", "slack": "NOTIFY_SLACK_WEBHOOK",
+                       "webhook": "NOTIFY_WEBHOOK_URL", "email": "SMTP_PASSWORD"}
+
+
 class ChannelDef(Strict):
     """一個通知渠道。地址和密碼不寫在這裡：群機器人的地址本身就是密鑰，一律用 crudelab secret set 保存。
 
@@ -612,6 +621,8 @@ class ChannelDef(Strict):
       feishu 飛書群機器人   → NOTIFY_FEISHU_WEBHOOK      slack → NOTIFY_SLACK_WEBHOOK
       webhook 自定義地址（收到一個 JSON）→ NOTIFY_WEBHOOK_URL
       email 郵件 → SMTP_PASSWORD（其餘郵件設定寫在這裡）
+    同一種類型有好幾個群時，用 credential 指定帶後綴的密鑰名，例如 NOTIFY_WECOM_WEBHOOK_TRADING（#44）。
+    default：沒寫 notify 的任務是否發到這個渠道。只想給個別任務用的群，設成 false，再在那些任務的 notify 裡點名。
     """
     code: str = Code
     name_zh: str
@@ -623,11 +634,18 @@ class ChannelDef(Strict):
     smtp_username: str | None = None
     mail_from: str | None = None
     mail_to: list[str] = []
+    credential: str | None = None
+    default: bool = True
 
     @model_validator(mode="after")
     def _check(self):
         if self.type == "email" and not (self.smtp_host and self.mail_from and self.mail_to):
             raise ValueError("email 渠道需要 smtp_host、mail_from、mail_to")
+        if self.credential is not None:
+            base = "SMTP_PASSWORD" if self.type == "email" else CHANNEL_CREDENTIALS[self.type]
+            if base_name(self.credential) != base:
+                raise ValueError(f"渠道 {self.code}：{self.type} 的 credential 要寫成 {base} 或 {base}_後綴"
+                                 f"（後綴用大寫字母和數字），現在是 {self.credential}")
         return self
 
 

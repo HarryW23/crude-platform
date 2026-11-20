@@ -255,3 +255,79 @@ def test_reports_are_not_created_when_job_switched_off(ready, cfg, session):
     flip("job:REPORT_DAILY", False, cfg)
     scheduler.tick(cfg, ready, T0)
     assert session.scalars(select(Report)).all() == []
+
+
+# ------------------------------ 按任務分群（#44） ------------------------------
+
+TRADING_HOOK = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=canary-trading-44ccdd"   # secret-scan: ok
+
+
+def test_each_job_can_notify_its_own_groups(ready, cfg, session, monkeypatch, outbox):
+    """兩個企業微信群：研究群是默認，交易群只收點名的任務。"""
+    from crudelab.schema import NotificationsDef
+    monkeypatch.setenv("NOTIFY_WECOM_WEBHOOK", HOOK)
+    monkeypatch.setenv("NOTIFY_WECOM_WEBHOOK_TRADING", TRADING_HOOK)
+    monkeypatch.setenv("EIA_API_KEY", "some-eia-key-123456")
+    monkeypatch.setattr(cfg, "notifications", NotificationsDef(channels=[
+        ChannelDef(code="RESEARCH", name_zh="研究群", type="wecom"),
+        ChannelDef(code="TRADING", name_zh="交易群", type="wecom", credential="NOTIFY_WECOM_WEBHOOK_TRADING",
+                   default=False)]))
+    job = jobs.find_job(cfg, "PULL_EIA")
+    _fail_pull(monkeypatch)
+    day = datetime(2026, 11, 10, 23, 30)
+
+    assert _run_pull(cfg, ready, day) == "failure"                           # 沒寫 notify：只發默認的研究群
+    assert [m["url"] for m in outbox] == [HOOK]
+
+    _ok_pull(monkeypatch)
+    monkeypatch.setattr(job, "notify", ["TRADING"])
+    assert _run_pull(cfg, ready, day + timedelta(days=1)) == "recovery"      # 點名交易群：只發交易群
+    assert [m["url"] for m in outbox] == [HOOK, TRADING_HOOK]
+    assert notifications.recent(session)[0].results == {"TRADING": "ok"}
+
+    _fail_pull(monkeypatch)
+    monkeypatch.setattr(job, "notify", [])
+    assert _run_pull(cfg, ready, day + timedelta(days=2)) is None            # notify: []：這個任務不發
+    assert len(outbox) == 2
+
+    status = {j["code"]: j for j in scheduler.status(cfg, T0)["jobs"]}
+    assert status["PULL_EIA"]["notify"] == [] and status["REPORT_DAILY"]["notify"] == ["RESEARCH"]
+    assert status["REPORT_DAILY"]["notify_default"] is True
+
+
+def test_channel_credential_must_match_its_type():
+    ChannelDef(code="A", name_zh="a", type="dingtalk", credential="NOTIFY_DINGTALK_WEBHOOK_OPS")
+    for bad in ("NOTIFY_WECOM_WEBHOOK_OPS", "NOTIFY_DINGTALK_WEBHOOK_ops", "EIA_API_KEY", "NOTIFY_DINGTALK_WEBHOOK_"):
+        with pytest.raises(ValueError, match="credential"):
+            ChannelDef(code="A", name_zh="a", type="dingtalk", credential=bad)
+
+
+def test_unknown_channel_in_job_notify_fails_config_check(tmp_path):
+    import shutil
+
+    from crudelab.config import ConfigError, load_config
+    from crudelab.settings import PROJECT_ROOT
+    shutil.copytree(PROJECT_ROOT / "config", tmp_path / "config")
+    path = tmp_path / "config" / "schedule.yaml"
+    text = path.read_text(encoding="utf-8")
+    path.write_text(text.replace("source: eia, at:", "source: eia, notify: [NOPE], at:", 1), encoding="utf-8")
+    with pytest.raises(ConfigError, match="不存在的通知渠道：NOPE"):
+        load_config(tmp_path / "config")
+
+
+def test_suffixed_notify_secrets_are_stored_listed_and_redacted(monkeypatch, capsys):
+    import io
+
+    from crudelab import credentials
+    from crudelab.cli import main
+    monkeypatch.setattr("sys.stdin", io.StringIO(TRADING_HOOK + "\n"))
+    assert main(["secret", "set", "NOTIFY_WECOM_WEBHOOK_TRADING", "--stdin"]) == 0
+    assert credentials.get("NOTIFY_WECOM_WEBHOOK_TRADING") == TRADING_HOOK
+    assert TRADING_HOOK not in credentials.redact(f"posting to {TRADING_HOOK} failed")
+    capsys.readouterr()
+    assert main(["secret", "list"]) == 0
+    listing = capsys.readouterr().out
+    assert "NOTIFY_WECOM_WEBHOOK_TRADING" in listing and TRADING_HOOK not in listing
+    assert main(["secret", "set", "EIA_API_KEY_EXTRA", "--stdin"]) == 1        # 只有通知類的可以加後綴
+    with pytest.raises(KeyError):
+        credentials.get("NOTIFY_WECOM_WEBHOOK_lower")

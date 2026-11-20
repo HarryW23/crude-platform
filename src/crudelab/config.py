@@ -296,6 +296,11 @@ def load_config(config_dir: Path) -> Config:
         cfg.notifications = (ld.build(NotificationsDef, ld.read(notify_path) or {}, notify_path)
                              or NotificationsDef())
         ld.keyed(cfg.notifications.channels, "通知渠道")
+    channel_codes = {c.code for c in cfg.notifications.channels}
+    for job in cfg.schedule.jobs:
+        unknown = [c for c in job.notify or [] if c not in channel_codes]
+        if unknown:
+            ld.errors.append(f"schedule.yaml 的任務 {job.code}：notify 裡有不存在的通知渠道：{'、'.join(unknown)}")
     fv_path = config_dir / "fair_value.yaml"
     if fv_path.exists():
         cfg.fair_values = ld.keyed(ld.items(FairValueModel, fv_path), "公允價值模型")

@@ -213,7 +213,8 @@ def status(cfg: Config, now: datetime | None = None) -> dict:
             out_jobs.append({
                 "code": job.code, "name_zh": job.name_zh, "enabled": enabled, "action": job.action,
                 "switch": key, "default_enabled": job.enabled, "overridden": key in changed,
-                "schedule": describe(job),
+                "schedule": describe(job), "notify": notifications.job_channels(cfg, job),
+                "notify_default": job.notify is None,
                 "next_run": iso_utc(next_slot(job, now, tz)) if enabled and master else None,
                 "last": None if last is None else {"status": last.status, "message": last.message,
                                                    "trigger": last.trigger, "at": iso_utc(last.started_at)}})

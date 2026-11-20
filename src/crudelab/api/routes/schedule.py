@@ -67,7 +67,7 @@ def notification_status(session: Session = Depends(get_db), state: AppState = De
                           "enabled": current[switches.channel_key(c.code)],
                           "overridden": switches.channel_key(c.code) in changed,
                           "configured": notifications.is_configured(c),
-                          "credential": notifications.credential_name(c),
+                          "credential": notifications.credential_name(c), "default": c.default,
                           "target": "、".join(c.mail_to) if c.type == "email" else None}
                          for c in cfg.notifications.channels],
             "recent": [{"at": iso_utc(n.created_at), "job": n.job_code, "event": n.event, "title": n.title,
