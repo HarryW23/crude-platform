@@ -157,7 +157,7 @@ def cmd_serve(args) -> int:
 def cmd_import(args) -> int:
     from datetime import date
 
-    from .imports import commit_batch, preview_file
+    from .imports import commit_batch, nothing_importable, preview_file
     _init()
     path = Path(args.file)
     with db.session_scope() as session:
@@ -174,6 +174,10 @@ def cmd_import(args) -> int:
             print("（--dry-run：只預覽，沒有入庫）")
             session.rollback()
             return 0
+        if (reason := nothing_importable(preview)) is not None:
+            print(f"沒有入庫：{reason}", file=sys.stderr)
+            session.rollback()
+            return 1
         result = commit_batch(session, preview["batch_id"])
     print(f"入庫完成：新增 {result['inserted']}，更新 {result['updated']}，未變 {result['unchanged']}，"
           f"未識別的列 {result['unmapped_columns']} 個（可在後台手動指定）")
@@ -817,19 +821,25 @@ def cmd_make_sample(args) -> int:
 
 
 def cmd_purge(args) -> int:
-    from .models import AuditLog, Observation, ObservationRevision
+    """刪除一個數據源的全部數據：主表、修訂歷史、按期保存的各期記錄，在同一個事務裡一起刪，記進操作日誌。
+    只刪主表會留下各期記錄，按報告期還原（回測）時還會讀到已刪的數據。"""
+    from .models import AuditLog, Observation, ObservationRevision, ObservationVintage
     _init()
+    columns = {"deleted": Observation.source_code, "deleted_revisions": ObservationRevision.source_code,
+               "deleted_issues": ObservationVintage.source_code}            # 三張表，按數據源刪
     with db.session_scope() as session:
-        n = session.scalar(select(func.count()).select_from(Observation).where(
-            Observation.source_code == args.source))
+        counts = {name: session.scalar(select(func.count()).where(column == args.source)) or 0
+                  for name, column in columns.items()}
         if not args.yes:
-            print(f"數據源 {args.source} 共有 {n} 個數據點。確認刪除請加 --yes")
+            print(f"數據源 {args.source} 共有 {counts['deleted']} 個數據點、{counts['deleted_issues']} 條按期記錄、"
+                  f"{counts['deleted_revisions']} 條修訂歷史。確認刪除請加 --yes")
             return 1
-        session.execute(delete(Observation).where(Observation.source_code == args.source))
-        session.execute(delete(ObservationRevision).where(ObservationRevision.source_code == args.source))
+        for column in columns.values():
+            session.execute(delete(column.class_).where(column == args.source))
         session.add(AuditLog(actor="local", action="purge", entity="data_source", entity_id=args.source,
-                             detail={"deleted": n}))
-    print(f"已刪除 {n} 個數據點")
+                             detail=counts))
+    print(f"已刪除 {counts['deleted']} 個數據點、{counts['deleted_issues']} 條按期記錄、"
+          f"{counts['deleted_revisions']} 條修訂歷史")
     return 0
 
 

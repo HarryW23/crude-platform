@@ -157,3 +157,37 @@ def test_any_csv_gives_a_preview_or_a_clear_error(session, settings, rows, first
         return
     assert "sheets" in preview
     session.rollback()
+
+
+# ------------------------------ 按期保存：任何補錄順序都能還原（外部測試回報後加的） ------------------------------
+
+@settings(max_examples=120, deadline=None, suppress_health_check=[HealthCheck.too_slow,
+                                                                   HealthCheck.function_scoped_fixture])
+@given(st.lists(st.sampled_from([100.0, 110.0]), min_size=30, max_size=30),
+       st.dictionaries(st.integers(1, 30), st.sampled_from([100.0, 110.0, 120.0]), max_size=6),
+       st.randoms(use_true_random=False))
+def test_any_backfill_order_replays_every_day_exactly(session, daily, reports, rnd):
+    """30 天每天自動取數（數字只在 100、110 之間變，會形成合併的確認期間），
+    之後按隨機順序、隨機分批補錄幾期帶報告期的報告。
+    每一天的還原值都必須等於「那天及之前最新一期」（同一天有補錄時以補錄為準），主表等於最新一期。"""
+    from crudelab.ingest import Obs, vintage_points, write_observations
+    from crudelab.models import Observation, ObservationVintage
+    series, point = "STEO_OECD_STOCKS", date(2026, 3, 1)
+    session.query(Observation).filter(Observation.series_code == series).delete()
+    session.query(ObservationVintage).filter(ObservationVintage.series_code == series).delete()
+    for day, value in enumerate(daily, start=1):
+        write_observations(session, [Obs(series, point, value)], "manual", now=datetime(2026, 4, day, 12))
+    order = list(reports.items())
+    rnd.shuffle(order)
+    while order:                                   # 隨機分批：一批可以同時有更早和更晚的幾期
+        size = rnd.randint(1, len(order))
+        batch, order = order[:size], order[size:]
+        write_observations(session, [Obs(series, point, value, vintage=date(2026, 4, day)) for day, value in batch],
+                           "manual", now=datetime(2026, 5, 1, 12))
+    truth = {d: reports.get(d, daily[d - 1]) for d in range(1, 31)}
+    for d in range(1, 31):
+        frame = vintage_points(session, [series], date(2026, 4, d))
+        assert frame["value"].iloc[0] == truth[d], f"4 月 {d} 日：應為 {truth[d]}"
+    main = session.query(Observation).filter(Observation.series_code == series, Observation.obs_date == point).one()
+    assert main.value == truth[30]
+    session.rollback()

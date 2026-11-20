@@ -365,7 +365,7 @@
 
 ## observation_vintage
 
-按期保存的序列（機構預測：STEO、IEA、OPEC）每一期報告裡的數字。vintage = 那一期的發佈日期。 主表 observation 保存最新一期（頁面照常用）；這裡保存每一期，用來還原「某天之前發佈的最新一期是什麼」， 回測就不會用到後來的修訂。只在數字變了時記新的一期（每天取數、數字沒變不會多存）。
+按期保存的序列（機構預測：STEO、IEA、OPEC）每一期報告裡的數字。vintage = 那一期的發佈日期。 主表 observation 保存最新一期（頁面照常用）；這裡保存每一期，用來還原「某天之前發佈的最新一期是什麼」， 回測就不會用到後來的修訂。 帶報告期的導入（補錄報告）每一期都記一行，數字沒變也記：後來補錄更早的一期時，靠它知道之後那期確認過什麼。 每天自動取數（不帶報告期）數字沒變時不加行，只把 confirmed_at 延到當天：一行代表「從 vintage 到 confirmed_at 每天取到的都是這個數」。
 
 | 列 | 類型 | 可空 | 鍵 | 說明 |
 |---|---|---|---|---|
@@ -378,6 +378,7 @@
 | `batch_id` | INTEGER | 是 | FK | → import_batch.id |
 | `source_ref` | VARCHAR(256) | 是 |  | 來源裡的位置（工作表、列） |
 | `created_at` | DATETIME | 否 |  | 記錄建立時間（UTC） |
+| `confirmed_at` | DATE | 是 |  | 每天自動取數確認到哪天（空 = 只有 vintage 那一期） |
 
 - 唯一：series_code, obs_date, source_code, vintage
 - 索引：series_code, vintage

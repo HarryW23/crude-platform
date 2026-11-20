@@ -26,11 +26,12 @@ def issues(session):
 
 def test_issues_are_kept_and_backfilling_never_overwrites_newer(session):
     write_observations(session, [Obs(S, M, 2800.0, vintage=date(2026, 4, 7))], "manual")
-    write_observations(session, [Obs(S, M, 2800.0, vintage=date(2026, 4, 8))], "manual")   # 數字沒變：不多記
+    write_observations(session, [Obs(S, M, 2800.0, vintage=date(2026, 4, 8))], "manual")   # 數字沒變也記：那一期確認過
     write_observations(session, [Obs(S, M, 2812.0, vintage=date(2026, 5, 12))], "manual")  # 下一期修訂
     stats = write_observations(session, [Obs(S, M, 2790.0, vintage=date(2026, 3, 10))], "manual")   # 補錄更早一期
     session.commit()
-    assert issues(session) == [(date(2026, 3, 10), 2790.0), (date(2026, 4, 7), 2800.0), (date(2026, 5, 12), 2812.0)]
+    assert issues(session) == [(date(2026, 3, 10), 2790.0), (date(2026, 4, 7), 2800.0), (date(2026, 4, 8), 2800.0),
+                               (date(2026, 5, 12), 2812.0)]
     assert current(session) == 2812.0 and stats["older_vintage"] == 1                       # 主表保持最新一期
     write_observations(session, [Obs(S, M, 2801.0, vintage=date(2026, 4, 7))], "manual")   # 更正同一期
     session.commit()
@@ -121,3 +122,66 @@ def test_one_file_with_several_issues_of_the_same_point(session):
     session.commit()
     assert issues(session) == [(date(2026, 3, 10), 2790.0), (date(2026, 4, 7), 2800.0), (date(2026, 5, 12), 2805.0)]
     assert current(session) == 2805.0
+
+
+# ------------------------------ 外部測試回報的三個問題（4577b58） ------------------------------
+
+def at(session, day):
+    frame = vintage_points(session, [S], day)
+    return dict(zip(frame["obs_date"], frame["value"], strict=True)).get(M)
+
+
+def test_backfilling_an_older_issue_keeps_a_newer_confirmation(session):
+    """3 月報 100、5 月也報 100，之後補錄 4 月的 120：主表和 5 月的還原都應是 100（以前都變成 120）。"""
+    write_observations(session, [Obs(S, M, 100.0, vintage=date(2026, 3, 10))], "manual")
+    write_observations(session, [Obs(S, M, 100.0, vintage=date(2026, 5, 12))], "manual")
+    write_observations(session, [Obs(S, M, 120.0, vintage=date(2026, 4, 7))], "manual")
+    session.commit()
+    assert current(session) == 100.0
+    assert at(session, date(2026, 5, 12)) == 100.0 and at(session, date(2026, 4, 30)) == 120.0
+    assert at(session, date(2026, 3, 31)) == 100.0
+
+
+def test_one_batch_with_an_older_and_a_newer_issue_updates_the_main_table(session):
+    """已有 3 月的 100，同一批寫入 2 月的 90 和 4 月的 110：主表應是 110（以前停在 100）。"""
+    write_observations(session, [Obs(S, M, 100.0, vintage=date(2026, 3, 10))], "manual")
+    write_observations(session, [Obs(S, M, 90.0, vintage=date(2026, 2, 10)),
+                                 Obs(S, M, 110.0, vintage=date(2026, 4, 7))], "manual")
+    session.commit()
+    assert current(session) == 110.0
+    assert issues(session) == [(date(2026, 2, 10), 90.0), (date(2026, 3, 10), 100.0), (date(2026, 4, 7), 110.0)]
+
+
+def test_purging_a_source_also_removes_its_issue_history(session, settings, capsys, monkeypatch):
+    from crudelab.cli import main
+    monkeypatch.setenv("DATABASE_URL", settings.database_url)          # 命令行連到測試用的同一個數據庫
+    from crudelab.models import AuditLog
+    write_observations(session, [Obs(S, M, 100.0, vintage=date(2026, 3, 10))], "demo")
+    write_observations(session, [Obs(S, M, 120.0, vintage=date(2026, 5, 12))], "demo")
+    session.commit()
+    assert main(["purge-source", "demo", "--yes"]) == 0
+    session.expire_all()
+    assert current_or_none(session) is None and at(session, date(2026, 5, 12)) is None    # 以前還能查到 120
+    log = session.query(AuditLog).filter(AuditLog.action == "purge").one()
+    assert log.detail["deleted_issues"] == 2
+
+
+def test_daily_pulls_extend_a_run_and_a_backfill_inside_it_is_bounded(session):
+    """每天自動取數（不帶報告期）數字沒變：不加行，只延長「確認到哪天」。之後補錄落在這段期間中間的一期：
+    那一期顯示補錄的值，第二天起恢復每天取數確認的值，主表不變。"""
+    from datetime import datetime
+    for day in (1, 2, 3, 20):
+        write_observations(session, [Obs(S, M, 100.0)], "manual", now=datetime(2026, 4, day, 12))
+    session.commit()
+    assert issues(session) == [(date(2026, 4, 1), 100.0)]                                  # 一行，確認到 4 月 20 日
+    write_observations(session, [Obs(S, M, 120.0, vintage=date(2026, 4, 7))], "manual",
+                       now=datetime(2026, 4, 21, 12))
+    session.commit()
+    assert current(session) == 100.0
+    assert at(session, date(2026, 4, 7)) == 120.0
+    assert at(session, date(2026, 4, 8)) == 100.0 and at(session, date(2026, 4, 20)) == 100.0
+
+
+def current_or_none(session):
+    row = session.query(Observation).filter(Observation.series_code == S, Observation.obs_date == M).one_or_none()
+    return None if row is None else row.value

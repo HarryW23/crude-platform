@@ -15,7 +15,7 @@ from __future__ import annotations
 import math
 import threading
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import pandas as pd
 from sqlalchemy import func, select
@@ -112,10 +112,16 @@ def write_observations(session: Session, observations: list[Obs], source_code: s
 
 def _write_vintages(session: Session, observations: list[Obs], source_code: str, batch_id: int | None,
                     now: datetime, latest: dict) -> dict[str, int]:
-    """把按期保存的序列寫進 observation_vintage，並決定主表要不要跟著更新（只有最新一期才更新主表）。
+    """把按期保存的序列寫進 observation_vintage，並決定主表取哪個數（整批處理完後，取每個點最新一期的值）。
 
-    同一期再寫一次：數字不同就更正那一期。新的一期和它之前最近一期的數字相同：不多記（每天取數不會重複存）。
-    比已有的期更舊的（補錄歷史報告）：只記進期表，從 latest 裡拿掉，主表不動。
+    兩種來源分開處理（見 models.ObservationVintage）：
+      帶報告期（補錄報告、導入時填了發佈日期）：每一期都記一行，數字沒變也記。後來補錄更早的一期時，
+          靠這些行知道之後那期確認過什麼，補錄不會覆蓋之後已經確認的數字。
+      不帶報告期（每天自動取數，期號 = 今天）：和最新一行數字相同時不加行，只把那行的 confirmed_at 延到今天，
+          表示這段期間每天取到的都是這個數。
+    同一期再寫一次：數字不同就更正那一期。
+    補錄的一期落在某段「每天取數確認」的期間中間、數字又不同時：那一期顯示補錄的數，第二天起恢復那段期間確認的數
+    （每天取數的確認日期只記了起止，中間按每天都確認過處理）。
     """
     out = {"vintages": 0, "older_vintage": 0}
     if not observations:
@@ -126,30 +132,63 @@ def _write_vintages(session: Session, observations: list[Obs], source_code: str,
             raise IngestError(f"{o.series_code} 的報告期 {o.vintage} 晚於今天：期號是報告的發佈日期，不能是未來")
     codes = {o.series_code for o in observations}
     history: dict[tuple[str, date], list[ObservationVintage]] = {}
-    for row in session.scalars(select(ObservationVintage).where(
+    for existing in session.scalars(select(ObservationVintage).where(
             ObservationVintage.source_code == source_code, ObservationVintage.series_code.in_(codes))):
-        history.setdefault((row.series_code, row.obs_date), []).append(row)
+        history.setdefault((existing.series_code, existing.obs_date), []).append(existing)
+    one_day = timedelta(days=1)
+
+    def add(o: Obs, vintage: date, value: float, *, ref: str | None, batch: int | None,
+            confirmed: date | None = None) -> ObservationVintage:
+        row = ObservationVintage(series_code=o.series_code, obs_date=o.obs_date, source_code=source_code,
+                                 vintage=vintage, value=value, batch_id=batch, source_ref=ref, created_at=now,
+                                 confirmed_at=confirmed)
+        session.add(row)
+        history.setdefault((o.series_code, o.obs_date), []).append(row)
+        out["vintages"] += 1
+        return row
+
+    touched: dict[tuple[str, date], list[date]] = {}
     for o in observations:
-        key, v = (o.series_code, o.obs_date), o.vintage or today
+        key, v, implicit = (o.series_code, o.obs_date), o.vintage or today, o.vintage is None
+        touched.setdefault(key, []).append(v)
         rows = sorted(history.get(key, []), key=lambda r: r.vintage)
         same = next((r for r in rows if r.vintage == v), None)
+        after = [r for r in rows if r.vintage > v]
         if same is not None:
-            if not math.isclose(same.value, o.value, rel_tol=1e-12, abs_tol=1e-12):
+            if not _close(same.value, o.value):
+                rest, old_value, old_ref, old_batch = same.confirmed_at, same.value, same.source_ref, same.batch_id
                 same.value, same.batch_id, same.source_ref = float(o.value), batch_id, o.source_ref
                 out["vintages"] += 1
-        else:
-            before = [r for r in rows if r.vintage < v]
-            if not before or not math.isclose(before[-1].value, o.value, rel_tol=1e-12, abs_tol=1e-12):
-                row = ObservationVintage(series_code=o.series_code, obs_date=o.obs_date, source_code=source_code,
-                                         vintage=v, value=float(o.value), batch_id=batch_id, source_ref=o.source_ref,
-                                         created_at=now)
-                session.add(row)
-                history.setdefault(key, []).append(row)
-                out["vintages"] += 1
-        if any(r.vintage > v for r in rows):         # 已經有更新的一期：主表保持那一期的數字
-            latest.pop(key, None)
-            out["older_vintage"] += 1
+                if rest is not None and rest > v:              # 這一行原本是一段確認期間的開頭：只改這一天
+                    same.confirmed_at = None
+                    if not after or after[0].vintage > v + one_day:
+                        add(o, v + one_day, old_value, ref=old_ref, batch=old_batch,
+                            confirmed=rest if rest > v + one_day else None)
+            continue
+        before = [r for r in rows if r.vintage < v]
+        prev = before[-1] if before else None
+        if implicit and prev is not None and not after and _close(prev.value, o.value):
+            prev.confirmed_at = max(prev.confirmed_at or prev.vintage, v)      # 每天取數，數字沒變：延長確認期
+            continue
+        row = add(o, v, float(o.value), ref=o.source_ref, batch=batch_id)
+        if prev is not None and prev.confirmed_at is not None and prev.confirmed_at > v:
+            rest = prev.confirmed_at                                          # 補錄落在一段確認期間的中間
+            prev.confirmed_at = v - one_day if v - one_day > prev.vintage else None
+            if _close(prev.value, o.value):
+                row.confirmed_at = rest                                       # 同一個數：這一行接着確認下去
+            elif not after or after[0].vintage > v + one_day:
+                add(o, v + one_day, prev.value, ref=prev.source_ref, batch=prev.batch_id,
+                    confirmed=rest if rest > v + one_day else None)           # 第二天起恢復原來確認的數
+
+    for key, vintages in touched.items():                 # 整批處理完再定主表：取這個點最新的一期
+        newest = max(history[key], key=lambda r: r.vintage)
+        latest[key] = Obs(key[0], key[1], newest.value, newest.source_ref)
+        out["older_vintage"] += sum(1 for v in vintages if v < newest.vintage)
     return out
+
+
+def _close(a: float, b: float) -> bool:
+    return math.isclose(a, b, rel_tol=1e-12, abs_tol=1e-12)
 
 
 def vintage_points(session: Session, codes: list[str], on: date) -> pd.DataFrame:

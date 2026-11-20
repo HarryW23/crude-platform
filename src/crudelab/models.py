@@ -199,7 +199,10 @@ class ObservationVintage(Base):
     """按期保存的序列（機構預測：STEO、IEA、OPEC）每一期報告裡的數字。vintage = 那一期的發佈日期。
 
     主表 observation 保存最新一期（頁面照常用）；這裡保存每一期，用來還原「某天之前發佈的最新一期是什麼」，
-    回測就不會用到後來的修訂。只在數字變了時記新的一期（每天取數、數字沒變不會多存）。
+    回測就不會用到後來的修訂。
+    帶報告期的導入（補錄報告）每一期都記一行，數字沒變也記：後來補錄更早的一期時，靠它知道之後那期確認過什麼。
+    每天自動取數（不帶報告期）數字沒變時不加行，只把 confirmed_at 延到當天：一行代表「從 vintage 到 confirmed_at
+    每天取到的都是這個數」。
     """
     __tablename__ = "observation_vintage"
     __table_args__ = (UniqueConstraint("series_code", "obs_date", "source_code", "vintage"),
@@ -213,6 +216,7 @@ class ObservationVintage(Base):
     batch_id: Mapped[int | None] = mapped_column(ForeignKey("import_batch.id"))
     source_ref: Mapped[str | None] = mapped_column(String(256))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    confirmed_at: Mapped[date | None] = mapped_column(Date)  # 每天自動取數確認到哪天（空 = 只有 vintage 那一期）
 
 
 class ScenarioRow(Base):

@@ -22,7 +22,7 @@ from . import credentials, db
 from . import reports as report_service
 from .config import Config
 from .connectors import ConnectorError, ConnectorNotReady, get_connector
-from .imports import ImportFlowError, commit_batch, preview_file
+from .imports import ImportFlowError, commit_batch, nothing_importable, preview_file
 from .ingest import IngestError, write_observations
 from .models import AuditLog, JobRun, Series, utcnow
 from .schema import JobDef
@@ -89,6 +89,8 @@ def _import_folder(session: Session, cfg: Config, settings: Settings, job: JobDe
         try:
             with session.begin_nested():
                 preview = preview_file(session, settings, path.read_bytes(), path.name, _source(job), ACTOR)
+                if (reason := nothing_importable(preview)) is not None:
+                    raise ImportFlowError(reason)
                 result = commit_batch(session, preview["batch_id"], actor=ACTOR)
             entry.update(inserted=result["inserted"], updated=result["updated"],
                          unmapped=result["unmapped_columns"], warnings=preview["warnings"])

@@ -1,7 +1,7 @@
 """金十數據：MCP 客戶端（握手、會話、SSE、錯誤）、額度控制、財經日曆的同步與超預期。用模擬的 MCP 服務器測試。"""
 import hashlib
 import json
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 
 import httpx
 import pytest
@@ -269,8 +269,8 @@ def test_close_on_uses_new_york_1659_and_skips_holidays(cfg):
     assert when == datetime(2026, 11, 18, 21, 59) and value == 82.18             # 冬令時：紐約 16:59 = UTC 21:59
     assert calls[0]["time"] == jin10.close_stamp(date(2026, 11, 18)) and isinstance(calls[0]["time"], int)
     assert jin10.close_on(jin, "UKOIL", HOLIDAY) is None                          # 假期：拿到的是前一天的 K 線，不記
-    assert jin10.close_stamp(date(2026, 7, 1)) == int(datetime(2026, 7, 1, 20, 59).timestamp()
-                                                      - datetime(1970, 1, 1).timestamp())   # 夏令時：UTC 20:59
+    # 夏令時：UTC 20:59。預期值要用帶時區的時間算：不帶時區的 timestamp() 按本機時區解讀，換個時區跑就差一小時
+    assert jin10.close_stamp(date(2026, 7, 1)) == int(datetime(2026, 7, 1, 20, 59, tzinfo=UTC).timestamp())
     days = jin10.completed_trade_days(datetime(2026, 11, 23, 22, 30), 3)          # 紐約週一 17:30
     assert days == [date(2026, 11, 19), date(2026, 11, 20), date(2026, 11, 23)]
     assert jin10.completed_trade_days(datetime(2026, 11, 23, 21, 0), 1) == [date(2026, 11, 20)]   # 週一還沒收盤

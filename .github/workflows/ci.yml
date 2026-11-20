@@ -42,8 +42,11 @@ jobs:
         env:
           CRUDELAB_TEST_PG: postgresql+psycopg://postgres@localhost:5432
   oldest-python:
-    # 支持的最低版本 Python 3.11：鎖定的依賴在它上面能裝、全部測試能過
+    # 支持的最低版本 Python 3.11：鎖定的依賴在它上面能裝、全部測試能過。
+    # 同時用非 UTC 的本機時區跑：依賴本機時區的寫法（例如不帶時區的 timestamp()）在這裡會暴露
     runs-on: ubuntu-latest
+    env:
+      TZ: America/Los_Angeles
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

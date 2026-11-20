@@ -50,7 +50,7 @@ def test_admin_workflow_end_to_end(tmp_path, capsys):
     assert code == 0 and "恢復完成" in out
 
     code, out, _ = run(capsys, "purge-source", "demo")                             # 沒加 --yes：只報數
-    assert code == 1 and "共有" in out
+    assert code == 1 and "共有" in out and "按期記錄" in out
     code, out, _ = run(capsys, "purge-source", "demo", "--yes")
     assert code == 0 and "已刪除" in out
 
@@ -101,3 +101,11 @@ def test_unknown_command_and_missing_arguments(capsys):
     with pytest.raises(SystemExit):
         main(["user", "add"])                                                      # 缺用戶名
     capsys.readouterr()
+
+
+def test_import_of_an_unrecognisable_file_is_a_failure(tmp_path, capsys):
+    """認不出任何數據的文件（例如只有一行日期）不能報「入庫完成」、退出碼 0：自動化腳本會以為成功了。"""
+    one = tmp_path / "one.csv"
+    one.write_text("Date,STEO OECD Stocks\n2026-03-01,100\n", encoding="utf-8")
+    code, out, err = run(capsys, "import", str(one), "--source", "reuters_xls")
+    assert code == 1 and "沒有入庫" in err and "至少要有兩個日期" in err and "入庫完成" not in out

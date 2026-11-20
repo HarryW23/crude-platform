@@ -147,15 +147,16 @@ def test_inbox_import_moves_files_and_reports_problems(ready, cfg, session, samp
     fresh = inbox / "still-copying.csv"
     fresh.write_text("Date,LCOc1\n2026-09-01,70\n", encoding="utf-8")
     result = jobs.run_now(cfg, ready, "IMPORT_INBOX")
-    assert result["status"] == "failed" and "導入 2 個文件" in result["message"] and "1 個文件失敗" in result["message"]
+    assert result["status"] == "failed" and "導入 1 個文件" in result["message"] and "2 個文件失敗" in result["message"]
     assert "沒有認出來" in result["message"]                                 # 演示文件裡有一列認不出
     assert sorted(p.name for p in inbox.iterdir()) == ["done", "failed", "notes.txt"]
-    assert len(list((inbox / "done").iterdir())) == 2 and len(list((inbox / "failed").iterdir())) == 1
+    assert len(list((inbox / "done").iterdir())) == 1 and len(list((inbox / "failed").iterdir())) == 2
     assert session.scalar(select(func.count()).select_from(Observation)) > 1000
-    assert session.scalar(select(func.count()).select_from(ImportBatch).where(ImportBatch.status == "committed")) == 2
+    assert session.scalar(select(func.count()).select_from(ImportBatch).where(ImportBatch.status == "committed")) == 1
     run = jobs.recent_runs(session, 1)[0]
     files = {f["file"]: f for f in run.detail["files"]}
     assert "無法打開" in files["broken.xlsx"]["error"] and files["daily.xlsx"]["inserted"] > 1000
+    assert "沒有能自動入庫的數據" in files["still-copying.csv"]["error"]       # 只有一行日期：認不出，算失敗
     assert run.trigger == "manual"
     assert jobs.run_now(cfg, ready, "IMPORT_INBOX")["status"] == "skipped"   # 收件夾空了
 

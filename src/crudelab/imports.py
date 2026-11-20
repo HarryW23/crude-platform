@@ -39,6 +39,16 @@ def _duplicates(previews: list[SheetPreview], mapping: dict[str, str | None] | N
             for code, refs in seen.items() if len(refs) > 1]
 
 
+def nothing_importable(preview: dict) -> str | None:
+    """整個文件沒有任何能入庫的數據時，回傳原因（給人看）；有就回傳 None。
+    這種文件不能算「導入成功」：格式變了、每天都「成功」卻沒有數據，要很久才會被發現。"""
+    usable = [c for sheet in preview["sheets"] for c in sheet["columns"] if c.get("series_code") and c.get("n_values")]
+    if usable:
+        return None
+    reasons = [f"{sheet['name']}：{sheet['note'] or sheet['layout']}" for sheet in preview["sheets"]]
+    return "文件裡沒有能自動入庫的數據" + (f"（{'；'.join(reasons)}）" if reasons else "")
+
+
 def preview_file(session: Session, settings: Settings, content: bytes, filename: str,
                  source_code: str, actor: str = "local", vintage: date | None = None) -> dict:
     """vintage：機構報告的發佈日期。補錄歷史報告（例如 2025 年 3 月那一期 STEO）時填，
