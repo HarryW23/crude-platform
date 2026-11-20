@@ -1,10 +1,10 @@
 [project]
 name = "crudelab"
-version = "0.46.0"
+version = "0.46.1"
 description = "原油研究平台：數據 → 指標 → 模型 → 推演 → 報告"
 requires-python = ">=3.11"
 dependencies = [
-  "fastapi>=0.110",
+  "fastapi>=0.121",                       # Depends(scope="function")：先提交再回應，見 api/deps.py 的 DB
   "uvicorn[standard]>=0.29",
   "sqlalchemy>=2.0",
   "pandas>=2.0",

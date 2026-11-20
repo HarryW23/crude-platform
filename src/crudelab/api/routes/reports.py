@@ -11,7 +11,7 @@ from ... import reports as service
 from ...llm import LLMError, LLMNotConfigured, get_provider, status
 from ...llm.tasks import write_narrative
 from ...models import Report
-from ..deps import AppState, get_actor, get_db, get_state
+from ..deps import DB, AppState, get_actor, get_state
 
 router = APIRouter(tags=["reports"])
 
@@ -39,12 +39,12 @@ def llm_status(state: AppState = Depends(get_state)):
 
 
 @router.get("/reports")
-def list_reports(session: Session = Depends(get_db)):
+def list_reports(session: Session = DB):
     return [_head(r) for r in session.scalars(select(Report).order_by(Report.id.desc()).limit(200))]
 
 
 @router.post("/reports")
-def create_report(body: NewReport, session: Session = Depends(get_db), state: AppState = Depends(get_state),
+def create_report(body: NewReport, session: Session = DB, state: AppState = Depends(get_state),
                   actor: str = Depends(get_actor)):
     try:
         return _head(service.generate(session, state.cfg, body.kind, body.projection_id, actor))
@@ -53,14 +53,14 @@ def create_report(body: NewReport, session: Session = Depends(get_db), state: Ap
 
 
 @router.get("/reports/{report_id}")
-def get_report(report_id: int, session: Session = Depends(get_db)):
+def get_report(report_id: int, session: Session = DB):
     r = _require(session, report_id)
     return {**_head(r), "markdown": r.markdown, "narrative": r.narrative, "narrative_meta": r.narrative_meta,
             "facts": r.facts}
 
 
 @router.get("/reports/{report_id}/markdown", response_class=PlainTextResponse)
-def download_markdown(report_id: int, session: Session = Depends(get_db)):
+def download_markdown(report_id: int, session: Session = DB):
     """正文加解讀的 Markdown 全文，可直接存檔或貼到別處。"""
     r = _require(session, report_id)
     text = r.markdown
@@ -76,7 +76,7 @@ def download_markdown(report_id: int, session: Session = Depends(get_db)):
 
 
 @router.post("/reports/{report_id}/narrative")
-def add_narrative(report_id: int, session: Session = Depends(get_db), state: AppState = Depends(get_state)):
+def add_narrative(report_id: int, session: Session = DB, state: AppState = Depends(get_state)):
     """讓大模型根據報告正文寫解讀。寫出的每個數字都會和正文核對，對不上的會被列出。"""
     r = _require(session, report_id)
     try:

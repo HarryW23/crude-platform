@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from ...llm import LLMError, LLMNotConfigured, get_provider, limits, status
 from ...llm.registry import PROVIDERS, SUPPORTS_THINKING, model_lister, save_choice
 from ...models import AuditLog, LLMCall, iso_utc, utcnow
-from ..deps import AppState, get_actor, get_db, get_state
+from ..deps import DB, AppState, get_actor, get_state
 
 admin_router = APIRouter(tags=["llm"])
 
@@ -28,7 +28,7 @@ class ModelsBody(BaseModel):
 
 
 @admin_router.get("/llm/usage")
-def llm_usage(session: Session = Depends(get_db), state: AppState = Depends(get_state)):
+def llm_usage(session: Session = DB, state: AppState = Depends(get_state)):
     st = status(state.cfg.llm)
     pause = limits.active_pause(session, st["provider"]) if st["provider"] != "none" else None
     since = utcnow() - timedelta(hours=24)
@@ -53,7 +53,7 @@ def llm_usage(session: Session = Depends(get_db), state: AppState = Depends(get_
 
 
 @admin_router.post("/llm/reset")
-def llm_reset(session: Session = Depends(get_db), actor: str = Depends(get_actor)):
+def llm_reset(session: Session = DB, actor: str = Depends(get_actor)):
     n = limits.reset()
     session.add(AuditLog(actor=actor, action="llm_reset", entity="llm", entity_id="pause", detail={"cleared": n}))
     return {"cleared": n}
@@ -75,7 +75,7 @@ def llm_test(state: AppState = Depends(get_state)):
 
 
 @admin_router.put("/llm/choice")
-def llm_choice(body: ChoiceBody, session: Session = Depends(get_db), actor: str = Depends(get_actor)):
+def llm_choice(body: ChoiceBody, session: Session = DB, actor: str = Depends(get_actor)):
     """選擇用哪一家、哪個型號、開不開思考模式。立即生效（下一次調用就用新的設定）。"""
     try:
         return save_choice(session, body.provider, body.model, body.thinking, actor, body.base_url)

@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from ...indicators import IndicatorEngine, Scenario
 from ...refinery import RefinerySpec, breakdown
-from ..deps import AppState, get_base_engine, get_db, get_engine, get_state
+from ..deps import DB, AppState, get_base_engine, get_engine, get_state
 
 router = APIRouter(tags=["refineries"])
 
@@ -57,7 +57,7 @@ def model_detail(code: str, on: date | None = None, state: AppState = Depends(ge
 
 
 @router.post("/refineries/{code}/scenario")
-def model_scenario(code: str, body: ScenarioRequest, session: Session = Depends(get_db),
+def model_scenario(code: str, body: ScenarioRequest, session: Session = DB,
                    state: AppState = Depends(get_state), base: IndicatorEngine = Depends(get_base_engine)):
     """用臨時的參數值或價格平移重算毛利，不保存。回傳基準和情境兩套拆解。"""
     spec = _spec(state, code)

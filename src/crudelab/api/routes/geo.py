@@ -12,7 +12,7 @@ from ... import scenarios
 from ...indicators import IndicatorEngine
 from ...llm import LLMError, LLMNotConfigured, get_provider
 from ...llm.tasks import extract_events
-from ..deps import AppState, get_actor, get_db, get_engine, get_state
+from ..deps import DB, AppState, get_actor, get_engine, get_state
 
 router = APIRouter(tags=["geo"])
 
@@ -75,13 +75,13 @@ def _event(e, session: Session, state: AppState) -> dict:
 
 
 @router.get("/events")
-def list_events(include_closed: bool = True, session: Session = Depends(get_db),
+def list_events(include_closed: bool = True, session: Session = DB,
                 state: AppState = Depends(get_state)):
     return [_event(e, session, state) for e in service.list_events(session, include_closed)]
 
 
 @router.post("/events")
-def create_event(body: EventIn, session: Session = Depends(get_db), state: AppState = Depends(get_state),
+def create_event(body: EventIn, session: Session = DB, state: AppState = Depends(get_state),
                  actor: str = Depends(get_actor)):
     try:
         return _event(service.create(session, state.cfg, **body.model_dump(), actor=actor), session, state)
@@ -90,7 +90,7 @@ def create_event(body: EventIn, session: Session = Depends(get_db), state: AppSt
 
 
 @router.patch("/events/{event_id}")
-def update_event(event_id: int, body: EventPatch, session: Session = Depends(get_db),
+def update_event(event_id: int, body: EventPatch, session: Session = DB,
                  state: AppState = Depends(get_state), actor: str = Depends(get_actor)):
     try:
         row = service.update(session, state.cfg, event_id, body.model_dump(exclude_unset=True), actor)
@@ -100,14 +100,14 @@ def update_event(event_id: int, body: EventPatch, session: Session = Depends(get
 
 
 @router.get("/events/impacts")
-def event_impacts(session: Session = Depends(get_db), state: AppState = Depends(get_state)):
+def event_impacts(session: Session = DB, state: AppState = Depends(get_state)):
     """每個仍在進行或可能發生的事件：發生時各期限的價格中樞相對基準變多少，以及乘上機率後的期望影響。"""
     from ... import projection
     return projection.event_impacts(session, state.cfg)
 
 
 @router.get("/flashes")
-def flashes(limit: int = 50, session: Session = Depends(get_db)):
+def flashes(limit: int = 50, session: Session = DB):
     """收錄的原油相關快訊（來自金十），新的在前。"""
     from sqlalchemy import select
 
@@ -121,7 +121,7 @@ def flashes(limit: int = 50, session: Session = Depends(get_db)):
 
 
 @router.post("/flashes/{flash_id}/extract")
-def extract_flash(flash_id: int, session: Session = Depends(get_db), state: AppState = Depends(get_state),
+def extract_flash(flash_id: int, session: Session = DB, state: AppState = Depends(get_state),
                   actor: str = Depends(get_actor)):
     """把一條快訊交給大模型抽取成事件草稿。草稿不參與計算，要人確認。"""
     from ...models import NewsFlash, utcnow
@@ -160,7 +160,7 @@ def list_playbooks(state: AppState = Depends(get_state)):
 
 
 @router.post("/events/{event_id}/apply-playbook")
-def apply_playbook(event_id: int, body: ApplyPlaybook, session: Session = Depends(get_db),
+def apply_playbook(event_id: int, body: ApplyPlaybook, session: Session = DB,
                    state: AppState = Depends(get_state), actor: str = Depends(get_actor)):
     """把預案套用到事件上，生成這個事件的情境。之後可以在「供需平衡」裡選這個情境查看和修改。"""
     try:
@@ -173,7 +173,7 @@ def apply_playbook(event_id: int, body: ApplyPlaybook, session: Session = Depend
 
 
 @router.post("/events/extract")
-def extract(body: ExtractRequest, session: Session = Depends(get_db), state: AppState = Depends(get_state),
+def extract(body: ExtractRequest, session: Session = DB, state: AppState = Depends(get_state),
             actor: str = Depends(get_actor)):
     """讓大模型從一段新聞或筆記裡抽取事件，存成草稿。草稿不參與任何計算，要人確認後才生效。"""
     try:

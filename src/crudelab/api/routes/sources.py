@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from ...connectors import ConnectorError, ConnectorNotReady, get_connector, list_connectors
 from ...ingest import write_observations
 from ...models import AuditLog, DataSource, Observation, Series
-from ..deps import get_actor, get_db
+from ..deps import DB, get_actor
 
 admin_router = APIRouter(tags=["sources"])         # 只在後台
 
@@ -22,7 +22,7 @@ class PullRequest(BaseModel):
 
 
 @admin_router.get("/sources")
-def list_sources(session: Session = Depends(get_db)):
+def list_sources(session: Session = DB):
     connectors = list_connectors()
     counts = dict(session.execute(select(Observation.source_code, func.count())
                                   .group_by(Observation.source_code)).all())
@@ -39,7 +39,7 @@ def list_sources(session: Session = Depends(get_db)):
 
 
 @admin_router.post("/sources/{code}/pull")
-def pull(code: str, body: PullRequest, session: Session = Depends(get_db), actor: str = Depends(get_actor)):
+def pull(code: str, body: PullRequest, session: Session = DB, actor: str = Depends(get_actor)):
     try:
         connector = get_connector(code)
     except KeyError as exc:

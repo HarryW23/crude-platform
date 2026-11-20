@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from ...imports import ImportFlowError, commit_batch, preview_file
 from ...ingest import IngestError
 from ...models import ImportBatch
-from ..deps import AppState, get_actor, get_db, get_state
+from ..deps import DB, AppState, get_actor, get_state
 
 MAX_UPLOAD = 50_000_000          # 上傳文件上限：整個文件會讀進內存
 admin_router = APIRouter(tags=["imports"])         # 只在後台
@@ -24,7 +24,7 @@ class CommitRequest(BaseModel):
 
 @admin_router.post("/imports/preview")
 async def preview(file: UploadFile = File(...), source_code: str = Form("reuters_xls"),
-                  vintage: str | None = Form(None), session: Session = Depends(get_db),
+                  vintage: str | None = Form(None), session: Session = DB,
                   state: AppState = Depends(get_state), actor: str = Depends(get_actor)):
     content = await file.read(MAX_UPLOAD + 1)
     if len(content) > MAX_UPLOAD:
@@ -40,7 +40,7 @@ async def preview(file: UploadFile = File(...), source_code: str = Form("reuters
 
 
 @admin_router.post("/imports/{batch_id}/commit")
-def commit(batch_id: int, body: CommitRequest, session: Session = Depends(get_db),
+def commit(batch_id: int, body: CommitRequest, session: Session = DB,
            actor: str = Depends(get_actor)):
     try:
         return commit_batch(session, batch_id, body.mapping, body.learn, actor)
@@ -49,7 +49,7 @@ def commit(batch_id: int, body: CommitRequest, session: Session = Depends(get_db
 
 
 @admin_router.get("/imports")
-def list_imports(session: Session = Depends(get_db)):
+def list_imports(session: Session = DB):
     rows = session.scalars(select(ImportBatch).where(ImportBatch.status == "committed")
                            .order_by(ImportBatch.id.desc()).limit(100))
     return [{"id": b.id, "filename": b.filename, "source_code": b.source_code, "created_at": b.created_at,

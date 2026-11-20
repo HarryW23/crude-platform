@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from ... import jobs, notifications, scheduler, switches
 from ...models import AuditLog, iso_utc
-from ..deps import AppState, get_actor, get_db, get_state
+from ..deps import DB, AppState, get_actor, get_state
 
 admin_router = APIRouter(tags=["schedule"])
 
@@ -25,14 +25,14 @@ def schedule_status(state: AppState = Depends(get_state)):
 
 
 @admin_router.get("/schedule/runs")
-def runs(limit: int = 100, job: str | None = None, session: Session = Depends(get_db),
+def runs(limit: int = 100, job: str | None = None, session: Session = DB,
          state: AppState = Depends(get_state)):
     tz = ZoneInfo(state.cfg.schedule.timezone)
     return [scheduler.run_view(r, tz) for r in jobs.recent_runs(session, min(limit, 500), job)]
 
 
 @admin_router.post("/schedule/{code}/run")
-def run_now(code: str, session: Session = Depends(get_db), state: AppState = Depends(get_state),
+def run_now(code: str, session: Session = DB, state: AppState = Depends(get_state),
             actor: str = Depends(get_actor)):
     """立即執行一個任務，不管它是否啟用、是否到點。等它執行完才回應。"""
     try:
@@ -45,7 +45,7 @@ def run_now(code: str, session: Session = Depends(get_db), state: AppState = Dep
 
 
 @admin_router.put("/switches/{key:path}")
-def set_switch(key: str, body: SwitchBody, session: Session = Depends(get_db),
+def set_switch(key: str, body: SwitchBody, session: Session = DB,
                state: AppState = Depends(get_state), actor: str = Depends(get_actor)):
     """打開或關閉一個開關。key：scheduler（定時任務總開關）、job:任務代碼、notify（通知總開關）、channel:渠道代碼。"""
     try:
@@ -56,7 +56,7 @@ def set_switch(key: str, body: SwitchBody, session: Session = Depends(get_db),
 
 
 @admin_router.get("/notifications")
-def notification_status(session: Session = Depends(get_db), state: AppState = Depends(get_state)):
+def notification_status(session: Session = DB, state: AppState = Depends(get_state)):
     """通知的規則、每個渠道的狀態（不含地址和密碼）、最近發出的通知。"""
     cfg = state.cfg
     current, changed = switches.load(session, cfg), switches.overridden(session)

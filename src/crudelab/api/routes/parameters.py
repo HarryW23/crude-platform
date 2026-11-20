@@ -12,7 +12,7 @@ from ... import formula as fx
 from ... import parameters as service
 from ...indicators import IndicatorEngine
 from ...models import Parameter, ParameterVersion
-from ..deps import AppState, get_actor, get_db, get_engine, get_state
+from ..deps import DB, AppState, get_actor, get_engine, get_state
 
 router = APIRouter(tags=["parameters"])            # 兩個站點都有：只讀
 admin_router = APIRouter(tags=["parameters-admin"])  # 只在後台：改參數
@@ -29,7 +29,7 @@ class VerifyRequest(BaseModel):
 
 
 @router.get("/parameters")
-def list_parameters(session: Session = Depends(get_db), state: AppState = Depends(get_state)):
+def list_parameters(session: Session = DB, state: AppState = Depends(get_state)):
     used: dict[str, list[str]] = {}
     for code, ind in state.cfg.indicators.items():
         for name in fx.names(ind.formula):
@@ -49,7 +49,7 @@ def list_parameters(session: Session = Depends(get_db), state: AppState = Depend
 
 
 @router.get("/parameters/{key}/versions")
-def list_versions(key: str, session: Session = Depends(get_db)):
+def list_versions(key: str, session: Session = DB):
     if session.get(Parameter, key) is None:
         raise HTTPException(404, f"沒有名為 {key} 的參數")
     effective = {v.id for v in service.effective_versions(session, key)}
@@ -60,7 +60,7 @@ def list_versions(key: str, session: Session = Depends(get_db)):
 
 
 @admin_router.post("/parameters/{key}/versions")
-def add_version(key: str, body: NewVersion, session: Session = Depends(get_db), actor: str = Depends(get_actor)):
+def add_version(key: str, body: NewVersion, session: Session = DB, actor: str = Depends(get_actor)):
     try:
         version = service.set_value(session, key, body.value, body.valid_from, body.note, actor)
     except service.ParameterError as exc:
@@ -69,7 +69,7 @@ def add_version(key: str, body: NewVersion, session: Session = Depends(get_db), 
 
 
 @admin_router.post("/parameters/{key}/verify")
-def verify(key: str, body: VerifyRequest, session: Session = Depends(get_db)):
+def verify(key: str, body: VerifyRequest, session: Session = DB):
     try:
         service.set_verified(session, key, body.verified)
     except service.ParameterError as exc:
@@ -78,7 +78,7 @@ def verify(key: str, body: VerifyRequest, session: Session = Depends(get_db)):
 
 
 @router.get("/projection/sensitivity")
-def sensitivity_estimate(session: Session = Depends(get_db), state: AppState = Depends(get_state),
+def sensitivity_estimate(session: Session = DB, state: AppState = Depends(get_state),
                          engine: IndicatorEngine = Depends(get_engine)):
     """推演敏感度的歷史估計（見 sensitivity.py），以及參數現在的值。兩個站點都能看。"""
     from ... import sensitivity
@@ -89,7 +89,7 @@ def sensitivity_estimate(session: Session = Depends(get_db), state: AppState = D
 
 
 @admin_router.post("/projection/sensitivity/adopt")
-def adopt_sensitivity(session: Session = Depends(get_db), state: AppState = Depends(get_state),
+def adopt_sensitivity(session: Session = DB, state: AppState = Depends(get_state),
                       engine: IndicatorEngine = Depends(get_engine), actor: str = Depends(get_actor)):
     """把歷史估計寫成敏感度參數的一個新版本（今天起生效），版本說明裡記下估計的依據。只接受結論為 ok 的估計。"""
     from ... import sensitivity
@@ -129,7 +129,7 @@ def _calibration_changes(run, engine: IndicatorEngine) -> list[dict]:
 
 
 @admin_router.get("/calibration/latest")
-def latest_calibration(session: Session = Depends(get_db), engine: IndicatorEngine = Depends(get_engine)):
+def latest_calibration(session: Session = DB, engine: IndicatorEngine = Depends(get_engine)):
     """最近一次完成的回測給出的權重建議，和它在逐步前推檢驗裡的表現。"""
     run = _latest_calibration(session)
     if run is None:
@@ -152,7 +152,7 @@ def _adoptable(cal: dict) -> tuple[bool, str]:
 
 
 @admin_router.post("/calibration/{run_id}/adopt")
-def adopt_calibration(run_id: int, session: Session = Depends(get_db), engine: IndicatorEngine = Depends(get_engine),
+def adopt_calibration(run_id: int, session: Session = DB, engine: IndicatorEngine = Depends(get_engine),
                       actor: str = Depends(get_actor)):
     """把回測的權重建議寫成參數的新版本（今天起生效），版本說明裡記下依據。逐步前推沒有變好就拒絕。"""
     from ...models import BacktestRun

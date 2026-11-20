@@ -98,6 +98,13 @@ def get_db() -> Iterator[Session]:
         yield session
 
 
+# 接口一律用 DB，不要直接寫 DB：
+# FastAPI 預設在回應「已經產生之後」才結束帶 yield 的依賴，也就是先回「成功」、後提交。這樣提交失敗時用戶以為存好了，
+# 而且緊接着的下一個請求可能還看不到剛寫的東西（登錄後馬上刷新卻還是登錄框）。scope="function" 讓它在處理函數
+# 返回後、回應發出前就提交；提交失敗則回 500。tests/test_api_commit.py 檢查沒有地方漏掉。
+DB = Depends(get_db, scope="function")
+
+
 def get_actor(request: Request) -> str:
     """當前操作者：登錄功能開啟時是登錄的用戶名，關閉時固定為 local。寫入各種記錄的「誰做的」都來自這裡。"""
     user = getattr(request.state, "user", None)
@@ -108,7 +115,7 @@ def get_as_of(as_of: datetime | None = Query(None, description="還原這個時�
     return as_of.replace(tzinfo=None) if as_of else None
 
 
-def get_engine(session: Session = Depends(get_db), state: AppState = Depends(get_state),
+def get_engine(session: Session = DB, state: AppState = Depends(get_state),
                as_of: datetime | None = Depends(get_as_of),
                scenario: str | None = Query(None, description="套用這個已保存的情境")) -> IndicatorEngine:
     """按請求參數建引擎：as_of 還原歷史時點，scenario 套用已保存的情境。兩者都不給就是當前的基準視圖。"""
@@ -120,7 +127,7 @@ def get_engine(session: Session = Depends(get_db), state: AppState = Depends(get
     return IndicatorEngine(session, cfg, as_of=as_of, scenario=loaded)
 
 
-def get_base_engine(session: Session = Depends(get_db), state: AppState = Depends(get_state),
+def get_base_engine(session: Session = DB, state: AppState = Depends(get_state),
                     as_of: datetime | None = Depends(get_as_of)) -> IndicatorEngine:
     """不套情境的基準引擎。用於需要「基準 vs 情境」對照的接口。"""
     return IndicatorEngine(session, state.cfg, as_of=as_of)

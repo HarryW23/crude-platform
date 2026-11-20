@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from ...ingest import IngestError, Obs, load_points, write_observations
 from ...models import AuditLog, Observation, ObservationRevision
-from ..deps import AppState, get_actor, get_db, get_state
+from ..deps import DB, AppState, get_actor, get_state
 
 router = APIRouter(tags=["series"])                # 兩個站點都有：只讀
 admin_router = APIRouter(tags=["series-admin"])    # 只在後台：錄入數據
@@ -27,7 +27,7 @@ class ManualEntry(BaseModel):
 
 
 @router.get("/series")
-def list_series(session: Session = Depends(get_db), state: AppState = Depends(get_state)):
+def list_series(session: Session = DB, state: AppState = Depends(get_state)):
     coverage = {code: (n, first, last) for code, n, first, last in session.execute(
         select(Observation.series_code, func.count(func.distinct(Observation.obs_date)),
                func.min(Observation.obs_date), func.max(Observation.obs_date))
@@ -47,7 +47,7 @@ def list_series(session: Session = Depends(get_db), state: AppState = Depends(ge
 
 @router.get("/series/{code}/data")
 def series_data(code: str, start: date | None = None, end: date | None = None, as_of: datetime | None = None,
-                session: Session = Depends(get_db), state: AppState = Depends(get_state)):
+                session: Session = DB, state: AppState = Depends(get_state)):
     if code not in state.cfg.series:
         raise HTTPException(404, f"沒有名為 {code} 的序列")
     df = load_points(session, [code], start, end, as_of=as_of.replace(tzinfo=None) if as_of else None)
@@ -56,7 +56,7 @@ def series_data(code: str, start: date | None = None, end: date | None = None, a
 
 
 @router.get("/series/{code}/revisions")
-def series_revisions(code: str, session: Session = Depends(get_db), state: AppState = Depends(get_state)):
+def series_revisions(code: str, session: Session = DB, state: AppState = Depends(get_state)):
     if code not in state.cfg.series:
         raise HTTPException(404, f"沒有名為 {code} 的序列")
     rows = session.scalars(select(ObservationRevision).where(ObservationRevision.series_code == code)
@@ -66,7 +66,7 @@ def series_revisions(code: str, session: Session = Depends(get_db), state: AppSt
 
 
 @admin_router.post("/observations")
-def manual_entry(body: ManualEntry, session: Session = Depends(get_db), actor: str = Depends(get_actor)):
+def manual_entry(body: ManualEntry, session: Session = DB, actor: str = Depends(get_actor)):
     try:
         stats = write_observations(
             session, [Obs(p.series_code, p.obs_date, p.value, "後台手動錄入") for p in body.points],

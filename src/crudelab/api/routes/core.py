@@ -12,7 +12,7 @@ from ...config import ConfigError
 from ...indicators import IndicatorEngine
 from ...ingest import latest_market_date
 from ...models import AuditLog, ImportBatch, Observation, Parameter
-from ..deps import AppState, get_db, get_engine, get_state
+from ..deps import DB, AppState, get_engine, get_state
 from ..security import current_user
 
 router = APIRouter(tags=["core"])                  # 兩個站點都有
@@ -21,7 +21,7 @@ health_router = APIRouter(tags=["health"])         # 兩個站點都有，不經
 
 
 @router.get("/overview")
-def overview(session: Session = Depends(get_db), state: AppState = Depends(get_state),
+def overview(session: Session = DB, state: AppState = Depends(get_state),
              engine: IndicatorEngine = Depends(get_engine)):
     visible = [engine.summary(code) for code, ind in state.cfg.indicators.items() if not ind.hidden]
     statuses = [s["status"] for s in visible]
@@ -46,7 +46,7 @@ def overview(session: Session = Depends(get_db), state: AppState = Depends(get_s
 
 
 @router.get("/freshness")
-def data_freshness(session: Session = Depends(get_db), state: AppState = Depends(get_state)):
+def data_freshness(session: Session = DB, state: AppState = Depends(get_state)):
     """每條被檢查的序列有沒有超過期限沒更新。規則在 config/freshness.yaml。"""
     from ...freshness import check
     return check(session, state.cfg)
@@ -61,7 +61,7 @@ def meta(state: AppState = Depends(get_state)):
 
 
 @admin_router.get("/audit")
-def audit(limit: int = 200, session: Session = Depends(get_db)):
+def audit(limit: int = 200, session: Session = DB):
     rows = session.scalars(select(AuditLog).order_by(AuditLog.id.desc()).limit(min(limit, 1000)))
     return [{"ts": a.ts, "actor": a.actor, "action": a.action, "entity": a.entity,
              "entity_id": a.entity_id, "detail": a.detail} for a in rows]

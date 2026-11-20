@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from ... import backup
 from ...models import AuditLog
-from ..deps import AppState, get_actor, get_db, get_state
+from ..deps import DB, AppState, get_actor, get_state
 
 admin_router = APIRouter(tags=["backups"])
 
@@ -32,7 +32,7 @@ def backup_status(state: AppState = Depends(get_state)):
 
 
 @admin_router.post("/backups")
-def backup_now(session: Session = Depends(get_db), state: AppState = Depends(get_state),
+def backup_now(session: Session = DB, state: AppState = Depends(get_state),
                actor: str = Depends(get_actor)):
     """立即做一份手動備份（含校驗）。等做完才回應。"""
     try:

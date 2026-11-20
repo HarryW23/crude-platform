@@ -28,7 +28,7 @@ from sqlalchemy.orm import Session
 
 from .. import auth
 from ..models import UserAccount
-from .deps import AppState, get_db, get_state
+from .deps import DB, AppState, get_state
 
 COOKIE = "crudelab_session"
 SAFE_METHODS = ("GET", "HEAD", "OPTIONS")
@@ -56,7 +56,7 @@ def required_role(site: str, method: str, path: str) -> str | None:
     return "analyst"
 
 
-def guard(request: Request, state: AppState = Depends(get_state), session: Session = Depends(get_db)) -> None:
+def guard(request: Request, state: AppState = Depends(get_state), session: Session = DB) -> None:
     request.state.user = None
     if not state.settings.auth_enabled:
         return

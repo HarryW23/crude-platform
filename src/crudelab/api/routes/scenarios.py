@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from ... import scenarios as service
 from ...models import ScenarioRow
-from ..deps import AppState, get_actor, get_db, get_state
+from ..deps import DB, AppState, get_actor, get_state
 
 router = APIRouter(tags=["scenarios"])
 
@@ -39,7 +39,7 @@ def _adjustment(a, state: AppState) -> dict:
 
 
 @router.get("/scenarios")
-def list_scenarios(session: Session = Depends(get_db)):
+def list_scenarios(session: Session = DB):
     rows = session.scalars(select(ScenarioRow).where(ScenarioRow.archived_at.is_(None))
                            .order_by(ScenarioRow.created_at))
     return [{"code": s.code, "name_zh": s.name_zh, "description": s.description, "created_at": s.created_at,
@@ -47,7 +47,7 @@ def list_scenarios(session: Session = Depends(get_db)):
 
 
 @router.post("/scenarios")
-def create_scenario(body: NewScenario, session: Session = Depends(get_db), actor: str = Depends(get_actor)):
+def create_scenario(body: NewScenario, session: Session = DB, actor: str = Depends(get_actor)):
     try:
         row = service.create(session, body.code, body.name_zh, body.description, actor)
     except service.ScenarioError as exc:
@@ -56,7 +56,7 @@ def create_scenario(body: NewScenario, session: Session = Depends(get_db), actor
 
 
 @router.delete("/scenarios/{code}")
-def archive_scenario(code: str, session: Session = Depends(get_db)):
+def archive_scenario(code: str, session: Session = DB):
     try:
         service.archive(session, code)
     except service.ScenarioError as exc:
@@ -65,14 +65,14 @@ def archive_scenario(code: str, session: Session = Depends(get_db)):
 
 
 @router.get("/scenarios/{code}/adjustments")
-def list_adjustments(code: str, session: Session = Depends(get_db), state: AppState = Depends(get_state)):
+def list_adjustments(code: str, session: Session = DB, state: AppState = Depends(get_state)):
     if session.get(ScenarioRow, code) is None:
         raise HTTPException(404, f"沒有名為 {code} 的情境")
     return [_adjustment(a, state) for a in service.adjustments(session, code)]
 
 
 @router.post("/scenarios/{code}/adjustments")
-def add_adjustment(code: str, body: NewAdjustment, session: Session = Depends(get_db),
+def add_adjustment(code: str, body: NewAdjustment, session: Session = DB,
                    state: AppState = Depends(get_state), actor: str = Depends(get_actor)):
     try:
         row = service.add_adjustment(session, state.cfg, code, body.target, body.date_from, body.date_to,
@@ -83,7 +83,7 @@ def add_adjustment(code: str, body: NewAdjustment, session: Session = Depends(ge
 
 
 @router.delete("/adjustments/{adjustment_id}")
-def remove_adjustment(adjustment_id: int, session: Session = Depends(get_db)):
+def remove_adjustment(adjustment_id: int, session: Session = DB):
     try:
         service.remove_adjustment(session, adjustment_id)
     except service.ScenarioError as exc:

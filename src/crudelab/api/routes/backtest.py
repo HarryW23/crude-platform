@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from ... import backtest as service
 from ...models import BacktestRun
-from ..deps import AppState, get_actor, get_db, get_state
+from ..deps import DB, AppState, get_actor, get_state
 
 router = APIRouter(tags=["backtest"])
 
@@ -35,13 +35,13 @@ def _head(row: BacktestRun) -> dict:
 
 
 @router.get("/backtests")
-def list_backtests(session: Session = Depends(get_db)):
+def list_backtests(session: Session = DB):
     service.mark_stale(session)
     return [_head(r) for r in session.scalars(select(BacktestRun).order_by(BacktestRun.id.desc()).limit(50))]
 
 
 @router.post("/backtests")
-def create_backtest(body: NewBacktest, session: Session = Depends(get_db), state: AppState = Depends(get_state),
+def create_backtest(body: NewBacktest, session: Session = DB, state: AppState = Depends(get_state),
                     actor: str = Depends(get_actor)):
     if body.step is not None and not 1 <= body.step <= 60:
         raise HTTPException(400, "評估間隔必須在 1 到 60 個交易日之間")
@@ -57,7 +57,7 @@ def create_backtest(body: NewBacktest, session: Session = Depends(get_db), state
 
 
 @router.get("/backtests/{run_id}")
-def get_backtest(run_id: int, session: Session = Depends(get_db)):
+def get_backtest(run_id: int, session: Session = DB):
     row = session.get(BacktestRun, run_id)
     if row is None:
         raise HTTPException(404, f"沒有編號為 {run_id} 的回測")

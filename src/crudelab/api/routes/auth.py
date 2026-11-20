@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from ... import auth
 from ...models import UserAccount, iso_utc
-from ..deps import AppState, get_actor, get_db, get_state
+from ..deps import DB, AppState, get_actor, get_state
 from ..security import COOKIE, clear_session_cookie, current_user, set_session_cookie
 
 router = APIRouter(tags=["auth"])
@@ -50,7 +50,7 @@ def _user(session: Session, u: UserAccount) -> dict:
 
 
 @router.post("/auth/login")
-def login(body: Login, response: Response, session: Session = Depends(get_db),
+def login(body: Login, response: Response, session: Session = DB,
           state: AppState = Depends(get_state)):
     if not state.settings.auth_enabled:
         raise HTTPException(400, "登錄功能沒有啟用")
@@ -68,7 +68,7 @@ def login(body: Login, response: Response, session: Session = Depends(get_db),
 
 
 @router.post("/auth/logout")
-def logout(request: Request, response: Response, session: Session = Depends(get_db),
+def logout(request: Request, response: Response, session: Session = DB,
            state: AppState = Depends(get_state)):
     auth.revoke(session, request.cookies.get(COOKIE))
     clear_session_cookie(response, state)
@@ -82,7 +82,7 @@ def me(request: Request, state: AppState = Depends(get_state)):
 
 @router.post("/auth/password")
 def change_own_password(body: PasswordChange, request: Request, response: Response,
-                        session: Session = Depends(get_db), state: AppState = Depends(get_state)):
+                        session: Session = DB, state: AppState = Depends(get_state)):
     """改自己的密碼。成功後其他地方的登錄全部失效，當前這個瀏覽器換發新的登錄。"""
     user = current_user(request)
     if user is None:
@@ -100,12 +100,12 @@ def change_own_password(body: PasswordChange, request: Request, response: Respon
 # ------------------------------ 帳號管理（後台） ------------------------------
 
 @admin_router.get("/users")
-def list_users(session: Session = Depends(get_db)):
+def list_users(session: Session = DB):
     return [_user(session, u) for u in session.scalars(select(UserAccount).order_by(UserAccount.id))]
 
 
 @admin_router.post("/users")
-def create_user(body: NewUser, session: Session = Depends(get_db), actor: str = Depends(get_actor)):
+def create_user(body: NewUser, session: Session = DB, actor: str = Depends(get_actor)):
     try:
         return _user(session, auth.create_user(session, body.username, body.password, body.role, actor))
     except auth.AuthError as exc:
@@ -113,7 +113,7 @@ def create_user(body: NewUser, session: Session = Depends(get_db), actor: str = 
 
 
 @admin_router.patch("/users/{user_id}")
-def update_user(user_id: int, body: UserPatch, session: Session = Depends(get_db),
+def update_user(user_id: int, body: UserPatch, session: Session = DB,
                 actor: str = Depends(get_actor)):
     try:
         user = auth.update_user(session, user_id, role=body.role, active=body.active, actor=actor)

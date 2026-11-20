@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from ... import journal as service
-from ..deps import AppState, get_actor, get_db, get_state
+from ..deps import DB, AppState, get_actor, get_state
 
 router = APIRouter(tags=["journal"])
 
@@ -26,13 +26,13 @@ class Cancel(BaseModel):
 
 
 @router.get("/views")
-def views(session: Session = Depends(get_db), state: AppState = Depends(get_state)):
+def views(session: Session = DB, state: AppState = Depends(get_state)):
     """全部觀點（含到期後的評分）和匯總統計。"""
     return service.overview(session, state.cfg)
 
 
 @router.post("/views")
-def create_view(body: NewView, session: Session = Depends(get_db), state: AppState = Depends(get_state),
+def create_view(body: NewView, session: Session = DB, state: AppState = Depends(get_state),
                 actor: str = Depends(get_actor)):
     try:
         row = service.create(session, state.cfg, actor=actor, **body.model_dump())
@@ -42,7 +42,7 @@ def create_view(body: NewView, session: Session = Depends(get_db), state: AppSta
 
 
 @router.post("/views/{view_id}/cancel")
-def cancel_view(view_id: int, body: Cancel, session: Session = Depends(get_db), actor: str = Depends(get_actor)):
+def cancel_view(view_id: int, body: Cancel, session: Session = DB, actor: str = Depends(get_actor)):
     try:
         service.cancel(session, view_id, body.reason, actor)
     except service.JournalError as exc:
