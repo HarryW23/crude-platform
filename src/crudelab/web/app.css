@@ -22,7 +22,9 @@ body { margin: 0; background: var(--page); color: var(--ink);
   font: 14px/1.55 system-ui, -apple-system, "PingFang TC", "Microsoft JhengHei", sans-serif; }
 header { display: flex; align-items: center; gap: 18px; padding: 0 20px; background: var(--surface);
   border-bottom: 1px solid var(--hairline); position: sticky; top: 0; z-index: 5; overflow-x: auto; }
-.brand { font-size: 15px; letter-spacing: .02em; }
+.brand { display: flex; align-items: center; gap: 6px; flex: none; text-decoration: none; }
+/* 標誌是外框化的 SVG（字母已轉成路徑），不依賴字體；來源與規格見倉庫 brand/README.md */
+.brand-logo img { display: block; height: 22px; width: auto; }
 nav { display: flex; align-items: center; }
 nav[hidden] { display: none; }
 header .spacer { flex: 1; }

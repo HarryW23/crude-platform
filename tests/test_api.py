@@ -161,6 +161,21 @@ def test_balance_scenario_and_analysis_api(loaded_client):
     assert client.get("/api/relations/NOPE").status_code == 404
 
 
+def test_brand_assets_are_served_and_font_independent(client):
+    """頁首和網站圖標引用的標誌檔都在；SVG 裡的字母已轉成路徑，不依賴任何字體。"""
+    import re
+
+    page = client.get("/").text
+    refs = re.findall(r'(?:href|src|srcset)="(/static/(?:brand/[^"]+|favicon\.svg))"', page)
+    assert {"/static/favicon.svg", "/static/brand/apple-touch-icon.png",
+            "/static/brand/crudelab-lockup-light.svg", "/static/brand/crudelab-lockup-dark.svg"} <= set(refs)
+    for ref in refs:
+        r = client.get(ref)
+        assert r.status_code == 200, ref
+        if ref.endswith(".svg"):
+            assert "<path" in r.text and not re.search(r"<text|font-family|@font-face|<image", r.text), ref
+
+
 def test_front_and_admin_are_separate_sites(sites, sample_path):
     front, admin = sites["front"], sites["admin"]
     assert front.get("/api/site").json()["site"] == "front" and admin.get("/api/site").json()["site"] == "admin"
