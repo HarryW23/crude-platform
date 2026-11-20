@@ -444,6 +444,27 @@ class PlaybookDef(Strict):
     impacts: list[ImpactDef] = Field(min_length=1)
 
 
+class AnalogDef(Strict):
+    """歷史事件類比：只記事實和出處。市場反應由 analogs.py 用平台裡的價格現算，不寫在配置裡。"""
+    code: str = Code
+    name_zh: str
+    date: date
+    category: EventCategory
+    region: str | None = None
+    supply_loss_mbd: float | None = Field(default=None, gt=0)
+    supply_note: str | None = None
+    description: str
+    sources: list[str] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _check(self) -> AnalogDef:
+        if any(not s.startswith("https://") for s in self.sources):
+            raise ValueError(f"類比 {self.code}：出處要寫 https:// 開頭的完整連結")
+        if self.supply_loss_mbd is not None and not self.supply_note:
+            raise ValueError(f"類比 {self.code}：寫了供應損失就要在 supply_note 寫明口徑和出處")
+        return self
+
+
 # ------------------------------ 推演設定 ------------------------------
 
 class HorizonDef(Strict):

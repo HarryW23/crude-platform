@@ -9,9 +9,10 @@ from sqlalchemy.orm import Session
 
 from ... import events as service
 from ... import scenarios
+from ...indicators import IndicatorEngine
 from ...llm import LLMError, LLMNotConfigured, get_provider
 from ...llm.tasks import extract_events
-from ..deps import AppState, get_actor, get_db, get_state
+from ..deps import AppState, get_actor, get_db, get_engine, get_state
 
 router = APIRouter(tags=["geo"])
 
@@ -140,6 +141,14 @@ def extract_flash(flash_id: int, session: Session = Depends(get_db), state: AppS
                            actor=f"{actor}+{provider.name}") for e in found]
     flash.extracted_at, flash.drafts = utcnow(), flash.drafts + len(rows)
     return {"drafts": len(rows), "dropped": dropped}
+
+
+@router.get("/analogs")
+def analog_library(category: str | None = None, state: AppState = Depends(get_state),
+                   engine: IndicatorEngine = Depends(get_engine)):
+    """歷史事件類比：事實和出處來自 config/geo/analogs.yaml，市場反應用平台裡的價格現算。"""
+    from ... import analogs
+    return analogs.library(engine, state.cfg, category or None)
 
 
 @router.get("/playbooks")

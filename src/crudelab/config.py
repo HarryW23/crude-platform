@@ -13,6 +13,7 @@ config/ 的結構：
     relations/*.yaml           關係模型（線性擬合）
     signals/*.yaml             方向信號
     geo/playbooks.yaml         地緣事件預案
+    geo/analogs.yaml           歷史事件類比（事實和出處；市場反應現算）
     projection.yaml            價格推演設定
     schedule.yaml              定時任務
     notifications.yaml         通知渠道與規則
@@ -46,6 +47,7 @@ from .calendars import build as build_calendar
 from .refinery import RefinerySpec, compile_model
 from .schema import (
     FREQUENCY_ORDER,
+    AnalogDef,
     AtomDef,
     BacktestSettings,
     BackupSettings,
@@ -107,6 +109,7 @@ class Config:
     relations: dict[str, RelationDef] = field(default_factory=dict)
     signals: dict[str, SignalDef] = field(default_factory=dict)
     playbooks: dict[str, PlaybookDef] = field(default_factory=dict)
+    analogs: dict[str, AnalogDef] = field(default_factory=dict)         # 歷史事件類比（geo/analogs.yaml）
     projection: ProjectionSettings | None = None
     schedule: ScheduleDef = field(default_factory=ScheduleDef)
     notifications: NotificationsDef = field(default_factory=NotificationsDef)
@@ -276,6 +279,9 @@ def load_config(config_dir: Path) -> Config:
                             description="模組內的相對權重；0 = 不參與合成。初始值來自 config/signals/，"
                                         "可在回測頁按校準結果採用新值")
                for sig in cfg.signals.values()]
+    analog_path = config_dir / "geo" / "analogs.yaml"
+    if analog_path.exists():
+        cfg.analogs = ld.keyed(ld.items(AnalogDef, analog_path), "歷史類比")
     playbook_path = config_dir / "geo" / "playbooks.yaml"
     if playbook_path.exists():
         cfg.playbooks = ld.keyed(ld.items(PlaybookDef, playbook_path), "事件預案")

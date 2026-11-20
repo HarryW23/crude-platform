@@ -8,6 +8,25 @@ const STATUS = { rumor: "傳聞", confirmed: "已確認", ongoing: "持續中", 
 const BIAS = { "-2": "強利空", "-1": "利空", "0": "中性", "1": "利多", "2": "強利多" };
 const options = (map, selected) => Object.entries(map).map(([k, v]) => `<option value="${k}" ${String(selected) === k ? "selected" : ""}>${v}</option>`).join("");
 
+const pctCell = (v) => v == null ? '<span class="muted">—</span>' : `<span class="${v > 0 ? "up" : v < 0 ? "down" : ""}">${signed(v * 100, 1)}%</span>`;
+
+async function drawAnalogs(box, category) {
+  const lib = await api(`/analogs${category ? `?category=${category}` : ""}`);
+  if (!lib.analogs.length) { box.innerHTML = '<p class="muted">這一類還沒有收錄歷史事件。</p>'; return; }
+  box.innerHTML = `<div class="scroll"><table><tr><th>事件</th><th class="n">供應損失</th>
+      ${lib.steps.map((s) => `<th class="n">${esc(s.name_zh)}後</th>`).join("")}<th class="n" title="之後 21 個交易日內相對基準的最大漲幅 / 最大跌幅">1 個月內最大</th>
+      <th class="n" title="${esc(lib.spread_name ?? "")}：1 個月後相對基準日的變化（美元/桶）">月差 1 個月</th></tr>
+    ${lib.analogs.map((a) => `<tr><td style="min-width:240px"><b>${esc(a.name_zh)}</b> <span class="tag">${esc(CATEGORY[a.category] ?? a.category)}</span>
+        <div class="muted">${a.date}${a.region ? "，" + esc(a.region) : ""}${a.base_date ? `；基準 ${a.base_date} 收盤 ${num(a.base_price)}` : ""}</div>
+        <div class="ink2">${esc(a.description)}</div>
+        <div class="muted">${a.sources.map((u, i) => `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">出處 ${i + 1}</a>`).join("　")}</div></td>
+      <td class="n">${a.supply_loss_mbd == null ? '<span class="muted">—</span>' : `${num(a.supply_loss_mbd, 2)} mb/d`}${a.supply_note ? `<div class="muted" style="max-width:200px;white-space:normal">${esc(a.supply_note)}</div>` : ""}</td>
+      ${a.status === "no_data" ? `<td class="n muted" colspan="${lib.steps.length + 2}">沒有這段時間的 ${esc(lib.anchor_name)} 數據</td>`
+        : lib.steps.map((s) => `<td class="n">${pctCell(a.moves[s.key])}</td>`).join("") +
+          `<td class="n">${pctCell(a.peak)}<div>${pctCell(a.trough)}</div></td><td class="n">${a.spread?.m1 == null ? '<span class="muted">—</span>' : signed(a.spread.m1)}</td>`}</tr>`).join("")}
+  </table></div>`;
+}
+
 export async function render(main) {
   const [events, playbooks, meta, llm, impacts, flashes] = await Promise.all([api("/events"), api("/playbooks"),
     api("/meta"), api("/llm"), api("/events/impacts"), api("/flashes?limit=40")]);
@@ -36,6 +55,10 @@ export async function render(main) {
         <textarea id="x-text" rows="5" placeholder="貼上文字…" ${llm.configured ? "" : "disabled"}></textarea>
         <div class="row" style="margin-top:8px"><button class="btn" id="x-run" ${llm.configured ? "" : "disabled"}>抽取成草稿</button></div><div id="x-msg"></div></div>
     </div>
+    <div class="panel"><h2>歷史類比 <span class="muted" style="font-weight:400;font-size:13px">同類事件當時的市場反應</span></h2>
+      <p class="sub">事實和出處來自 config/geo/analogs.yaml；價格反應用平台裡的 Brent（換月調整後）現算，基準是事件前最後一個交易日。沒有那段歷史數據的事件不顯示數字。新增事件時選了類別，這裡會跟著篩出同類。</p>
+      <div class="tabs" id="an-cat"><button data-cat="" class="on">全部</button>${Object.entries(CATEGORY).map(([k, v]) => `<button data-cat="${k}">${esc(v)}</button>`).join("")}</div>
+      <div id="analogs" style="margin-top:10px"></div></div>
     <div class="panel"><h2>原油快訊 <span class="muted" style="font-weight:400;font-size:13px">金十，每 10 分鐘同步，只收錄命中原油關鍵詞的</span></h2>
       ${flashes.configured ? "" : '<div class="msg warn">還沒有設定金十的 token（在服務器上運行 <span class="mono">crudelab secret set JIN10_TOKEN</span>），快訊不會更新。</div>'}
       ${flashes.items.length ? `<div class="scroll" style="max-height:420px"><table>
@@ -52,6 +75,14 @@ export async function render(main) {
     <div class="panel"><h2>事件庫</h2>${confirmed.length ? `<div class="scroll">${table(confirmed, false)}</div>` : '<p class="muted">還沒有事件。</p>'}</div>
     <div id="playbook"></div>`;
   const $ = (id) => main.querySelector("#" + id);
+  const analogBox = $("analogs");
+  const pickAnalogs = (cat) => {
+    main.querySelectorAll("#an-cat [data-cat]").forEach((b) => b.classList.toggle("on", b.dataset.cat === cat));
+    drawAnalogs(analogBox, cat).catch((e) => { analogBox.innerHTML = errorBox(e); });
+  };
+  main.querySelectorAll("#an-cat [data-cat]").forEach((b) => b.addEventListener("click", () => pickAnalogs(b.dataset.cat)));
+  $("e-category").addEventListener("change", (ev) => pickAnalogs(ev.target.value === "other" ? "" : ev.target.value));
+  pickAnalogs("");
   const reload = () => render(main);
 
   $("e-add").addEventListener("click", async () => {
