@@ -1,6 +1,6 @@
 """機構預測按報告期保存（#23）：能還原任意一期報告當時的數字，回測不用後來的修訂。"""
 import dataclasses
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 
 import pandas as pd
 import pytest
@@ -43,7 +43,7 @@ def test_daily_pull_without_issue_date_only_records_changes(session):
     for _ in range(3):                                                  # 每天取一次，數字一樣
         write_observations(session, [Obs(S, M, 2800.0)], "manual")
     session.commit()
-    assert len(issues(session)) == 1 and issues(session)[0][0] == datetime.utcnow().date()
+    assert len(issues(session)) == 1 and issues(session)[0][0] == datetime.now(UTC).date()
 
 
 def test_replay_any_issue(session):
