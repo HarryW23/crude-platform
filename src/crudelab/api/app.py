@@ -82,6 +82,7 @@ def create_app(settings: Settings | None = None, site: Site = "front") -> FastAP
                                      "請先運行：crudelab user add 用戶名 --role admin")
     for router in ROUTERS[site]:
         app.include_router(router, prefix="/api", dependencies=[Depends(guard)])   # 每個接口都先過訪問控制
+    app.include_router(core.health_router, prefix="/api")   # 健康檢查不用登錄，也不能依賴訪問控制要開的數據庫會話
 
     @app.get("/", include_in_schema=False)
     def index():

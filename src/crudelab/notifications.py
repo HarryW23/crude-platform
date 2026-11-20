@@ -110,6 +110,34 @@ def _send_email(channel: ChannelDef, title: str, body: str) -> str:
     return "ok"
 
 
+def _deliver_one(channel: ChannelDef, title: str, body: str, extra: dict) -> str:
+    try:
+        return (_send_email(channel, title, body) if channel.type == "email"
+                else _send_webhook(channel, title, body, extra))
+    except Exception as exc:                                # 通知出錯不能影響調用方
+        log.exception("通知渠道 %s 出錯", channel.code)
+        return f"發送失敗（{type(exc).__name__}）"
+
+
+def deliver(cfg: Config, title: str, body: str, *, event: str, channels: list[str] | None = None) -> dict[str, str]:
+    """不碰數據庫地直接發：給 crudelab watchdog 用。它在另一台機器上，被監控的數據庫連不上也要能發。
+
+    channels 不給就發到所有 default 為 true、enabled 為 true、已配置地址的渠道；後台的開關存在被監控那台的數據庫裡，
+    這裡讀不到，所以以配置文件為準。"""
+    title, body = credentials.redact(title)[:200], credentials.redact(body)[:3000]
+    results = {}
+    for channel in cfg.notifications.channels:
+        if channels is not None and channel.code not in channels:
+            continue
+        if channels is None and not (channel.default and channel.enabled):
+            continue
+        if not is_configured(channel):
+            results[channel.code] = f"還沒有設定 {credential_name(channel)}" if channels is not None else "未配置，跳過"
+            continue
+        results[channel.code] = _deliver_one(channel, title, body, {"event": event})
+    return results
+
+
 def send(cfg: Config, title: str, body: str, *, event: str, job_code: str | None = None,
          only: str | None = None, channels: list[str] | None = None,
          ignore_switches: bool = False) -> dict[str, str]:
@@ -129,12 +157,7 @@ def send(cfg: Config, title: str, body: str, *, event: str, job_code: str | None
                 continue
             if not ignore_switches and not is_configured(channel):
                 continue                                    # 沒配置的渠道平時不算失敗，只是不發
-            try:
-                results[channel.code] = (_send_email(channel, title, body) if channel.type == "email"
-                                         else _send_webhook(channel, title, body, {"event": event, "job": job_code}))
-            except Exception as exc:                        # 通知出錯不能影響任務
-                log.exception("通知渠道 %s 出錯", channel.code)
-                results[channel.code] = f"發送失敗（{type(exc).__name__}）"
+            results[channel.code] = _deliver_one(channel, title, body, {"event": event, "job": job_code})
     with db.session_scope() as session:
         session.add(Notification(job_code=job_code, event=event, title=title, body=body, results=results))
     return results

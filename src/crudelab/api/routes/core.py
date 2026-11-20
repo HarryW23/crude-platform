@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import JSONResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from ... import db
 from ...auth import ROLE_NAMES
 from ...config import ConfigError
 from ...indicators import IndicatorEngine
@@ -15,6 +17,7 @@ from ..security import current_user
 
 router = APIRouter(tags=["core"])                  # 兩個站點都有
 admin_router = APIRouter(tags=["admin"])           # 只在後台
+health_router = APIRouter(tags=["health"])         # 兩個站點都有，不經過訪問控制（它要在數據庫壞掉時也能回答）
 
 
 @router.get("/overview")
@@ -76,6 +79,35 @@ def site(request: Request, state: AppState = Depends(get_state)):
             "auth": {"enabled": enabled, "user": None if user is None else {
                 "username": user.username, "role": user.role, "role_name": ROLE_NAMES[user.role]}},
             "config_error": state.config_error if (user is not None or not enabled) else None}
+
+
+@health_router.get("/health")
+def health(require: str | None = None, state: AppState = Depends(get_state)):
+    """健康檢查（#33），給外部監控或 crudelab watchdog 定時調用。不用登錄，只回粗粒度的狀態，不含任何內部細節。
+
+    全部正常回 200，否則 503。檢查：
+      database   能連上數據庫並查詢
+      config     配置文件沒有錯（有錯時程序照用舊配置，但要有人去改）
+      scheduler  調度器兩分鐘內寫過心跳（每 30 秒寫一次）。只有 ?require=scheduler 時才算進總狀態：
+                 只開前台、或用 --no-scheduler 啟動時調度器本來就不跑
+    """
+    from ...models import SchedulerHeartbeat, utcnow
+    from ...scheduler import HEARTBEAT_FRESH
+    checks: dict[str, str] = {}
+    try:
+        with db.session_scope() as session:
+            session.execute(select(1))
+            beat = session.get(SchedulerHeartbeat, 1)
+        checks["database"] = "ok"
+        checks["scheduler"] = ("ok" if beat is not None and utcnow() - beat.at <= HEARTBEAT_FRESH
+                               else "stale" if beat is not None else "never_ran")
+    except Exception:                           # 不回傳異常原文：裡面可能有連接串
+        checks["database"], checks["scheduler"] = "error", "unknown"
+    checks["config"] = "error" if state.config_error else "ok"
+    required = ["database", "config", *(["scheduler"] if require == "scheduler" else [])]
+    ok = all(checks[k] == "ok" for k in required)
+    return JSONResponse({"status": "ok" if ok else "fail", "site": state.site, "checks": checks,
+                         "required": required}, status_code=200 if ok else 503)
 
 
 @admin_router.post("/admin/reload-config")

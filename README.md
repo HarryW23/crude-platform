@@ -269,9 +269,43 @@ Windows 把 `.venv/bin/` 換成 `.venv\Scripts\`。
 - **報告等數據導入完再生成。** 日報、周報設了 `after: [IMPORT_INBOX, PULL_EIA]`：到點後等收件夾那一輪導完、當天的 EIA 取完
   （包括重試）再生成，最多等 2 小時；等不到就照常生成，並在結果裡註明哪個沒完成。依賴失敗了也照常生成並註明。
 - 生成報告時如果數據還沒更新，報告就是舊數據的快照。日報的時間請排在數據導入之後。
-- 通知只在程序運行時才發得出來：整個程序掛掉或電腦關機時，沒有人會通知你。
+- 通知只在程序運行時才發得出來：整個程序掛掉或電腦關機時，它自己發不出通知。要知道這種情況，用下面的「掉線告警」。
 - 斷更檢查記成「失敗」是為了借用通知的機制，頁面上顯示為「有斷更」，不是程序出錯。
 - 命令行：`crudelab run-job` 列出任務，`crudelab run-job 代碼` 立即運行，`crudelab scheduler` 單獨運行調度器，`crudelab serve --no-scheduler` 不帶調度器啟動。
+
+### 掉線告警（看門狗）
+
+平台自己的通知只能在它活着時發。要在**程序崩潰、機器關機、斷網**時也收到告警，得由另一台機器來看：
+
+1. 在另一台機器上（例如你的 Mac，或任何一台長期開着的電腦）也裝一份 crudelab（同樣 `git clone` + 安裝），
+   保存群機器人地址：`crudelab secret set NOTIFY_WECOM_WEBHOOK`（和平台上一樣，不用另開群）。
+2. 先試一次，只檢查不發：
+
+```bash
+.venv/bin/crudelab watchdog http://平台機器的地址:8001 --require-scheduler --no-notify
+```
+
+3. 讓它每 5 分鐘跑一次。Mac / Linux 用 `crontab -e` 加一行（路徑換成你的）：
+
+```bash
+*/5 * * * * /path/to/crude-platform/.venv/bin/crudelab watchdog http://平台機器的地址:8001 --require-scheduler >> ~/.crudelab/watchdog.log 2>&1
+```
+
+   Windows 用「工作排程器」每 5 分鐘運行同一條命令；或者不用排程，直接 `crudelab watchdog 地址 --require-scheduler --loop 300` 常駐。
+
+規則：連續 2 次檢查失敗才告警（避免重啟時誤報），所以程序停了以後**最多約 10 分鐘**收到「平台無法訪問」；
+之後每 6 小時提醒一次（`notifications.yaml` 的 `repeat_hours`）；恢復時收到「平台已恢復」，附停機多久。
+告警沒送達任何群時下次運行會再發，命令退出碼為 2（0 = 正常，1 = 有問題）。
+
+檢查的是平台的健康檢查地址 `/api/health`（不用登錄，只回「正常 / 有問題」和粗粒度的檢查項，不含任何內部細節）：
+數據庫連得上、配置文件沒錯；加 `--require-scheduler`（檢查後台地址時用）時還要求調度器兩分鐘內有心跳。
+公司已有的監控系統（Zabbix、Prometheus、Uptime Kuma 等）也可以直接查這個地址：正常回 200，有問題回 503。
+
+另一台機器要連得上平台：平台預設只聽本機（127.0.0.1），部署時用 `--host 0.0.0.0` 對內網開放（同時開啟登錄，見「登錄」一節；
+`/api/health` 本身不用登錄）。部署機器定下來之前，可以先在同一台 Mac 上用 `http://127.0.0.1:8001` 試。
+
+注意：看門狗放在**平台同一台機器**上只能發現程序掛掉，發現不了關機和斷網；看門狗自己也可能停掉，所以放在一台你常用、
+出問題時你自己會發現的機器上最穩妥。
 
 ## 數據與接口
 
@@ -513,6 +547,7 @@ src/crudelab/
   jobs.py scheduler.py  定時任務：動作與執行、時間與調度
   switches.py           後台的開關
   notifications.py      失敗通知
+  watchdog.py           掉線告警（從另一台機器檢查 /api/health）
   freshness.py          數據斷更檢查
   curves.py             期貨曲線快照與形態
   contracts.py          合約日曆與換月處理

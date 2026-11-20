@@ -149,3 +149,27 @@ def test_two_admin_replicas_never_run_the_same_slot_twice(cluster):
     eventually(lambda: any(code == "IMPORT_INBOX" for code, *_ in runs()), timeout=30, what="調度器跑過一次")
     time.sleep(5)                                            # 兩個副本都至少再檢查了兩輪
     assert all(count == 1 for *_, count in runs())
+
+
+def test_watchdog_alerts_when_a_process_stops_and_on_recovery(cluster, cfg, tmp_path, monkeypatch):
+    """#33 的完成標準：程序停了，看門狗在兩次檢查內發出告警（每 5 分鐘一次 = 10 分鐘內）。"""
+    from crudelab import watchdog
+    sent = []
+    real_post = httpx.post
+
+    def post(url, json=None, timeout=None):
+        if "qyapi" not in url:
+            return real_post(url, json=json, timeout=timeout)
+        sent.append(json["text"]["content"])
+        return httpx.Response(200, json={"errcode": 0}, request=httpx.Request("POST", url))
+    monkeypatch.setattr(httpx, "post", post)
+    hook = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=mp-test"    # secret-scan: ok（假地址）
+    monkeypatch.setenv("NOTIFY_WECOM_WEBHOOK", hook)
+    url, state = cluster["urls"]["admin2"], tmp_path / "wd.json"
+    check = lambda: watchdog.run_once(cfg, url, require_scheduler=True, state_path=state)  # noqa: E731
+    assert check()["ok"]
+    cluster["procs"]["admin2"].terminate()
+    cluster["procs"]["admin2"].wait(timeout=15)
+    assert check()["event"] is None                                  # 第一次失敗不告警（可能只是重啟）
+    assert check()["event"] == "failure"
+    assert len(sent) == 1 and "平台無法訪問" in sent[0] and "連不上" in sent[0]

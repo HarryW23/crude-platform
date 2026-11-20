@@ -11,7 +11,8 @@
   crudelab scheduler                  單獨運行調度器（serve 預設已包含）
   crudelab data-needs [--output 文件] 生成數據與接口需求清單
   crudelab secret set 名稱            保存一個 API key（輸入不回顯；另有 list / unset）
-  crudelab user add 名字 --role admin  建立帳號（另有 list / passwd / role / disable / enable）
+  crudelab user add 名字 --role admin  建立帳號（另有 list / passwd / role / disable / enable / unlock）
+  crudelab watchdog 平台地址           從另一台機器檢查平台是否在運行，掛了發群通知（見 watchdog.py）
   crudelab purge-source demo          刪除某個數據源的全部數據點
 """
 from __future__ import annotations
@@ -196,6 +197,34 @@ def cmd_pull(args) -> int:
         stats = write_observations(session, observations, args.source)
     print(f"{args.source}：新增 {stats['inserted']}，更新 {stats['updated']}，未變 {stats['unchanged']}")
     return 0
+
+
+def cmd_watchdog(args) -> int:
+    """看門狗：退出碼 0 = 正常，1 = 平台有問題，2 = 有問題且告警沒送達任何渠道。"""
+    import time as _time
+    from datetime import datetime as _dt
+
+    from . import watchdog
+    from .config import ConfigError, load_config
+    try:
+        cfg = load_config(get_settings().config_dir)
+    except ConfigError as exc:
+        print(exc, file=sys.stderr)
+        return 1
+    unknown = [c for c in args.channel or [] if c not in {ch.code for ch in cfg.notifications.channels}]
+    if unknown:
+        print(f"notifications.yaml 裡沒有這些渠道：{'、'.join(unknown)}", file=sys.stderr)
+        return 1
+    while True:
+        r = watchdog.run_once(cfg, args.url, require_scheduler=args.require_scheduler, failures=args.failures,
+                              channels=args.channel or None, notify=not args.no_notify)
+        stamp = _dt.now().strftime("%Y-%m-%d %H:%M:%S")
+        print(f"{stamp} {'正常' if r['ok'] else '有問題：' + r['reason']}"
+              + (f"；已發「{r['title']}」：{r['results'] or '沒有可用的渠道'}" if r["event"] else ""), flush=True)
+        code = 0 if r["ok"] else (2 if r["event"] and not r["delivered"] else 1)
+        if not args.loop:
+            return code
+        _time.sleep(args.loop)
 
 
 def cmd_user(args) -> int:
@@ -862,6 +891,14 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("name", nargs="?")
     p.add_argument("--stdin", action="store_true", help="從標準輸入讀（給腳本用）；預設是不回顯的互動輸入")
     p.set_defaults(func=cmd_secret)
+    p = sub.add_parser("watchdog", help="從另一台機器檢查平台是否在運行，掛了發群通知")
+    p.add_argument("url", help="平台地址，例如 http://192.168.1.20:8001（後台地址配 --require-scheduler）")
+    p.add_argument("--require-scheduler", action="store_true", help="調度器沒有心跳也算有問題（檢查後台時用）")
+    p.add_argument("--failures", type=int, default=2, help="連續失敗幾次才告警（預設 2，避免重啟時誤報）")
+    p.add_argument("--channel", action="append", help="只發到這個渠道（可重複）；不給就發所有 default 渠道")
+    p.add_argument("--loop", type=int, metavar="秒", help="常駐：每隔這麼多秒檢查一次；不給就檢查一次後退出")
+    p.add_argument("--no-notify", action="store_true", help="只檢查不發通知（試用時用）")
+    p.set_defaults(func=cmd_watchdog)
     p = sub.add_parser("user", help="帳號管理")
     p.add_argument("action", choices=["list", "add", "passwd", "role", "disable", "enable", "unlock"])
     p.add_argument("username", nargs="?")
