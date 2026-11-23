@@ -77,8 +77,8 @@ series:
   - {code: PP_CN, name_zh: 聚丙烯期貨主力, commodity: PP, location: CHINA, kind: futures, unit: CNY/t, module: refinery,
      aliases: ["PP主力", "DCE PP"], lseg: {ric: "DCCPv1", field: SETTLE}}
   - {code: LLDPE_CN, name_zh: LLDPE 期貨主力, commodity: LLDPE, location: CHINA, kind: futures, unit: CNY/t, module: refinery,
-     aliases: ["L主力", "塑料主力", "DCE LLDPE"]}
+     aliases: ["L主力", "塑料主力", "DCE LLDPE"], lseg: {ric: "DLLoi1", field: SETTLE}}
   - {code: PTA_CN, name_zh: PTA 期貨主力, commodity: PTA, location: CHINA, kind: futures, unit: CNY/t, module: refinery,
      aliases: ["TA主力", "PTA主力"], lseg: {ric: "CTAoi1", field: SETTLE}}
   - {code: MEG_CN, name_zh: 乙二醇期貨主力, commodity: MEG_CHEM, location: CHINA, kind: futures, unit: CNY/t, module: refinery,
-     aliases: ["EG主力", "乙二醇主力"]}
+     aliases: ["EG主力", "乙二醇主力"], lseg: {ric: "DEGoi1", field: SETTLE}}

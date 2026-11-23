@@ -90,9 +90,11 @@ PX_CFR_CHINA             PXCFRCNSPOT      TRDPRC_1
 BENZENE_FOB_KOREA        BZFOBKRSPOT      TRDPRC_1
 ETHYLENE_CFR_NEA         ETHYCFRNEASPOT   TRDPRC_1
 PP_CN                    DCCPv1           SETTLE
+LLDPE_CN                 DLLoi1           SETTLE
 PTA_CN                   CTAoi1           SETTLE
+MEG_CN                   DEGoi1           SETTLE
 
-# 下面 12 條可能在路透上，但還不知道 RIC（現貨評估價通常要另外訂閱 Platts / Argus）：
+# 下面 10 條可能在路透上，但還不知道 RIC（現貨評估價通常要另外訂閱 Platts / Argus）：
 # UPPER_ZAKUM_DIFF       ?    上扎庫姆升貼水
 # EKOFISK_DIFF           ?    埃科菲斯克升貼水
 # JOHAN_SVERDRUP_DIFF    ?    約翰斯維德魯普升貼水
@@ -103,5 +105,3 @@ PTA_CN                   CTAoi1           SETTLE
 # NWE_JET                ?    西北歐航煤
 # NWE_NAPHTHA            ?    西北歐石腦油
 # PROPYLENE_CFR_CHINA    ?    丙烯 CFR 中國
-# LLDPE_CN               ?    LLDPE 期貨主力
-# MEG_CN                 ?    乙二醇期貨主力
