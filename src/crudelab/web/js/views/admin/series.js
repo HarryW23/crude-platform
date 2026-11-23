@@ -30,7 +30,7 @@ export async function render(main) {
     const list = rows.filter((s) => (!q || (s.code + s.name_zh).toLowerCase().includes(q)) && (!mod || s.module === mod) && (!only || s.n)
       && (!stale || ["stale", "never"].includes(health[s.code]?.status)));
     $("tbl").innerHTML = `<tr><th>代碼</th><th>名稱</th><th>模組</th><th>類型</th><th>頻率</th><th>單位</th><th class="n">數據點</th><th>最新日期</th><th class="n">最新值</th><th>來源</th><th>更新狀態</th></tr>` +
-      list.map((s) => `<tr class="click" data-code="${s.code}"><td class="mono">${s.code}</td><td>${esc(s.name_zh)}</td><td class="nw">${MODULES[s.module]}</td>
+      list.map((s) => `<tr class="click" data-code="${s.code}"><td class="mono">${s.code}</td><td>${esc(s.name_zh)}${s.proxy ? ` <span class="tag warn" title="${esc("用替代數據：" + s.proxy)}">替代</span>` : ""}</td><td class="nw">${MODULES[s.module]}</td>
         <td>${s.kind}</td><td>${s.frequency}</td><td class="nw">${esc(s.unit)}</td>
         <td class="n">${s.n || '<span class="tag warn">缺數據</span>'}</td><td class="nw">${s.last_date ?? ""}</td>
         <td class="n">${s.n ? num(s.last_value, 4) : ""}</td><td>${esc(s.last_source ?? "")}</td><td>${healthTag(s.code)}</td></tr>`).join("");
@@ -42,7 +42,8 @@ export async function render(main) {
     const [data, revisions] = await Promise.all([api(`/series/${code}/data`), api(`/series/${code}/revisions`)]);
     const box = $("detail");
     box.innerHTML = `<div class="panel inset"><h2>${esc(s.name_zh)} <span class="mono muted">${code}</span></h2>
-      <p class="sub">${esc(s.unit)} · ${s.frequency}${s.benchmark ? " · 基準 " + esc(s.benchmark) : ""}</p><div id="chart"></div>
+      <p class="sub">${esc(s.unit)} · ${s.frequency}${s.benchmark ? " · 基準 " + esc(s.benchmark) : ""}${s.ric ? ` · 路透 <span class="mono">${esc(s.ric)}</span>` : ""}</p>
+      ${s.proxy ? `<div class="msg warn">這條序列用的是替代數據：${esc(s.proxy)}。</div>` : ""}<div id="chart"></div>
       <div class="row" style="margin-top:10px"><b>手動錄入</b><input type="date" id="md" aria-label="日期">
         <input id="mv" class="num" placeholder="數值" inputmode="decimal" aria-label="數值"><button class="btn" id="msave">保存</button>
         <span id="mmsg" class="muted">手動錄入的值優先於其他來源；改寫已有的值時，舊值會留在修訂歷史裡。</span></div>

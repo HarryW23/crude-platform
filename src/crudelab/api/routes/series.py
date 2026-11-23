@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from ...data_needs import ric_of
 from ...ingest import IngestError, Obs, load_points, write_observations
 from ...models import AuditLog, Observation, ObservationRevision
 from ..deps import DB, AppState, get_actor, get_state
@@ -40,6 +41,7 @@ def list_series(session: Session = DB, state: AppState = Depends(get_state)):
         out.append({"code": s.code, "name_zh": s.name_zh, "commodity": s.commodity, "location": s.location,
                     "kind": s.kind, "unit": s.unit, "frequency": s.frequency, "module": s.module,
                     "benchmark": s.benchmark, "n": n, "first_date": first, "last_date": last,
+                    "ric": ric_of(s), "proxy": s.lseg.proxy if s.lseg else None,
                     "last_value": float(latest.loc[s.code, "value"]) if n and latest is not None else None,
                     "last_source": latest.loc[s.code, "source_code"] if n and latest is not None else None})
     return out

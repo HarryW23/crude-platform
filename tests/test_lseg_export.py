@@ -231,3 +231,15 @@ def test_chain_expansion_never_hangs_and_library_thread_errors_stay_quiet(fake_l
     assert client.chain("0#GX0010551S1630M:") == []
     assert real_time.monotonic() - started < 2
     assert "Traceback" not in capsys.readouterr().err
+
+
+def test_proxy_rics_are_labelled_in_rics_file_and_series_api(cfg, client):
+    """用替代數據的序列：lseg_rics.txt 行尾寫明（腳本讀的時候當註釋），序列接口帶出說明給後台顯示。"""
+    script = load_script()
+    text = lseg_rics_text(cfg)
+    line = next(x for x in text.splitlines() if x.startswith("OMAN_M1 "))
+    assert "# 替代：" in line and script.strip_comment(line).split() == ["OMAN_M1", "OMANCALMc1", "TRDPRC_1"]
+    rows = {r["code"]: r for r in client.get("/api/series").json()}
+    assert rows["OMAN_M1"]["ric"] == "OMANCALMc1" and rows["OMAN_M1"]["proxy"].startswith("阿曼掉期評估價")
+    assert rows["BRENT_M1"]["ric"] == "LCOc1" and rows["BRENT_M1"]["proxy"] is None
+    assert rows["JAPAN_NAPHTHA"]["ric"] == "NAF-1H-TYO" and rows["JAPAN_NAPHTHA"]["proxy"] is None

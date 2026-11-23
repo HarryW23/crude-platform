@@ -26,7 +26,7 @@ series:
   - {code: SG_VLSFO, name_zh: 新加坡 0.5% 低硫燃料油, commodity: VLSFO, location: SINGAPORE, kind: spot, unit: USD/t, module: refinery,
      aliases: ["Singapore VLSFO", "Sing Marine 0.5%", "新加坡低硫"]}
   - {code: JAPAN_NAPHTHA, name_zh: 日本到岸石腦油, commodity: NAPHTHA, location: JAPAN, kind: spot, unit: USD/t, module: refinery,
-     aliases: ["Naphtha C+F Japan", "Japan Naphtha", "MOPJ", "日本石腦油"]}
+     aliases: ["Naphtha C+F Japan", "Japan Naphtha", "MOPJ", "日本石腦油"], lseg: {ric: "NAF-1H-TYO", field: SETTLE}}
 
   # ---------- 西北歐 ----------
   - {code: NWE_EUROBOB, name_zh: 西北歐 Eurobob 汽油, commodity: GASOLINE, location: NWE, kind: spot, unit: USD/t, module: refinery,
@@ -38,7 +38,8 @@ series:
   - {code: NWE_NAPHTHA, name_zh: 西北歐石腦油, commodity: NAPHTHA, location: NWE, kind: spot, unit: USD/t, module: refinery,
      aliases: ["NWE Naphtha", "Naphtha CIF NWE"]}
   - {code: RDAM_HSFO_35, name_zh: 鹿特丹 3.5% 燃料油, commodity: HSFO, location: NWE, kind: spot, unit: USD/t, module: refinery,
-     aliases: ["Rotterdam 3.5% Barges", "Rdam HSFO"]}
+     aliases: ["Rotterdam 3.5% Barges", "Rdam HSFO"],
+     lseg: {ric: "UXc1", field: SETTLE, proxy: "NYMEX 歐洲 3.5% 燃料油駁船（Platts）期貨 M1，不是現貨評估價"}}
 
   # ---------- 中國：成品油（均為含稅價） ----------
   - {code: SD_GASOLINE_92, calendar: CN, name_zh: 山東地煉 92# 汽油, commodity: GASOLINE, location: SHANDONG, kind: spot, unit: CNY/t, module: refinery,

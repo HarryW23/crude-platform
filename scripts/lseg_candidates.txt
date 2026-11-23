@@ -7,22 +7,17 @@
 # 已確認、寫進配置的（2026-11-23 兩輪）：迪拜掉期 M1–M12、穆爾班、Brent-Dubai EFS、ESPO、Forties、Bonny Light、
 # WTI MEH、CPC、新加坡 92 汽油 / 10ppm 柴油 / 航煤 / 石腦油 / 380、Eurobob、PX、純苯、乙烯、
 # 運費 TD3C / TD15 / TD20 / TD25（Baltic 指數 .BMEG / .BAWC / .BAWU / .BAUM）、
-# 國內期貨主力 FU（SFUoi1）、LU（ILUcv1）、BU（SBUoi1）、PP（DCCPv1）、PTA（CTAoi1）。
+# 國內期貨主力 FU（SFUoi1）、LU（ILUcv1）、BU（SBUoi1）、PP（DCCPv1）、PTA（CTAoi1）、迪拜現貨（DUB-1M）、
+# 日本石腦油（路透前半月評估 NAF-1H-TYO）；
+# 替代品（配置裡帶 proxy 說明，後台序列頁標「替代」）：阿曼、烏拉爾、WTI 米德蘭、Mars、鹿特丹 3.5% 燃料油。
 # 這台機器上鏈（0#…）一個都展不開，不影響：需要的合約都有連續合約 RIC 可以直接取。
 
 # ---- 國內期貨主力：c1 是最近月不是主力；cv1 / coi1 這個帳號沒權限，改試 v1 / oi1（PP、PTA 就是這樣找到的）----
 LLDPE_CN             | | DLLv1 DLLoi1 DLLc2
 MEG_CN               | | DEGv1 DEGoi1 DEGc2
 
-# ---- 只有替代品，等決定用不用（第二輪已確認：原本的那個數沒權限或路透上沒有）----
-DUBAI_CASH           | | DUB-1M
-OMAN_M1              | | OMANCALMc1
-URALS_DIFF           | | BFO-URL-NWE BFO-URL-E
+# ---- 量級可疑，先不用：在 Workspace 裡人工確認含義後再決定（升貼水一般在 ±3 美元，這條是 20 多）----
 EKOFISK_DIFF         | | BFO-EKO
-WTI_MIDLAND_DIFF     | | WTIMIDUSDFMc1
-MARS_DIFF            | | MRSUSSWDMc1
-JAPAN_NAPHTHA        | | NAF-1H-TYO NAF-2H-TYO SNJFc1
-RDAM_HSFO_35         | | UXc1
 
 # ---- 路透上只有 Platts / Argus / General Index 的版本，這個帳號沒權限（第二輪錯誤代碼 UserNotPermission）----
 # 要的話需要另外訂閱（待辦 #5）；開通後再跑 find 就能直接找到
