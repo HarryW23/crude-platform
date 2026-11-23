@@ -225,3 +225,13 @@ def test_files_still_tied_to_the_reuters_addin_are_rejected(session, settings, t
     # 普通公式、#N/A（路透導出裡常見的休市空值）、名字裡碰巧有 TR 的函數：照常導入
     for ok in ("=B3*0.95", "=TRIM(B3)", "=STR(1)", "#N/A"):
         assert _cols(preview(book(ok)), "價格")["LCOc1"]["series_code"] == "BRENT_M1"
+
+
+def test_preview_warns_about_repeated_quotes(session, settings):
+    """導入預覽：升貼水連續 5 天以上同一個數，提醒是數據商沿用舊值；期貨結算價不變不提醒。"""
+    days = [date(2026, 9, 1) + timedelta(days=i) for i in range(10)]
+    lines = ["Date,FORTIES_DIFF,BRENT_M1"] + [f"{d},{1.15 if i < 7 else 0.2 * i},80" for i, d in enumerate(days)]
+    preview = preview_file(session, settings, "\n".join(lines).encode(), "r.csv", "reuters_xls")
+    hits = [w for w in preview["warnings"] if "連續" in w]
+    assert len(hits) == 1 and hits[0].startswith("FORTIES_DIFF（福蒂斯升貼水）有 1 段連續 5 次以上相同的值")
+    assert "從 2026-09-01 起連續 7 個數據點都是 1.15" in hits[0]

@@ -9,8 +9,10 @@ export async function render(main) {
   const healthTag = (code) => {
     const h = health[code];
     if (!h) return '<span class="muted">—</span>';
-    const [cls, text] = HEALTH[h.status];
-    const tip = h.status === "ignored" ? "在 freshness.yaml 的 ignore 裡" : `${h.rule}${h.lag == null ? "" : `；目前 ${h.lag}`}`;
+    const [cls, text] = h.repeat ? ["bad", "沿用舊值"] : HEALTH[h.status];
+    const tip = h.status === "ignored" ? "在 freshness.yaml 的 ignore 裡"
+      : h.repeat ? `${h.repeat.text}：多半是數據商在沿用舊值，不是新報價（規則見 freshness.yaml 的 repeats）`
+      : `${h.rule}${h.lag == null ? "" : `；目前 ${h.lag}`}`;
     return `<span class="tag ${cls}" title="${esc(tip)}">${text}</span>`;
   };
   main.innerHTML = `<div class="panel"><h2>序列字典</h2>
@@ -19,7 +21,7 @@ export async function render(main) {
       <select id="mod" aria-label="模組"><option value="">全部模組</option>${Object.entries(MODULES).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}</select>
       <label><input type="checkbox" id="only"> 只看有數據的</label>
       <label><input type="checkbox" id="stale"> 只看斷更的${fresh.problems ? `（${fresh.problems}）` : ""}</label></div>
-    ${fresh.problems ? `<div class="msg warn">有 ${fresh.problems} 條序列超過期限沒有更新。判斷規則在 config/freshness.yaml，滑鼠停在「斷更」上可以看具體期限。</div>` : ""}
+    ${fresh.problems ? `<div class="msg warn">有 ${fresh.problems} 條序列超過期限沒有更新，或最新的值已經連續很多天沒變（沿用舊值）。判斷規則在 config/freshness.yaml，滑鼠停在標籤上可以看具體原因。</div>` : ""}
     <div id="detail"></div><div class="scroll"><table id="tbl"></table></div></div>`;
   const $ = (id) => main.querySelector("#" + id);
 

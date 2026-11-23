@@ -126,3 +126,52 @@ def test_scheduled_and_visible_on_both_sites(sites, session, cfg, settings):
         assert body["problems"] == 1 and body["rows"][0]["code"] == "WTI_M1"
     with db.session_scope() as s:
         assert s.query(Observation).count() == 1
+
+
+def _days(n, end=TODAY):
+    """end 之前（含）的 n 個工作日，按時間順序。"""
+    out, d = [], end
+    while len(out) < n:
+        if d.weekday() < 5:
+            out.append(d)
+        d -= timedelta(days=1)
+    return out[::-1]
+
+
+def test_repeated_quotes_count_as_stale(session, cfg):
+    """升貼水、現貨連續 5 天以上同一個數：數據商在沿用舊值，日期每天都是新的，原來的斷更檢查看不出來。"""
+    days = _days(12)
+    for i, d in enumerate(days):
+        put(session, "BONNY_LIGHT_DIFF", d, 1.55 if i >= 4 else 1.0 + i / 10)      # 最後 8 天都是 1.55
+        put(session, "FORTIES_DIFF", d, 0.3 if i >= 8 else 0.1 * i)               # 最後 4 天相同：還不算
+        put(session, "BRENT_M1", d, 80.0)                                          # 期貨：不查重複
+    r = rows(session, cfg)
+    bonny = r["BONNY_LIGHT_DIFF"]
+    assert bonny["status"] == "stale" and bonny["lag"] == 0
+    assert bonny["repeat"] == {"since": days[4].isoformat(), "n": 8, "value": 1.55,
+                               "text": f"從 {days[4]} 起連續 8 個數據點都是 1.55"}
+    assert freshness.summary_line(bonny) == (f"邦尼輕質升貼水：從 {days[4]} 起連續 8 個數據點都是 1.55，"
+                                             "多半是數據商在沿用舊值，不是新報價")
+    assert r["FORTIES_DIFF"]["status"] == "fresh" and "repeat" not in r["FORTIES_DIFF"]
+    assert r["BRENT_M1"]["status"] == "fresh" and "repeat" not in r["BRENT_M1"]
+
+    # 規則可以改：max_run、加查某條期貨、忽略某條升貼水
+    rule = cfg.freshness.repeats
+    cfg.freshness.repeats = rule.model_copy(update={"max_run": 4, "series": ["BRENT_M1"],
+                                                    "ignore": ["BONNY_LIGHT_DIFF"]})
+    try:
+        r = rows(session, cfg)
+        assert r["FORTIES_DIFF"]["repeat"]["n"] == 4 and r["BRENT_M1"]["repeat"]["n"] == 12
+        assert r["BONNY_LIGHT_DIFF"]["status"] == "fresh"
+    finally:
+        cfg.freshness.repeats = rule
+
+
+def test_repeat_rule_is_validated(tmp_path):
+    root = tmp_path / "config"
+    shutil.copytree(PROJECT_ROOT / "config", root)
+    data = yaml.safe_load((root / "freshness.yaml").read_text(encoding="utf-8"))
+    data["repeats"] = {"max_run": 5, "series": ["NOPE"]}
+    (root / "freshness.yaml").write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+    with pytest.raises(ConfigError, match="repeats.series：NOPE 不是序列"):
+        load_config(root)

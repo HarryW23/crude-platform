@@ -10,6 +10,10 @@
 # required   必須有數據的關鍵序列：從沒有過數據也會報
 # ignore     不檢查的序列
 # overrides  個別序列的規則，例如中國市場的數據遇到長假時放寬
+# repeats    重複報價：同一個數連續出現 max_run 次以上，算數據商在沿用舊值（不是新報價），也報斷更；
+#            導入預覽時文件裡有這種長段也會提醒。只看日度序列。
+#            kinds 要檢查的序列類型（期貨結算價、匯率在假期或冷門月份不變是正常的，預設不查）；
+#            series 另外要查的序列；ignore 不查的（例如本來就每周評估一次、平時每天沿用的價格）
 defaults:
   daily:     {max_days: 3, count: weekdays}       # 周五的數據，下周三還沒更新到新日期就報
   weekly:    {max_days: 14}                       # EIA 周報在下周三發佈，正常最多隔 13 天左右
@@ -19,6 +23,7 @@ defaults:
 watch: has_data
 required: []
 ignore: []
+repeats: {max_run: 5, kinds: [spot, diff], series: [], ignore: []}
 overrides:
   - {series: ARAB_LIGHT_OSP_ASIA, max_days: 40, basis: received}
   - {series: ARAB_MEDIUM_OSP_ASIA, max_days: 40, basis: received}

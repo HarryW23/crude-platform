@@ -706,6 +706,15 @@ class FreshnessOverride(FreshnessRule):
     series: str
 
 
+class RepeatRule(Strict):
+    """重複報價：同一個數連續出現 max_run 次以上，當作數據商沿用舊值（見 repeats.py）。
+    只看日度序列。kinds 是要檢查的序列類型：期貨結算價、匯率在假期或冷門月份不變是正常的，預設不查。"""
+    max_run: int = Field(default=5, ge=2, le=250)
+    kinds: list[SeriesKind] = ["spot", "diff"]
+    series: list[str] = []          # 另外要檢查的序列（不在 kinds 裡的）
+    ignore: list[str] = []          # 不檢查的序列（例如本來就每周才更新一次、每天沿用是正常的）
+
+
 class FreshnessDef(Strict):
     defaults: dict[Literal["daily", "weekly", "monthly", "quarterly"], FreshnessRule] = {
         "daily": FreshnessRule(max_days=3, count="weekdays"),
@@ -717,6 +726,7 @@ class FreshnessDef(Strict):
     required: list[str] = []                            # 必須有數據的序列：從沒有過數據也報
     ignore: list[str] = []                              # 不檢查的序列
     overrides: list[FreshnessOverride] = []
+    repeats: RepeatRule = RepeatRule()
 
 
 # ------------------------------ 回測 ------------------------------

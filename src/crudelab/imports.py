@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from .config import normalize_alias
 from .connectors.excel import SheetPreview, parse_workbook
-from .ingest import write_observations
+from .ingest import Obs, write_observations
 from .models import AuditLog, DataSource, ImportBatch, Series, SeriesAlias
 from .settings import Settings
 
@@ -39,6 +39,18 @@ def _duplicates(previews: list[SheetPreview], mapping: dict[str, str | None] | N
             for code, refs in seen.items() if len(refs) > 1]
 
 
+def _repeat_warnings(settings: Settings, observations: list[Obs]) -> list[str]:
+    """文件裡要檢查的序列有很長一段相同的值（數據商在沿用舊值）時提醒，規則見 config/freshness.yaml 的 repeats。"""
+    if not observations:
+        return []
+    from .config import load_config
+    from .repeats import import_warnings
+    by_series: dict[str, list[tuple[date, float]]] = {}
+    for o in observations:
+        by_series.setdefault(o.series_code, []).append((o.obs_date, o.value))
+    return import_warnings(load_config(settings.config_dir), by_series)
+
+
 def nothing_importable(preview: dict) -> str | None:
     """整個文件沒有任何能入庫的數據時，回傳原因（給人看）；有就回傳 None。
     這種文件不能算「導入成功」：格式變了、每天都「成功」卻沒有數據，要很久才會被發現。"""
@@ -63,7 +75,7 @@ def preview_file(session: Session, settings: Settings, content: bytes, filename:
     if not stored.exists():
         stored.write_bytes(content)
     try:
-        previews, _ = parse_workbook(stored, make_resolver(session))
+        previews, observations = parse_workbook(stored, make_resolver(session), {})   # {}：按自動識別取出數據點
     except ValueError as exc:
         raise ImportFlowError(str(exc)) from exc
     if vintage is not None and vintage > date.today():
@@ -76,6 +88,7 @@ def preview_file(session: Session, settings: Settings, content: bytes, filename:
         ImportBatch.sha256 == digest, ImportBatch.status == "committed")).all()
     warnings = _duplicates(previews, None)
     warnings += [f"{p.name}：{p.note}" for p in previews if p.note and "沒有讀入" in p.note]
+    warnings += _repeat_warnings(settings, observations)
     if earlier:
         warnings.append(f"同一個文件之前已導入過（批次 {', '.join(map(str, earlier))}），重複導入不會產生重複數據")
     if vintage is not None:

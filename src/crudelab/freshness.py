@@ -3,25 +3,27 @@
 斷更比報錯更隱蔽：取數任務每次都「跳過」、收件夾一直是空的，系統裡不會有任何錯誤，數字卻在悄悄變舊。
 這裡按 config/freshness.yaml 的規則逐條序列檢查，結果有四種：
   fresh     在期限內
-  stale     超過期限
+  stale     超過期限；或最新的值已經連續很多天沒變（重複報價，數據商在沿用舊值，見 repeats.py）
   never     從沒有過數據（只對 required 裡的序列報）
   ignored   在 ignore 裡，不檢查
 「今天」按 schedule.yaml 的時區算。
 """
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from . import repeats
 from .calendars import WEEKDAYS, Calendar
 from .config import Config
 from .models import Observation
 from .schema import FreshnessRule
 
+REPEAT_LOOKBACK_DAYS = 400          # 重複報價最多往回看多久（再長也只會報「至少這麼久」）
 FREQUENCY_NAMES = {"daily": "日度", "weekly": "周度", "monthly": "月度", "quarterly": "季度"}
 
 
@@ -60,6 +62,7 @@ def check(session: Session, cfg: Config, now: datetime | None = None) -> dict:
     received = dict(session.execute(select(Observation.series_code, func.max(Observation.updated_at))
                                     .group_by(Observation.series_code)).all())
     fr = cfg.freshness
+    trailing = _trailing_repeats(session, cfg, [c for c in cfg.series if c in received and c not in fr.ignore], today)
     rows = []
     for code, s in cfg.series.items():
         has_data = code in received
@@ -87,6 +90,11 @@ def check(session: Session, cfg: Config, now: datetime | None = None) -> dict:
             else:
                 row["lag"] = lag(rule, last, today, cfg.calendar_of(code))
                 row["status"] = "stale" if row["lag"] > rule.max_days else "fresh"
+            run = trailing.get(code)
+            if run is not None and run.n >= fr.repeats.max_run:
+                row["repeat"] = {"since": run.start.isoformat(), "n": run.n, "value": run.value,
+                                 "text": repeats.describe(run)}
+                row["status"] = "stale"
         rows.append(row)
     order = {"stale": 0, "never": 1, "fresh": 2, "ignored": 3}
     rows.sort(key=lambda r: (order[r["status"]], -(r["lag"] or 0), r["code"]))
@@ -95,9 +103,27 @@ def check(session: Session, cfg: Config, now: datetime | None = None) -> dict:
             "problems": counts["stale"] + counts["never"], **counts, "rows": rows}
 
 
+def _trailing_repeats(session: Session, cfg: Config, codes: list[str], today: date) -> dict[str, repeats.Run]:
+    """要做重複報價檢查的序列：最新的值已經連續出現了幾次。同一天有幾個來源時按優先級取一個（和頁面上看到的一樣）。"""
+    from .ingest import load_points
+    watched = [c for c in codes if repeats.watched(cfg, c)]
+    if not watched:
+        return {}
+    points = load_points(session, watched, start=today - timedelta(days=REPEAT_LOOKBACK_DAYS), end=today)
+    out = {}
+    for code, part in points.groupby("series_code"):
+        ordered = part.sort_values("obs_date")
+        run = repeats.trailing(list(zip(ordered["obs_date"], ordered["value"].astype(float), strict=True)))
+        if run is not None:
+            out[str(code)] = run
+    return out
+
+
 def summary_line(row: dict) -> str:
     if row["status"] == "never":
         return f"{row['name_zh']}：從沒有過數據"
+    if row.get("repeat"):
+        return f"{row['name_zh']}：{row['repeat']['text']}，多半是數據商在沿用舊值，不是新報價"
     if row["lag"] is None:
         return f"{row['name_zh']}：只有未來日期的數據"
     unit = " 個工作日" if "工作日" in (row["rule"] or "") else " 天"
