@@ -145,7 +145,8 @@ def test_find_tries_guesses_and_search_hits(fake_lseg, tmp_path, capsys):
                                              " [TS.Interday.UserNotPermission.92000]")
     assert ("search", "Nothing here") in fake_lseg                          # ; 分開的第二個搜索詞也搜了
     # 鏈展開成合約（跳過子鏈，只取前 3 個），展不開的鏈直接略過
-    assert [r[1] for r in rows[1:] if r[0] == "URALS_DIFF"] == ["OQc1", "OQc2", "OQc3"]
+    assert [r[1] for r in rows[1:] if r[0] == "URALS_DIFF"] == ["0#BAD:", "OQc1", "OQc2", "OQc3"]
+    assert got[("URALS_DIFF", "0#BAD:")][8].startswith("鏈展開不了")
     assert got[("URALS_DIFF", "OQc1")][7] == "鏈 0#OQ: 的成員"
     assert "3 條序列裡，2 條找到了" in printed and "搜索「broken」失敗" in printed
 
@@ -206,3 +207,27 @@ def test_lseg_ref_in_config_feeds_rics_file_and_import_aliases(cfg, session):
     with pytest.raises(ValueError):
         CurveDef(code="X", name_zh="x", commodity="X", location="X", kind="swap", unit="USD/bbl", months=[1],
                  lseg={"ric": "NOPLACEHOLDER"})                              # 曲線的 RIC 模板必須有 {n}
+
+
+def test_chain_expansion_never_hangs_and_library_thread_errors_stay_quiet(fake_lseg, monkeypatch, capsys):
+    """路透庫在鏈不存在時，錯誤在它自己的推送線程裡拋出，主線程可能一直等：要限時，也不能刷一屏 traceback。"""
+    import threading
+    import time as real_time
+    script = load_script()
+    client = script.Client(KEY)
+    monkeypatch.setattr(script, "CHAIN_TIMEOUT", 0.2)
+
+    class Hanging:
+        def __init__(self, name):
+            def boom():
+                raise RuntimeError("Error code NotFound | The record could not be found")
+            t = threading.Thread(target=boom, name="Msg-Proc-ThreadOMMSTREAMING_CHAINS_0.0")
+            t.start()
+            t.join()
+            threading.Event().wait(5)                               # 然後一直不返回（time.sleep 被夾具換掉了）
+
+    monkeypatch.setattr(sys.modules["lseg.data"].discovery, "Chain", Hanging)
+    started = real_time.monotonic()
+    assert client.chain("0#GX0010551S1630M:") == []
+    assert real_time.monotonic() - started < 2
+    assert "Traceback" not in capsys.readouterr().err

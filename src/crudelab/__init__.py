@@ -9,4 +9,4 @@
   api / web   後台接口與頁面
 """
 
-__version__ = "0.49.6"       # 和 pyproject.toml 保持一致（tests/test_backup.py 會檢查）
+__version__ = "0.49.7"       # 和 pyproject.toml 保持一致（tests/test_backup.py 會檢查）

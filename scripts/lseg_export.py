@@ -32,6 +32,7 @@ import os
 import re
 import socket
 import sys
+import threading
 import time
 import warnings
 from datetime import date, timedelta
@@ -50,6 +51,8 @@ RESTART_HINT = ("Workspace 的數據通道沒有開。把 Workspace 從右下角
                 "  重開後還是沒有：這個帳號或這台機器可能沒開 API 權限，請找 IT / LSEG 確認")
 FIND_TRIES = 12                               # find：每條序列最多試這麼多個 RIC（--tries 可改）
 CHAIN_TAKE = 3                                # find：鏈（0#…）展開後試前幾個成員
+CHAIN_SEARCH_MAX = 2                          # find：搜索結果裡的鏈最多展開幾個（候選裡寫的鏈都展開）
+CHAIN_TIMEOUT = 20.0                          # 展開一個鏈最多等幾秒：庫在鏈不存在時可能卡住不返回
 # 路透歷史數據接口的錯誤代碼在括號裡，例如 (TS.Interday.UserNotPermission.92000, …)：要看它才分得清原因
 ERROR_CODE = re.compile(r"\b(TS\.\w+\.\w+(?:\.\d+)?)")
 ERROR_KINDS = (("NotPermission", "沒權限（帳號沒訂閱這個數據，常見於 Platts / Argus）"),
@@ -139,6 +142,20 @@ def require_proxy() -> int:
     return port
 
 
+_default_excepthook = threading.excepthook
+
+
+def _quiet_library_threads(args) -> None:
+    """LSEG 庫的推送線程（Msg-Proc-Thread…）裡的錯誤已經由我們自己處理（例如鏈不存在），不打印 traceback。"""
+    name = getattr(args.thread, "name", "") or ""
+    if name.startswith(("Msg-Proc-Thread", "crudelab-chain-")):
+        return
+    _default_excepthook(args)
+
+
+threading.excepthook = _quiet_library_threads
+
+
 class Client:
     """把三種庫的取歷史數據接口統一成 history(ric, field, start, end) -> {date: value}。"""
 
@@ -200,15 +217,25 @@ class Client:
         return out
 
     def chain(self, ric: str) -> list[str]:
-        """展開鏈（0#…）成員 RIC。舊版 eikon 庫或展開失敗時回傳空。"""
+        """展開鏈（0#…）成員 RIC。舊版 eikon 庫、展開失敗或超時都回傳空。
+        庫是在後台線程裡用推送方式展開的：鏈不存在時錯誤在那個線程裡拋出（會打印一大段 traceback），
+        主線程可能一直等。所以放到單獨的線程裡、限時等待，並且不打印庫線程裡的錯誤。"""
         discovery = getattr(self.lib, "discovery", None)
         maker = getattr(discovery, "Chain", None) if discovery is not None else None
         if maker is None:
             return []
-        try:
-            members = list(maker(ric).constituents or [])
-        except Exception:
-            return []
+        result: dict[str, list] = {}
+
+        def work() -> None:
+            try:
+                result["members"] = list(maker(ric).constituents or [])
+            except Exception:
+                result["members"] = []
+
+        worker = threading.Thread(target=work, name=f"crudelab-chain-{ric}", daemon=True)
+        worker.start()
+        worker.join(CHAIN_TIMEOUT)
+        members = result.get("members", [])
         return [str(m) for m in members if m and not str(m).startswith("0#")]
 
     def frame(self, ric: str, start: date, end: date):
@@ -380,10 +407,19 @@ def find(cands_path: Path, out: Path, only: set[str] | None, tries_per_series: i
                     print(f"  {exc}")
                 finally:
                     time.sleep(PAUSE_SECONDS)
+            searched_chains = 0
             for ric in [r for r in tries if r.startswith("0#")]:            # 鏈要展開成合約才取得到數
-                for member in client.chain(ric)[:CHAIN_TAKE]:
+                title = tries.pop(ric)
+                if ric not in guesses:
+                    searched_chains += 1
+                    if searched_chains > CHAIN_SEARCH_MAX:
+                        continue
+                members = client.chain(ric)[:CHAIN_TAKE]
+                if not members:
+                    rows.append([code, ric, "none", "", "", "", "0", title, "鏈展開不了（不存在、沒權限或超時）"])
+                    print(f"  ✗ {ric:<18} 鏈展開不了  {title}")
+                for member in members:
                     tries.setdefault(member, f"鏈 {ric} 的成員")
-                tries.pop(ric)
             ok = 0
             for ric, title in list(tries.items())[:tries_per_series]:
                 error = ""
