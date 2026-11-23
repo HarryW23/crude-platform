@@ -53,6 +53,11 @@ FIND_TRIES = 12                               # find：每條序列最多試這�
 CHAIN_TAKE = 3                                # find：鏈（0#…）展開後試前幾個成員
 CHAIN_SEARCH_MAX = 2                          # find：搜索結果裡的鏈最多展開幾個（候選裡寫的鏈都展開）
 CHAIN_TIMEOUT = 20.0                          # 展開一個鏈最多等幾秒：庫在鏈不存在時可能卡住不返回
+CHAIN_GIVE_UP = 3                             # 連續這麼多個鏈都展不開（例如帳號沒有推送權限），這次就不再試鏈
+RETRY_WAIT = 3.0                              # 臨時錯誤（網絡、超時）等幾秒重試一次；沒權限、RIC 不存在不重試
+# 期貨連續合約每天對應哪個合約：路透的歷史數據裡本來就有這兩個字段，導出時順便存下來，
+# 平台用它核對換月規則（crudelab verify-rolls），不多發請求
+CONTRACT_FIELDS = ("EXPIR_DATE", "CRT_MNTH")
 # 路透歷史數據接口的錯誤代碼在括號裡，例如 (TS.Interday.UserNotPermission.92000, …)：要看它才分得清原因
 ERROR_CODE = re.compile(r"\b(TS\.\w+\.\w+(?:\.\d+)?)")
 ERROR_KINDS = (("NotPermission", "沒權限（帳號沒訂閱這個數據，常見於 Platts / Argus）"),
@@ -250,6 +255,36 @@ class Client:
             raise Fail(f"{ric}：{_redact(exc, self.key)}") from None
 
 
+def fetch(client: Client, ric: str, start: date, end: date):
+    """取歷史數據；臨時錯誤重試一次。沒權限、RIC 不存在重試也沒用，直接報。"""
+    try:
+        return client.frame(ric, start, end)
+    except Fail as exc:
+        reason = explain_error(str(exc).split("：", 1)[-1])
+        if reason.startswith(("沒權限", "RIC")) or "沒有數據" in reason:
+            raise
+    time.sleep(RETRY_WAIT)
+    return client.frame(ric, start, end)
+
+
+def contract_info(frame) -> dict[date, tuple[str, str]]:
+    """每天的（到期日, 合約月），兩個字段都沒有時回傳空。"""
+    columns = [str(c[-1] if isinstance(c, tuple) else c) for c in frame.columns]
+    present = [f for f in CONTRACT_FIELDS if f in columns]
+    if not present:
+        return {}
+    out = {}
+    for ts, row in zip(frame.index, frame.itertuples(index=False), strict=True):
+        values = []
+        for f in CONTRACT_FIELDS:
+            v = row[columns.index(f)] if f in present else None
+            text = "" if v is None or str(v) in ("nan", "NaT", "<NA>", "None") else str(v).strip()
+            values.append(text[:10] if f == "EXPIR_DATE" else text)
+        if any(values):
+            out[ts.date() if hasattr(ts, "date") else ts] = (values[0], values[1])
+    return out
+
+
 def pick_field(frame, wanted: str | None) -> str | None:
     columns = [str(c[-1] if isinstance(c, tuple) else c) for c in frame.columns]
     if wanted:
@@ -320,11 +355,12 @@ def export(days: int, out: Path, rics_path: Path) -> int:
     client = Client(app_key())
     end, start = date.today(), date.today() - timedelta(days=days)
     table: dict[str, dict[date, float]] = {}
+    contracts: list[list[str]] = []
     problems = []
     try:
         for i, (code, ric, wanted) in enumerate(rics, 1):
             try:
-                frame = client.frame(ric, start, end)
+                frame = fetch(client, ric, start, end)
             except Fail as exc:
                 problems.append(str(exc))
                 continue
@@ -335,6 +371,8 @@ def export(days: int, out: Path, rics_path: Path) -> int:
                 problems.append(f"{ric}（{code}）：沒有取到數據" + (f"或沒有字段 {wanted}" if wanted else ""))
                 continue
             table[code] = series_of(frame, field)
+            contracts += [[d.isoformat(), code, ric, expiry, month]
+                          for d, (expiry, month) in sorted(contract_info(frame).items())]
             print(f"[{i}/{len(rics)}] {code:<18} {ric:<10} {field:<9} {len(table[code])} 天")
     finally:
         client.close()
@@ -349,6 +387,14 @@ def export(days: int, out: Path, rics_path: Path) -> int:
         for d in dates:
             writer.writerow([d.isoformat(), *[table[c].get(d, "") for c in codes]])
     print(f"\n已寫出 {out}：{len(codes)} 條序列，{len(dates)} 個日期")
+    if contracts:
+        side = out.with_name(out.stem + "_contracts.csv")
+        with side.open("w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow(["日期", "序列代碼", "RIC", "到期日", "合約月"])
+            writer.writerows(contracts)
+        print(f"另外寫出 {side}：期貨連續合約每天對應的合約（{len(contracts)} 行），用來核對換月規則。\n"
+              f"  這個文件不要放進 inbox、不用導入：交給負責平台的人，用 crudelab verify-rolls 核對")
     if problems:
         print(f"有 {len(problems)} 條沒取到（RIC 不對、沒有權限，或那段時間沒有數據）：\n  " + "\n  ".join(problems))
     print("把這個文件放進 crudelab 的 data/inbox/，或在後台「數據導入」頁上傳（數據源選「路透（Excel 整理）」）")
@@ -395,6 +441,7 @@ def find(cands_path: Path, out: Path, only: set[str] | None, tries_per_series: i
     end = date.today()
     rows: list[list[str]] = []
     found = 0
+    chain_fails, chains_off = 0, False
     try:
         for i, (code, query, guesses) in enumerate(items, 1):
             print(f"\n[{i}/{len(items)}] {code}  搜索：{query or '（不搜索）'}")
@@ -407,6 +454,7 @@ def find(cands_path: Path, out: Path, only: set[str] | None, tries_per_series: i
                     print(f"  {exc}")
                 finally:
                     time.sleep(PAUSE_SECONDS)
+            listed = bool(tries)                                             # 有沒有任何候選或搜索結果（含鏈）
             searched_chains = 0
             for ric in [r for r in tries if r.startswith("0#")]:            # 鏈要展開成合約才取得到數
                 title = tries.pop(ric)
@@ -414,7 +462,15 @@ def find(cands_path: Path, out: Path, only: set[str] | None, tries_per_series: i
                     searched_chains += 1
                     if searched_chains > CHAIN_SEARCH_MAX:
                         continue
+                if chains_off:
+                    rows.append([code, ric, "none", "", "", "", "0", title, "沒試：這台機器上鏈都展不開"])
+                    continue
                 members = client.chain(ric)[:CHAIN_TAKE]
+                chain_fails = 0 if members else chain_fails + 1
+                if chain_fails >= CHAIN_GIVE_UP:
+                    chains_off = True
+                    print(f"  （連續 {CHAIN_GIVE_UP} 個鏈都展不開，可能是帳號沒有推送數據的權限；"
+                          f"這次不再試鏈，省得每個等 {CHAIN_TIMEOUT:.0f} 秒）")
                 if not members:
                     rows.append([code, ric, "none", "", "", "", "0", title, "鏈展開不了（不存在、沒權限或超時）"])
                     print(f"  ✗ {ric:<18} 鏈展開不了  {title}")
@@ -424,7 +480,7 @@ def find(cands_path: Path, out: Path, only: set[str] | None, tries_per_series: i
             for ric, title in list(tries.items())[:tries_per_series]:
                 error = ""
                 try:
-                    frame = client.frame(ric, end - timedelta(days=FIND_DAYS), end)
+                    frame = fetch(client, ric, end - timedelta(days=FIND_DAYS), end)
                     field = pick_field(frame, None) if frame is not None and len(frame) else None
                     values = sorted(series_of(frame, field).items()) if field else []
                     if not values:
@@ -442,7 +498,7 @@ def find(cands_path: Path, out: Path, only: set[str] | None, tries_per_series: i
                 else:
                     rows.append([code, ric, "none", "", "", "", "0", title, error])
                     print(f"  ✗ {ric:<18} {error}  {title}")
-            if not tries:
+            if not listed:
                 rows.append([code, "", "none", "", "", "", "0", "", "沒有候選，搜索也沒結果"])
                 print("  沒有候選，搜索也沒結果")
             found += ok > 0

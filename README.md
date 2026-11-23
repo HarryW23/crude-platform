@@ -397,6 +397,20 @@ python lseg_export.py find
 期貨曲線用 `lseg: {ric: "DCBc{n}", offset: 1}` 這種模板：數據商的月序和這裡的 M1 不一致時用 offset，
 例如 NYMEX 迪拜日曆掉期的 DCBc1 是正在計價的當月，這裡的迪拜掉期 M1 = DCBc2。
 
+`export` 會順便寫出 `reuters_日期_contracts.csv`：期貨連續合約每天對應的合約（路透的到期日、合約月字段，
+不多發請求）。這個文件不用導入（誤放進收件夾會被拒收並提示），用它核對期貨曲線的換月規則：
+
+```bash
+crudelab verify-rolls reuters_20261124_contracts.csv
+```
+
+會列出每條曲線規則換月和實際換月對不上的日子、建議寫進 `roll.overrides` 的實際最後交易日；完全一致的提示可以把
+`roll.verified` 改成 true。取數遇到網絡、超時這類臨時錯誤會自動重試一次。
+
+導入預覽會提醒兩種數據質量問題（不擋導入）：很長一段同一個數（數據商沿用舊值，規則在 `config/freshness.yaml`
+的 `repeats`），和單日錯價（某天跳上去第二天又回來、同一天其他序列沒有一起跳）。確實是錯價的，在序列頁手動改正，
+舊值會留在修訂記錄裡。
+
 連不上時腳本會直接說明：多半是 Workspace 的數據通道沒開（`netstat -ano | findstr LISTENING | findstr ":90"`
 看不到 9000 或 9060），把 Workspace 從托盤完全退出再重開即可。
 現貨評估價（Platts、Argus）在路透上通常要另外訂閱，以及確認授權是否允許存進自建系統（待辦 #5）。

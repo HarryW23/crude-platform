@@ -46,8 +46,14 @@ def fake_lseg(monkeypatch):
             return pd.DataFrame({"BID": [7.1] * 5, "MID_PRICE": [7.11, 7.12, 7.13, 7.14, 7.15]}, index=days)
         if universe == "NODATA":
             return pd.DataFrame()
+        if universe == "FLAKYc1" and calls.count(("history", "FLAKYc1")) == 1:
+            raise RuntimeError("ReadTimeout: timed out")              # 臨時錯誤：第二次就好了
         base = 80.0 if universe.startswith("LCO") else 60.0
-        return pd.DataFrame({"TRDPRC_1": [base + 9] * 5, "SETTLE": [base + i for i in range(5)]}, index=days)
+        frame = pd.DataFrame({"TRDPRC_1": [base + 9] * 5, "SETTLE": [base + i for i in range(5)]}, index=days)
+        if universe == "LCOc1":                                         # 期貨連續合約：路透帶到期日和合約月
+            frame["EXPIR_DATE"] = ["2026-11-14"] * 2 + ["2026-12-31"] * 3
+            frame["CRT_MNTH"] = ["JAN7"] * 2 + ["FEB7"] * 3
+        return frame
 
     def search(query, top, select):
         calls.append(("search", query))
@@ -243,3 +249,41 @@ def test_proxy_rics_are_labelled_in_rics_file_and_series_api(cfg, client):
     assert rows["OMAN_M1"]["ric"] == "OMANCALMc1" and rows["OMAN_M1"]["proxy"].startswith("阿曼掉期評估價")
     assert rows["BRENT_M1"]["ric"] == "LCOc1" and rows["BRENT_M1"]["proxy"] is None
     assert rows["JAPAN_NAPHTHA"]["ric"] == "NAF-1H-TYO" and rows["JAPAN_NAPHTHA"]["proxy"] is None
+
+
+def test_export_writes_contract_sidecar_and_retries_transient_errors(fake_lseg, tmp_path, capsys):
+    script = load_script()
+    rics = tmp_path / "rics.txt"
+    rics.write_text("BRENT_M1 LCOc1\nWTI_M1 FLAKYc1\nUSDCNY CNY=\n", encoding="utf-8")
+    out = tmp_path / "reuters_x.csv"
+    assert script.main(["export", "--days", "10", "--out", str(out), "--rics", str(rics)]) == 0
+    assert fake_lseg.count(("history", "FLAKYc1")) == 2                  # 超時重試了一次
+    assert out.read_text(encoding="utf-8").splitlines()[0] == "日期,BRENT_M1,WTI_M1,USDCNY"
+    side = tmp_path / "reuters_x_contracts.csv"
+    rows = side.read_text(encoding="utf-8").splitlines()
+    assert rows[0] == "日期,序列代碼,RIC,到期日,合約月" and len(rows) == 6          # 只有帶合約字段的序列
+    assert rows[1].endswith(",BRENT_M1,LCOc1,2026-11-14,JAN7") and rows[-1].endswith(",2026-12-31,FEB7")
+    assert "crudelab verify-rolls" in capsys.readouterr().out
+
+    # 合約對照文件可以直接交給平台核對
+    from crudelab import rollcheck
+    data = rollcheck.read_contracts(side)
+    assert rollcheck.actual_rolls(data["BRENT_M1"]) == [date(2026, 11, 13)]
+
+    # 沒權限不重試
+    rics.write_text("FU_M1 PLATTS00\n", encoding="utf-8")
+    assert script.main(["export", "--out", str(tmp_path / "o.csv"), "--rics", str(rics)]) == 1
+    assert fake_lseg.count(("history", "PLATTS00")) == 1
+
+
+def test_find_stops_trying_chains_when_none_expand(fake_lseg, tmp_path, capsys, monkeypatch):
+    script = load_script()
+    monkeypatch.setattr(script, "CHAIN_TIMEOUT", 0.1)
+    cands = tmp_path / "c.txt"
+    cands.write_text("A | | 0#X1: 0#X2: 0#X3: 0#X4: 0#X5:\n", encoding="utf-8")
+    out = tmp_path / "f.txt"
+    assert script.main(["find", "--candidates", str(cands), "--out", str(out)]) == 0
+    printed = capsys.readouterr().out
+    assert "這次不再試鏈" in printed
+    errors = [line.split("\t")[8] for line in out.read_text(encoding="utf-8").splitlines()[1:]]
+    assert errors.count("沒試：這台機器上鏈都展不開") == 2 and len(errors) == 5

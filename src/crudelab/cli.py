@@ -548,6 +548,20 @@ def cmd_lseg_rics(args) -> int:
     return 0
 
 
+def cmd_verify_rolls(args) -> int:
+    """用路透導出的合約對照文件核對期貨曲線的換月規則。有出入時返回 1。"""
+    from . import rollcheck
+    from .config import load_config
+    try:
+        data = rollcheck.read_contracts(Path(args.file))
+    except (OSError, ValueError) as exc:
+        print(f"讀不了 {args.file}：{exc}", file=sys.stderr)
+        return 1
+    checks = rollcheck.verify(load_config(get_settings().config_dir), data)
+    print("\n".join(rollcheck.report(checks)))
+    return 0 if all(c.consistent for c in checks) else 1
+
+
 def cmd_backup(args) -> int:
     from . import backup
     from .config import load_config
@@ -886,6 +900,9 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("lseg-rics", help="生成 LSEG 導出腳本用的 RIC 清單（scripts/lseg_rics.txt）")
     p.add_argument("--output", help="寫入這個文件；不給就打印")
     p.set_defaults(func=cmd_lseg_rics)
+    p = sub.add_parser("verify-rolls", help="用路透導出的合約對照（reuters_日期_contracts.csv）核對期貨換月規則")
+    p.add_argument("file", help="scripts/lseg_export.py export 順便寫出的 _contracts.csv")
+    p.set_defaults(func=cmd_verify_rolls)
     p = sub.add_parser("backup", help="備份：不給動作就立即做一份手動備份")
     p.add_argument("action", nargs="?", choices=["create", "list", "verify", "prune"], default="create",
                    help="create 立即備份（預設）/ list 列出 / verify 校驗一份 / prune 按保留策略清理定時備份")

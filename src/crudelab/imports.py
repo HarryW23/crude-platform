@@ -21,6 +21,9 @@ class ImportFlowError(ValueError):
     pass
 
 
+CONTRACTS_HEADER = "日期,序列代碼,RIC,到期日,合約月"      # scripts/lseg_export.py 寫的合約對照文件的表頭
+
+
 def make_resolver(session: Session):
     """表頭 → 序列。指向已停用序列的別名不算數（否則整個文件會因為一列而入不了庫）。"""
     active = set(session.scalars(select(Series.code).where(Series.active)))
@@ -39,16 +42,22 @@ def _duplicates(previews: list[SheetPreview], mapping: dict[str, str | None] | N
             for code, refs in seen.items() if len(refs) > 1]
 
 
-def _repeat_warnings(settings: Settings, observations: list[Obs]) -> list[str]:
-    """文件裡要檢查的序列有很長一段相同的值（數據商在沿用舊值）時提醒，規則見 config/freshness.yaml 的 repeats。"""
+def _quality_warnings(settings: Settings, observations: list[Obs]) -> list[str]:
+    """文件裡的數據質量提醒（不擋導入）：
+    - 很長一段相同的值：數據商在沿用舊值（repeats.py，規則見 config/freshness.yaml 的 repeats）
+    - 單日錯價：跳上去又回來、同一天其他序列沒一起跳（spikes.py）"""
     if not observations:
         return []
+    from . import repeats, spikes
     from .config import load_config
-    from .repeats import import_warnings
+    cfg = load_config(settings.config_dir)
     by_series: dict[str, list[tuple[date, float]]] = {}
     for o in observations:
         by_series.setdefault(o.series_code, []).append((o.obs_date, o.value))
-    return import_warnings(load_config(settings.config_dir), by_series)
+    daily = {c: p for c, p in by_series.items() if c in cfg.series and cfg.series[c].frequency == "daily"}
+    kinds = {c: cfg.series[c].kind for c in daily}
+    names = {c: cfg.series[c].name_zh for c in daily}
+    return repeats.import_warnings(cfg, by_series) + spikes.import_warnings(kinds, names, daily)
 
 
 def nothing_importable(preview: dict) -> str | None:
@@ -68,6 +77,9 @@ def preview_file(session: Session, settings: Settings, content: bytes, filename:
     source = session.get(DataSource, source_code)
     if source is None or source.kind != "excel":
         raise ImportFlowError(f"數據源 {source_code} 不能用於文件導入")
+    if content.lstrip(b"\xef\xbb\xbf").startswith(CONTRACTS_HEADER.encode()):
+        raise ImportFlowError("這是路透導出時順便寫的合約對照文件（_contracts.csv），不是行情數據，不用導入；"
+                              "用 crudelab verify-rolls 文件名 核對換月規則")
     digest = hashlib.sha256(content).hexdigest()
     safe_name = re.sub(r"[^\w.\-]+", "_", Path(filename).name)[-120:] or "upload"
     stored = settings.raw_dir / digest[:2] / f"{digest[:16]}_{safe_name}"
@@ -88,7 +100,7 @@ def preview_file(session: Session, settings: Settings, content: bytes, filename:
         ImportBatch.sha256 == digest, ImportBatch.status == "committed")).all()
     warnings = _duplicates(previews, None)
     warnings += [f"{p.name}：{p.note}" for p in previews if p.note and "沒有讀入" in p.note]
-    warnings += _repeat_warnings(settings, observations)
+    warnings += _quality_warnings(settings, observations)
     if earlier:
         warnings.append(f"同一個文件之前已導入過（批次 {', '.join(map(str, earlier))}），重複導入不會產生重複數據")
     if vintage is not None:
