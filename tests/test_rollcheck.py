@@ -22,7 +22,10 @@ def test_rule_generated_contracts_are_consistent(cfg):
     rows = contract_rows(cfg, "BRENT", date(2026, 1, 5), date(2026, 9, 30))
     check = rollcheck.check_curve(cfg, "BRENT", rows)
     assert check.consistent and len(check.expected) == len(check.actual) >= 8
+    check.verified = False
     assert "可以把這條曲線的 roll.verified 改成 true" in rollcheck.report([check])[1]
+    check.verified = True                                    # 已經標了的不再提示
+    assert len(rollcheck.report([check])) == 1
 
 
 def test_late_roll_is_reported_with_override_suggestion(cfg):
@@ -75,3 +78,24 @@ def test_contract_sidecar_is_refused_by_import_with_a_hint(session, settings):
     content = "日期,序列代碼,RIC,到期日,合約月\n2026-11-20,BRENT_M1,LCOc1,2026-11-30,JAN7\n".encode()
     with pytest.raises(ImportFlowError, match="crudelab verify-rolls"):
         preview_file(session, settings, content, "reuters_20261124_contracts.csv", "reuters_xls")
+
+
+def test_exchange_specific_rule_details(cfg):
+    """2026-11-23 用路透的到期日核對出來的兩條交易所細則。"""
+    from crudelab.schema import RollRule
+    # ICE 柴油：14 日之前第 2 個工作日；14 日是周日時直接從 14 日往前數（12 日周五是第 1 個，11 日是第 2 個）
+    gasoil = cfg.curves["GASOIL_ICE"].roll
+    assert contracts.last_trading_day(gasoil, contracts.ordinal(2024, 1)) == date(2024, 1, 11)
+    assert contracts.last_trading_day(gasoil, contracts.ordinal(2024, 2)) == date(2024, 2, 12)   # 14 日周三：不受影響
+    plain = gasoil.model_copy(update={"count_from_day": False})
+    assert contracts.last_trading_day(plain, contracts.ordinal(2024, 1)) == date(2024, 1, 10)   # 舊寫法差一天
+    # ICE Brent：元旦前一個工作日不做最後交易日
+    brent = cfg.curves["BRENT"].roll
+    assert contracts.last_trading_day(brent, contracts.ordinal(2024, 2)) == date(2023, 12, 28)   # 12-29 是元旦前一天
+    assert contracts.last_trading_day(brent, contracts.ordinal(2025, 2)) == date(2024, 12, 30)
+    assert contracts.last_trading_day(brent, contracts.ordinal(2024, 3)) == date(2024, 1, 31)    # 其他月份不受影響
+    assert contracts.last_trading_day(brent, contracts.ordinal(2026, 10)) == date(2026, 8, 28)   # 英國銀行假日
+    with pytest.raises(ValueError, match="MM-DD"):
+        RollRule(months_before=1, not_eve_of=["12/25"])
+    with pytest.raises(ValueError, match="count_from_day 只用於整數 day"):
+        RollRule(months_before=1, count_from_day=True)

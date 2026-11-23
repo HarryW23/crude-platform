@@ -65,12 +65,22 @@ def last_trading_day(rule: RollRule, o: int) -> date:
         return rule.overrides[key]
     m = o - rule.months_before
     year, month = m // 12, m % 12 + 1
+    cal = _calendar(rule)
     if rule.day == "last_business":
         nxt = date(year + (month == 12), month % 12 + 1, 1)
-        anchor = _calendar(rule).prev_business(nxt - timedelta(days=1))
+        ltd = cal.minus_business(cal.prev_business(nxt - timedelta(days=1)), rule.business_days_before)
+    elif rule.count_from_day:                          # 從那個日曆日往前數（它本身不是工作日也一樣）
+        ltd = cal.minus_business(date(year, month, rule.day), rule.business_days_before)
+        if rule.business_days_before == 0:
+            ltd = cal.prev_business(ltd)
     else:
-        anchor = _calendar(rule).prev_business(date(year, month, rule.day))
-    return _calendar(rule).minus_business(anchor, rule.business_days_before)
+        ltd = cal.minus_business(cal.prev_business(date(year, month, rule.day)), rule.business_days_before)
+    for md in rule.not_eve_of:                         # 落在聖誕、元旦等前一個工作日：再提前一個工作日
+        mm, dd = int(md[:2]), int(md[3:])
+        holiday = date(ltd.year + (mm < ltd.month), mm, dd)
+        if ltd < holiday and cal.prev_business(holiday - timedelta(days=1)) == ltd:
+            ltd = cal.minus_business(ltd, 1)
+    return ltd
 
 
 def member(cfg: Config, code: str) -> CurveMember | None:

@@ -21,7 +21,8 @@ def test_last_trading_day_rules(cfg):
     assert c.last_trading_day(WTI, c.ordinal(2026, 12)) == date(2026, 11, 20)        # 11/25 周三，往前 3 個工作日
     assert c.last_trading_day(WTI, c.ordinal(2026, 11)) == date(2026, 10, 20)        # 10/25 周日 → 10/23，再往前 3 個
     gasoil = cfg.curves["GASOIL_ICE"].roll
-    assert c.last_trading_day(gasoil, c.ordinal(2026, 11)) == date(2026, 11, 11)     # 11/14 周六 → 11/13，再往前 2 個
+    # ICE 柴油：14 日之前的第 2 個工作日。11/14 周六：13 日是第 1 個、12 日是第 2 個（路透 LGOc1 的到期日也是 11/12）
+    assert c.last_trading_day(gasoil, c.ordinal(2026, 11)) == date(2026, 11, 12)
     fixed = RollRule(months_before=2, overrides={"2026-12": date(2026, 10, 29)})
     assert c.last_trading_day(fixed, c.ordinal(2026, 12)) == date(2026, 10, 29)
 

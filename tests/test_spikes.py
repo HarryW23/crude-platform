@@ -46,3 +46,17 @@ def test_import_preview_warns_only_for_price_series(session, settings):
     preview = preview_file(session, settings, "\n".join(lines).encode(), "r.csv", "reuters_xls")
     hits = [w for w in preview["warnings"] if "錯價" in w]
     assert len(hits) == 1 and hits[0].startswith(f"NWE_EUROBOB（西北歐 Eurobob 汽油）可能有錯價：{days[50]} 是")
+
+
+def test_same_commodity_jumping_together_is_a_market_move():
+    """日本和新加坡石腦油同一天一起跳又一起回來：同品種一起動，是行情，不是錯價。"""
+    days, a = walk(11)
+    _, b = walk(12)
+    _, c = walk(13)
+    a[40] += 30
+    b[40] += 30
+    series = {"SG_NAPHTHA": list(zip(days, a, strict=True)), "JAPAN_NAPHTHA": list(zip(days, b, strict=True)),
+              "BRENT_M1": list(zip(days, c, strict=True))}
+    assert len(spikes.suspicious(series)) == 2                               # 不知道品種：只有一個夥伴，不夠
+    commodity = {"SG_NAPHTHA": "NAPHTHA", "JAPAN_NAPHTHA": "NAPHTHA", "BRENT_M1": "BRENT"}
+    assert spikes.suspicious(series, commodity) == []

@@ -57,7 +57,8 @@ def _quality_warnings(settings: Settings, observations: list[Obs]) -> list[str]:
     daily = {c: p for c, p in by_series.items() if c in cfg.series and cfg.series[c].frequency == "daily"}
     kinds = {c: cfg.series[c].kind for c in daily}
     names = {c: cfg.series[c].name_zh for c in daily}
-    return repeats.import_warnings(cfg, by_series) + spikes.import_warnings(kinds, names, daily)
+    commodity = {c: cfg.series[c].commodity for c in daily}
+    return repeats.import_warnings(cfg, by_series) + spikes.import_warnings(kinds, names, daily, commodity)
 
 
 def nothing_importable(preview: dict) -> str | None:

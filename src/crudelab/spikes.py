@@ -2,7 +2,8 @@
 
 例：Eurobob 2026-08-05 是 1059.3，前後兩天是 924.3 和 925.3。
 行情劇烈的日子（例如 2026-03-09 原油和成品油一起大起大落）很多序列同時「跳一下」，那是市場，不是錯價：
-同一天另有 MIN_PEERS 條以上序列也出現跳動時，不提醒。
+同一天另有 MIN_PEERS 條以上序列也出現跳動、或者同一品種的另一條序列也在跳（例如日本和新加坡石腦油
+2026-06-03 一起跳又一起回來），不提醒。
 
 判斷（只看日度序列，至少 MIN_POINTS 個數據點）：
   日變化的穩健標準差 σ = 1.4826 × 中位數絕對偏差（MAD）
@@ -54,24 +55,28 @@ def spikes(points: list[tuple[date, float]], k: float) -> list[Spike]:
     return out
 
 
-def suspicious(by_series: dict[str, list[tuple[date, float]]]) -> list[Spike]:
-    """所有序列裡的可疑錯價：自己跳得夠大，而且同一天其他序列沒有一起跳。"""
+def suspicious(by_series: Mapping[str, list[tuple[date, float]]],
+               commodity: Mapping[str, str] | None = None) -> list[Spike]:
+    """所有序列裡的可疑錯價：自己跳得夠大，而且同一天其他序列沒有一起跳。commodity：序列 → 品種。"""
+    commodity = commodity or {}
     loud = {code: spikes(points, K) for code, points in by_series.items()}
     loose = {code: {s.day for s in spikes(points, PEER_K)} for code, points in by_series.items()}
     out = []
     for code, found in loud.items():
         for s in found:
-            peers = sum(s.day in days for other, days in loose.items() if other != code)
-            if peers < MIN_PEERS:
+            peers = [other for other, days in loose.items() if other != code and s.day in days]
+            same = [p for p in peers if commodity.get(p) and commodity.get(p) == commodity.get(code)]
+            if len(peers) < MIN_PEERS and not same:
                 out.append(Spike(code, s.day, s.before, s.value, s.after))
     return sorted(out, key=lambda s: (s.series, s.day))
 
 
 def import_warnings(kinds: Mapping[str, str], names: Mapping[str, str],
-                    by_series: dict[str, list[tuple[date, float]]]) -> list[str]:
-    """導入預覽的提醒。kinds / names：序列代碼 → 類型 / 中文名（只查價格類的日度序列）。"""
+                    by_series: Mapping[str, list[tuple[date, float]]],
+                    commodity: Mapping[str, str] | None = None) -> list[str]:
+    """導入預覽的提醒。kinds / names / commodity：序列代碼 → 類型 / 中文名 / 品種（只查價格類的日度序列）。"""
     priced = {c: p for c, p in by_series.items() if kinds.get(c) in KINDS}
-    found = suspicious(priced)
+    found = suspicious(priced, commodity)
     if not found:
         return []
     by_code: dict[str, list[Spike]] = {}

@@ -3,13 +3,16 @@
 curves:
   - {code: GASOIL_ICE, calendar: ICE_EU, name_zh: ICE 柴油期貨, commodity: GASOIL, location: NWE, kind: futures, unit: USD/t,
      months: [1, 2, 3], module: refinery, aliases: ["LGOc{n}", "ICE Gasoil M{n}"],
-     roll: {months_before: 0, day: 14, business_days_before: 2, note: "ICE Gasoil：交割月 14 日之前 2 個工作日"}}
+     roll: {months_before: 0, day: 14, business_days_before: 2, count_from_day: true, verified: true,
+            note: "ICE Gasoil：交割月 14 日之前的第 2 個工作日（14 日是周末時直接從 14 日往前數，不先挪到周五）。2026-11-23 用路透 LGOc1 的到期日核對 36 次換月"}}
   - {code: RBOB, calendar: CME, name_zh: RBOB 汽油期貨, commodity: GASOLINE, location: NYH, kind: futures, unit: USD/gal,
      months: [1, 2], module: refinery, aliases: ["RBc{n}", "RBOB M{n}"],
-     roll: {months_before: 1, day: last_business, note: "NYMEX RBOB：交割月前一個月的最後一個工作日"}}
+     roll: {months_before: 1, day: last_business, verified: true,
+            note: "NYMEX RBOB：交割月前一個月的最後一個工作日。2026-11-23 用路透的到期日核對 36 次換月"}}
   - {code: HO, calendar: CME, name_zh: 取暖油（ULSD）期貨, commodity: GASOIL, location: NYH, kind: futures, unit: USD/gal,
      months: [1, 2], module: refinery, aliases: ["HOc{n}", "Heating Oil M{n}", "ULSD M{n}"],
-     roll: {months_before: 1, day: last_business, note: "NYMEX 取暖油：交割月前一個月的最後一個工作日"}}
+     roll: {months_before: 1, day: last_business, verified: true,
+            note: "NYMEX 取暖油：交割月前一個月的最後一個工作日。2026-11-23 用路透的到期日核對 36 次換月"}}
 
 series:
   # ---------- 新加坡 / 亞洲 ----------

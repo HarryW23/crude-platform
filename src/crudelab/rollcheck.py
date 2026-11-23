@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import csv
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import date
 from pathlib import Path
 
 from . import contracts
@@ -35,6 +35,7 @@ class CurveCheck:
     unmatched_data: list[date] = field(default_factory=list)              # 數據裡換了、附近規則沒換
     overrides: dict[str, date] = field(default_factory=dict)              # 建議寫進 roll.overrides 的
     note: str | None = None
+    verified: bool = False                    # 配置裡已經標了 roll.verified
 
     @property
     def consistent(self) -> bool:
@@ -95,9 +96,10 @@ def check_curve(cfg: Config, code: str, rows: list[tuple[date, str, str]]) -> Cu
     def on_data(d: date) -> date | None:                 # 規則換月日落在假期時，對到之後第一個有數據的日子
         return next((x for x in days if x >= d), None)
 
-    expected = sorted({x for d in contracts.roll_dates(rule, first + timedelta(days=1), last)
-                       if (x := on_data(d)) is not None})
-    result = CurveCheck(code, f"{code}_M1", first, last, expected, actual)
+    # 從數據第一天算起（第一天當天的換月看不出來，去掉）：從第二天算會漏掉正好在第二天的那次
+    expected = sorted({x for d in contracts.roll_dates(rule, first, last)
+                       if (x := on_data(d)) is not None and x > first})
+    result = CurveCheck(code, f"{code}_M1", first, last, expected, actual, verified=rule.verified)
     position = {d: i for i, d in enumerate(days)}
     exact = set(expected) & set(actual)
     spare_actual = [d for d in actual if d not in exact]
@@ -154,6 +156,8 @@ def report(checks: list[CurveCheck]) -> list[str]:
             lines.append(f"  建議寫進 roll.overrides：{{{body}}}")
         if c.note:
             lines.append(f"  注：{c.note}")
-        if c.consistent and len(c.expected) >= 3:
+        if c.consistent and len(c.expected) >= 3 and not c.verified:
             lines.append("  可以把這條曲線的 roll.verified 改成 true")
+        if not c.consistent and c.verified:
+            lines.append("  這條曲線標了 verified: true，但和這份數據對不上：先查清楚再決定是改規則還是加 overrides")
     return lines or ["文件裡沒有任何有換月規則的曲線的 M1（序列代碼像 BRENT_M1）"]

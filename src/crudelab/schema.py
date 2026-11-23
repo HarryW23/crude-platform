@@ -124,10 +124,19 @@ class RollRule(Strict):
       day = 整數 d           → 該月第 d 日（不是工作日就取它之前最近的工作日），再往前 business_days_before 個工作日
     例：Brent 是交割月前第二個月的最後一個工作日（months_before 2）；
         WTI 是交割月前一個月 25 日之前 3 個工作日（months_before 1, day 25, business_days_before 3）。
+
+    兩種交易所寫法的細節：
+      count_from_day  整數 day 不是工作日時怎麼數。false（預設，NYMEX WTI）：先挪到之前最近的工作日，再往前數；
+                      true（ICE 柴油「14 日之前第 2 個工作日」）：直接從那個日曆日往前數工作日。
+                      兩者只在 d 日不是工作日時不同，差一天
+      not_eve_of      ["12-25", "01-01"]：算出來的最後交易日如果正好是這些日子之前的最後一個工作日，再提前一個工作日
+                      （ICE Brent：聖誕、元旦前一個工作日不做最後交易日）
     """
     months_before: int = Field(ge=0, le=3)
     day: Literal["last_business"] | int = "last_business"
     business_days_before: int = Field(default=0, ge=0, le=10)
+    count_from_day: bool = False
+    not_eve_of: list[str] = Field(default=[], max_length=4)
     verified: bool = False                        # 規則是否已經和交易所 / 數據商的實際換月日核對過
     note: str | None = None
     overrides: dict[str, date] = {}               # 合約月份 "YYYY-MM" → 實際最後交易日（假期等例外）
@@ -137,6 +146,14 @@ class RollRule(Strict):
     def _check(self) -> RollRule:
         if isinstance(self.day, int) and not 1 <= self.day <= 28:
             raise ValueError("day 必須在 1–28 之間，或寫 last_business")
+        for md in self.not_eve_of:
+            try:
+                date(2000, int(md[:2]), int(md[3:]))
+                assert len(md) == 5 and md[2] == "-"
+            except (ValueError, AssertionError):
+                raise ValueError(f"not_eve_of 的 {md!r} 要寫成 MM-DD，例如 12-25") from None
+        if self.count_from_day and not isinstance(self.day, int):
+            raise ValueError("count_from_day 只用於整數 day（last_business 沒有「那個日曆日」）")
         for key in self.overrides:
             if len(key) != 7 or key[4] != "-" or not key[:4].isdigit() or not 1 <= int(key[5:] or 0) <= 12:
                 raise ValueError(f"overrides 的鍵必須寫成 YYYY-MM：{key}")
