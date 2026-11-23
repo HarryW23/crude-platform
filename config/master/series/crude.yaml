@@ -56,7 +56,7 @@ series:
   - {code: JOHAN_SVERDRUP_DIFF, name_zh: 約翰斯維德魯普升貼水, commodity: JOHAN_SVERDRUP, location: NWE, kind: diff, unit: USD/bbl, module: spread,
      benchmark: DATED_BRENT, aliases: ["Johan Sverdrup Diff", "JS Diff"]}
   - {code: CPC_DIFF, name_zh: CPC 升貼水, commodity: CPC, location: MED, kind: diff, unit: USD/bbl, module: spread,
-     benchmark: DATED_BRENT, aliases: ["CPC Blend Diff", "CPC Diff"]}
+     benchmark: DATED_BRENT, aliases: ["CPC Blend Diff", "CPC Diff"], lseg: {ric: "BFO-CPC", field: TRDPRC_1}}
   - {code: BONNY_LIGHT_DIFF, name_zh: 邦尼輕質升貼水, commodity: BONNY_LIGHT, location: WAF, kind: diff, unit: USD/bbl, module: spread,
      benchmark: DATED_BRENT, aliases: ["Bonny Light Diff"], lseg: {ric: "BFO-BON", field: TRDPRC_1}}
   - {code: WTI_MIDLAND_DIFF, name_zh: WTI 米德蘭升貼水, commodity: WTI_MIDLAND, location: USGC, kind: diff, unit: USD/bbl, module: spread,

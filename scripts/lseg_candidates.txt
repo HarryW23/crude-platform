@@ -1,48 +1,37 @@
-# crudelab：還不知道 RIC 的序列，給 lseg_export.py find 用（第二輪）
+# crudelab：還不知道 RIC 的序列，給 lseg_export.py find 用（第三輪）
 # 每行：序列代碼 | 搜索詞（幾個用 ; 分開）| 候選 RIC（空格分隔，是猜的，對不對以實際取數為準）
-# find 先試候選，再試搜索到的結果；鏈（0#…）會展開成合約再試。結果文件發回後，確認過的 RIC 寫進
-# config/master/series/ 的 lseg: {ric: …, field: …}，再運行 crudelab lseg-rics，這裡對應的行就刪掉。
-# 看結果時注意量級：升貼水應該是個位數（美元/桶），拿到 60–100 說明是絕對價。
+# find 先試候選，再試搜索到的結果；鏈（0#…）會試著展開。結果文件發回後，確認過的 RIC 寫進
+# config/master/series/ 的 lseg: {ric: …, field: …}（替代品加 proxy: 說明），再運行 crudelab lseg-rics，
+# 這裡對應的行就刪掉。看結果時注意量級：升貼水應該是個位數（美元/桶），拿到 60–100 說明是絕對價。
 #
-# 第一輪（2026-11-23）已確認、寫進配置的：迪拜掉期 M1–M12（DCBc2…，見 crude.yaml 的說明）、穆爾班、
-# Brent-Dubai EFS、ESPO、Forties、Bonny Light、WTI MEH、新加坡 92 汽油 / 10ppm 柴油 / 航煤 / 石腦油 / 380、
-# Eurobob、PX、純苯、乙烯。
-# 第一輪裡 Platts（代碼像 AAGXB00、PJABF00）和 Argus（PA…）的 RIC 全部取不到數：多半是沒訂閱，
-# 這一輪的錯誤欄會寫明是「沒權限」還是「RIC 不存在」。
+# 已確認、寫進配置的（2026-11-23 兩輪）：迪拜掉期 M1–M12、穆爾班、Brent-Dubai EFS、ESPO、Forties、Bonny Light、
+# WTI MEH、CPC、新加坡 92 汽油 / 10ppm 柴油 / 航煤 / 石腦油 / 380、Eurobob、PX、純苯、乙烯、
+# 運費 TD3C / TD15 / TD20 / TD25（Baltic 指數 .BMEG / .BAWC / .BAWU / .BAUM）、
+# 國內期貨主力 FU（SFUoi1）、LU（ILUcv1）、BU（SBUoi1）、PP（DCCPv1）、PTA（CTAoi1）。
+# 這台機器上鏈（0#…）一個都展不開，不影響：需要的合約都有連續合約 RIC 可以直接取。
 
-# ---- 第一輪找到了替代品、要確認含義的 ----
-DUBAI_CASH           | Dubai crude spot assessment; Dubai partials                  | DUB-1M DUB-M1
-OMAN_M1              | DME Oman crude oil futures; Gulf Mercantile Exchange Oman    | 0#OQ: 0#DOQ: OMANCALMc1
-URALS_DIFF           | Urals Primorsk vs Dated Brent; Urals Baltic                  | BFO-URL-B BFO-URL-NWE BFO-URL-E
-EKOFISK_DIFF         | Ekofisk vs Dated Brent                                       | BFO-EKO
-WTI_MIDLAND_DIFF     | WTI Midland vs WTI Cushing; WTI Midland spot differential    | WTC-MID- WTC-MIDL WTIMIDUSDFMc1
-MARS_DIFF            | Mars vs WTI spot differential; Mars crude spot               | MRS-WTI MARS-WTI MRSUSSWDMc1
-JAPAN_NAPHTHA        | naphtha CFR Japan spot; Naphtha Japan CFR SPOT               | NAFCFRJPSPOT NAF-JPN- SNJFc1
-RDAM_HSFO_35         | fuel oil 3.5% Rotterdam barges spot; HSFO ARA barges         | FO35-ARA FO35-RDM- UXc1
+# ---- 國內期貨主力：c1 是最近月不是主力；cv1 / coi1 這個帳號沒權限，改試 v1 / oi1（PP、PTA 就是這樣找到的）----
+LLDPE_CN             | | DLLv1 DLLoi1 DLLc2
+MEG_CN               | | DEGv1 DEGoi1 DEGc2
 
-# ---- 國內期貨：主力合約。c1 是最近月，cv1 按成交量、coi1 按持倉量換月；「主力」應該用 cv1 或 coi1 ----
-FU_M1                | SHFE fuel oil futures                                        | SFUc1 SFUcv1 SFUcoi1 SFUcvoi1
-LU_M1                | INE low sulfur fuel oil futures                              | ILUc1 ILUcv1 ILUcoi1 ILUcvoi1
-BU_M1                | SHFE bitumen futures                                         | SBUc1 SBUcv1 SBUcoi1 SBUcvoi1
-PP_CN                | DCE polypropylene futures                                    | DCCPc1 DCCPcv1 DCCPcoi1 DCCPcvoi1
-LLDPE_CN             | DCE LLDPE futures                                            | DLLc1 DLLcv1 DLLcoi1 DLLcvoi1
-PTA_CN               | ZCE PTA futures                                              | CTAc1 CTAcv1 CTAcoi1 CTAcvoi1
-MEG_CN               | DCE ethylene glycol futures                                  | DEGc1 DEGcv1 DEGcoi1 DEGcvoi1
+# ---- 只有替代品，等決定用不用（第二輪已確認：原本的那個數沒權限或路透上沒有）----
+DUBAI_CASH           | | DUB-1M
+OMAN_M1              | | OMANCALMc1
+URALS_DIFF           | | BFO-URL-NWE BFO-URL-E
+EKOFISK_DIFF         | | BFO-EKO
+WTI_MIDLAND_DIFF     | | WTIMIDUSDFMc1
+MARS_DIFF            | | MRSUSSWDMc1
+JAPAN_NAPHTHA        | | NAF-1H-TYO NAF-2H-TYO SNJFc1
+RDAM_HSFO_35         | | UXc1
 
-# ---- 第一輪搜索詞太長、沒搜到結果的，換短的詞再搜 ----
-TD3C_WS              | TD3C; Baltic TD3C; VLCC Middle East China                    | TD3C-BALT BDTI-TD3C .BADI
-TD15_WS              | TD15; Baltic TD15; VLCC West Africa China                    | TD15-BALT BDTI-TD15
-TD20_WS              | TD20; Baltic TD20; Suezmax West Africa                       | TD20-BALT BDTI-TD20
-TD25_WS              | TD25; Baltic TD25; Aframax US Gulf                           | TD25-BALT BDTI-TD25
-SG_VLSFO             | Singapore 0.5% fuel oil; VLSFO Singapore; marine fuel 0.5%   | FO05-SIN LSFO-SIN MF05SGSWMc1
-NWE_DIESEL_10PPM     | diesel 10ppm NWE cargoes spot; ULSD CIF NWE                  | DSL10-NWE- ULSD-NWE- GO10-NWE
-NWE_JET              | jet fuel CIF NWE cargoes spot; jet NWE                       | JET-NWE- JETCIFNWE JET-CIF-NWE-
-NWE_NAPHTHA          | naphtha CIF NWE cargoes spot; naphtha NWE                    | NAF-NWE- NAFCIFNWE NAF-CIF-NWE-
-PROPYLENE_CFR_CHINA  | Propylene China CFR SPOT; propylene CFR China                | PROPCFRCNSPOT PROPYCFRCNSPOT PPYCFRCNSPOT
-TUPI_CHINA_DIFF      | Tupi crude; Lula crude; Brazil crude China differential      | TUPI- LULA- BFO-TUPI
-
-# ---- 多半是 Platts / Argus：這一輪主要確認錯誤是不是「沒權限」 ----
-UPPER_ZAKUM_DIFF     | Upper Zakum vs Dubai; Upper Zakum crude                      | UZK-DUB UZAK-DUB DBDUZ00
-JOHAN_SVERDRUP_DIFF  | Johan Sverdrup vs Dated Brent                                | BFO-JSV BFO-SVD PA00331196DF0
-CPC_DIFF             | CPC Blend vs Dated Brent                                     | BFO-CPC BFO-CPCB D-AAOFY00
-WCS_HARDISTY_DIFF    | Western Canadian Select Hardisty; WCS Houston                | WCS-HDY- WCSc1 AAPPP00
+# ---- 路透上只有 Platts / Argus / General Index 的版本，這個帳號沒權限（第二輪錯誤代碼 UserNotPermission）----
+# 要的話需要另外訂閱（待辦 #5）；開通後再跑 find 就能直接找到
+SG_VLSFO             | Singapore 0.5% fuel oil                                | LFO05FSGMc1
+NWE_DIESEL_10PPM     | diesel 10ppm cargoes CIF NWE                           | AATRO00
+NWE_JET              | jet fuel NWE CIF cargoes                               | GX0000015L1630P
+NWE_NAPHTHA          | naphtha NWE CIF cargoes                                | GX0000092L1630P
+PROPYLENE_CFR_CHINA  | propylene CFR China                                    |
+TUPI_CHINA_DIFF      | Tupi crude                                             | ATUPD00
+UPPER_ZAKUM_DIFF     | Upper Zakum vs Dubai                                   | DBDUZ03
+JOHAN_SVERDRUP_DIFF  | Johan Sverdrup vs Dated Brent                          | AJSWB00
+WCS_HARDISTY_DIFF    | WCS Hardisty vs WTI                                    | AAPPP00

@@ -72,7 +72,7 @@ class CftcRef(Strict):
 
 class LsegRef(Strict):
     """在路透 / LSEG Workspace 上的代碼。由 scripts/lseg_export.py 取數；RIC 也會當作導入時的表頭別名。"""
-    ric: str = Field(pattern=r"^[0-9A-Za-z][0-9A-Za-z#.=/^:_+-]{0,39}$")
+    ric: str = Field(pattern=r"^[0-9A-Za-z.][0-9A-Za-z#.=/^:_+-]{0,39}$")   # 指數以 . 開頭，例如 .BMEG
     field: str | None = Field(default=None, pattern=r"^[A-Z][A-Z0-9_]{1,24}$")   # 不寫時依次試 SETTLE、TRDPRC_1…
     # 不是這條序列本身、而是含義接近的替代（例如用掉期代替現貨、用期貨代替評估價）時寫明，數據頁會顯示
     proxy: str | None = None
@@ -147,7 +147,7 @@ class CurveLseg(Strict):
     """曲線在路透上的 RIC 模板：{n} 換成 月序 + offset。
     offset 用在數據商的月序和這裡的 M1 定義不同時，例如 NYMEX 迪拜日曆掉期 DCBc1 是正在計價的當月，
     這裡的 M1 是下一個月，所以 offset: 1（M1 = DCBc2）。"""
-    ric: str = Field(pattern=r"^[0-9A-Za-z][0-9A-Za-z#.=/^:_+-]{0,30}\{n\}[0-9A-Za-z#.=/^:_+-]{0,8}$")
+    ric: str = Field(pattern=r"^[0-9A-Za-z.][0-9A-Za-z#.=/^:_+-]{0,30}\{n\}[0-9A-Za-z#.=/^:_+-]{0,8}$")
     field: str | None = Field(default=None, pattern=r"^[A-Z][A-Z0-9_]{1,24}$")
     offset: int = Field(default=0, ge=0, le=3)
 

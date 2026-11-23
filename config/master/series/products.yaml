@@ -56,11 +56,11 @@ series:
   - {code: CN_JET_EXWORKS, name_zh: 中國航煤出廠價, commodity: JET, location: CHINA, kind: spot, unit: CNY/t, module: refinery,
      frequency: monthly, aliases: ["航煤出廠價", "中國航煤出廠價"]}
   - {code: FU_M1, name_zh: 上期所燃料油主力, commodity: HSFO, location: CHINA, kind: futures, unit: CNY/t, module: refinery,
-     aliases: ["FU主力", "SHFE FU"]}
+     aliases: ["FU主力", "SHFE FU"], lseg: {ric: "SFUoi1", field: SETTLE}}
   - {code: LU_M1, name_zh: INE 低硫燃料油主力, commodity: VLSFO, location: CHINA, kind: futures, unit: CNY/t, module: refinery,
-     aliases: ["LU主力", "INE LU"]}
+     aliases: ["LU主力", "INE LU"], lseg: {ric: "ILUcv1", field: SETTLE}}
   - {code: BU_M1, name_zh: 上期所瀝青主力, commodity: BITUMEN, location: CHINA, kind: futures, unit: CNY/t, module: refinery,
-     aliases: ["BU主力", "瀝青主力"]}
+     aliases: ["BU主力", "瀝青主力"], lseg: {ric: "SBUoi1", field: SETTLE}}
 
   # ---------- 化工品（一體化煉廠用） ----------
   - {code: PX_CFR_CHINA, name_zh: PX CFR 中國, commodity: PX, location: CHINA, kind: spot, unit: USD/t, module: refinery,
@@ -74,10 +74,10 @@ series:
   - {code: PROPYLENE_CFR_CHINA, name_zh: 丙烯 CFR 中國, commodity: PROPYLENE, location: CHINA, kind: spot, unit: USD/t, module: refinery,
      aliases: ["Propylene CFR China", "丙烯CFR中國"]}
   - {code: PP_CN, name_zh: 聚丙烯期貨主力, commodity: PP, location: CHINA, kind: futures, unit: CNY/t, module: refinery,
-     aliases: ["PP主力", "DCE PP"]}
+     aliases: ["PP主力", "DCE PP"], lseg: {ric: "DCCPv1", field: SETTLE}}
   - {code: LLDPE_CN, name_zh: LLDPE 期貨主力, commodity: LLDPE, location: CHINA, kind: futures, unit: CNY/t, module: refinery,
      aliases: ["L主力", "塑料主力", "DCE LLDPE"]}
   - {code: PTA_CN, name_zh: PTA 期貨主力, commodity: PTA, location: CHINA, kind: futures, unit: CNY/t, module: refinery,
-     aliases: ["TA主力", "PTA主力"]}
+     aliases: ["TA主力", "PTA主力"], lseg: {ric: "CTAoi1", field: SETTLE}}
   - {code: MEG_CN, name_zh: 乙二醇期貨主力, commodity: MEG_CHEM, location: CHINA, kind: futures, unit: CNY/t, module: refinery,
      aliases: ["EG主力", "乙二醇主力"]}

@@ -55,8 +55,13 @@ MURBAN_M1                MRBNc1           SETTLE
 BRENT_DUBAI_EFS          DUB-EFS-1M       MID_PRICE
 ESPO_DIFF                ESPO-DUB         TRDPRC_1
 FORTIES_DIFF             BFO-FOT          TRDPRC_1
+CPC_DIFF                 BFO-CPC          TRDPRC_1
 BONNY_LIGHT_DIFF         BFO-BON          TRDPRC_1
 WTI_MEH_DIFF             WTC-MEH          TRDPRC_1
+TD3C_WS                  .BMEG            TRDPRC_1
+TD15_WS                  .BAWC            TRDPRC_1
+TD20_WS                  .BAWU            TRDPRC_1
+TD25_WS                  .BAUM            TRDPRC_1
 USDCNY                   CNY=
 GASOIL_ICE_M1            LGOc1
 GASOIL_ICE_M2            LGOc2
@@ -71,37 +76,32 @@ SG_JET_KERO              JET-SIN          SETTLE
 SG_NAPHTHA               NAF-SIN          SETTLE
 SG_HSFO_380              FO380-SIN        SETTLE
 NWE_EUROBOB              EUROBOB-ARA      TRDPRC_1
+FU_M1                    SFUoi1           SETTLE
+LU_M1                    ILUcv1           SETTLE
+BU_M1                    SBUoi1           SETTLE
 PX_CFR_CHINA             PXCFRCNSPOT      TRDPRC_1
 BENZENE_FOB_KOREA        BZFOBKRSPOT      TRDPRC_1
 ETHYLENE_CFR_NEA         ETHYCFRNEASPOT   TRDPRC_1
+PP_CN                    DCCPv1           SETTLE
+PTA_CN                   CTAoi1           SETTLE
 
-# 下面 29 條可能在路透上，但還不知道 RIC（現貨評估價通常要另外訂閱 Platts / Argus）：
+# 下面 19 條可能在路透上，但還不知道 RIC（現貨評估價通常要另外訂閱 Platts / Argus）：
 # DUBAI_CASH             ?    迪拜現貨
 # OMAN_M1                ?    阿曼期貨 M1
 # URALS_DIFF             ?    烏拉爾升貼水
 # UPPER_ZAKUM_DIFF       ?    上扎庫姆升貼水
 # EKOFISK_DIFF           ?    埃科菲斯克升貼水
 # JOHAN_SVERDRUP_DIFF    ?    約翰斯維德魯普升貼水
-# CPC_DIFF               ?    CPC 升貼水
 # WTI_MIDLAND_DIFF       ?    WTI 米德蘭升貼水
 # MARS_DIFF              ?    Mars 升貼水
 # WCS_HARDISTY_DIFF      ?    WCS（哈迪斯蒂）升貼水
 # TUPI_CHINA_DIFF        ?    Tupi 到中國升貼水（到岸）
-# TD3C_WS                ?    TD3C 中東→中國 VLCC
-# TD15_WS                ?    TD15 西非→中國 VLCC
-# TD20_WS                ?    TD20 西非→歐洲 蘇伊士型
-# TD25_WS                ?    TD25 美灣→歐洲 阿芙拉型
 # SG_VLSFO               ?    新加坡 0.5% 低硫燃料油
 # JAPAN_NAPHTHA          ?    日本到岸石腦油
 # NWE_DIESEL_10PPM       ?    西北歐 10ppm 柴油
 # NWE_JET                ?    西北歐航煤
 # NWE_NAPHTHA            ?    西北歐石腦油
 # RDAM_HSFO_35           ?    鹿特丹 3.5% 燃料油
-# FU_M1                  ?    上期所燃料油主力
-# LU_M1                  ?    INE 低硫燃料油主力
-# BU_M1                  ?    上期所瀝青主力
 # PROPYLENE_CFR_CHINA    ?    丙烯 CFR 中國
-# PP_CN                  ?    聚丙烯期貨主力
 # LLDPE_CN               ?    LLDPE 期貨主力
-# PTA_CN                 ?    PTA 期貨主力
 # MEG_CN                 ?    乙二醇期貨主力

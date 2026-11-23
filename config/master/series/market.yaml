@@ -3,13 +3,13 @@
 series:
   # ---------- 油輪運費（WS 點；折成 美元/桶 需要當年的基準費率，見 parameters/freight.yaml） ----------
   - {code: TD3C_WS, name_zh: TD3C 中東→中國 VLCC, commodity: FREIGHT_DIRTY, location: GLOBAL, kind: freight, unit: WS, module: spread,
-     aliases: ["TD3C", "TD3C WS"]}
+     aliases: ["TD3C", "TD3C WS"], lseg: {ric: ".BMEG", field: TRDPRC_1}}
   - {code: TD15_WS, name_zh: TD15 西非→中國 VLCC, commodity: FREIGHT_DIRTY, location: GLOBAL, kind: freight, unit: WS, module: spread,
-     aliases: ["TD15", "TD15 WS"]}
+     aliases: ["TD15", "TD15 WS"], lseg: {ric: ".BAWC", field: TRDPRC_1}}
   - {code: TD20_WS, name_zh: TD20 西非→歐洲 蘇伊士型, commodity: FREIGHT_DIRTY, location: GLOBAL, kind: freight, unit: WS, module: spread,
-     aliases: ["TD20", "TD20 WS"]}
+     aliases: ["TD20", "TD20 WS"], lseg: {ric: ".BAWU", field: TRDPRC_1}}
   - {code: TD25_WS, name_zh: TD25 美灣→歐洲 阿芙拉型, commodity: FREIGHT_DIRTY, location: GLOBAL, kind: freight, unit: WS, module: spread,
-     aliases: ["TD25", "TD25 WS"]}
+     aliases: ["TD25", "TD25 WS"], lseg: {ric: ".BAUM", field: TRDPRC_1}}
 
   # ---------- 匯率 ----------
   - {code: USDCNY, calendar: CN, name_zh: 美元兌人民幣（1 美元合多少人民幣）, commodity: FX, location: GLOBAL, kind: fx, unit: CNY/USD, module: common,
