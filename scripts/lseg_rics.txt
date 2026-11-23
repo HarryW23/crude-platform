@@ -26,6 +26,18 @@ WTI_M9                   CLc9
 WTI_M10                  CLc10
 WTI_M11                  CLc11
 WTI_M12                  CLc12
+DUBAI_SWAP_M1            DCBc2            SETTLE
+DUBAI_SWAP_M2            DCBc3            SETTLE
+DUBAI_SWAP_M3            DCBc4            SETTLE
+DUBAI_SWAP_M4            DCBc5            SETTLE
+DUBAI_SWAP_M5            DCBc6            SETTLE
+DUBAI_SWAP_M6            DCBc7            SETTLE
+DUBAI_SWAP_M7            DCBc8            SETTLE
+DUBAI_SWAP_M8            DCBc9            SETTLE
+DUBAI_SWAP_M9            DCBc10           SETTLE
+DUBAI_SWAP_M10           DCBc11           SETTLE
+DUBAI_SWAP_M11           DCBc12           SETTLE
+DUBAI_SWAP_M12           DCBc13           SETTLE
 SC_M1                    ISCc1
 SC_M2                    ISCc2
 SC_M3                    ISCc3
@@ -39,6 +51,12 @@ SC_M10                   ISCc10
 SC_M11                   ISCc11
 SC_M12                   ISCc12
 DATED_BRENT              BFO-
+MURBAN_M1                MRBNc1           SETTLE
+BRENT_DUBAI_EFS          DUB-EFS-1M       MID_PRICE
+ESPO_DIFF                ESPO-DUB         TRDPRC_1
+FORTIES_DIFF             BFO-FOT          TRDPRC_1
+BONNY_LIGHT_DIFF         BFO-BON          TRDPRC_1
+WTI_MEH_DIFF             WTC-MEH          TRDPRC_1
 USDCNY                   CNY=
 GASOIL_ICE_M1            LGOc1
 GASOIL_ICE_M2            LGOc2
@@ -47,34 +65,25 @@ RBOB_M1                  RBc1
 RBOB_M2                  RBc2
 HO_M1                    HOc1
 HO_M2                    HOc2
+SG_GASOLINE_92           GL92-SIN         SETTLE
+SG_GASOIL_10PPM          GO10-SIN         SETTLE
+SG_JET_KERO              JET-SIN          SETTLE
+SG_NAPHTHA               NAF-SIN          SETTLE
+SG_HSFO_380              FO380-SIN        SETTLE
+NWE_EUROBOB              EUROBOB-ARA      TRDPRC_1
+PX_CFR_CHINA             PXCFRCNSPOT      TRDPRC_1
+BENZENE_FOB_KOREA        BZFOBKRSPOT      TRDPRC_1
+ETHYLENE_CFR_NEA         ETHYCFRNEASPOT   TRDPRC_1
 
-# 下面 56 條可能在路透上，但還不知道 RIC（現貨評估價通常要另外訂閱 Platts / Argus）：
-# DUBAI_SWAP_M1          ?    迪拜掉期 M1
-# DUBAI_SWAP_M2          ?    迪拜掉期 M2
-# DUBAI_SWAP_M3          ?    迪拜掉期 M3
-# DUBAI_SWAP_M4          ?    迪拜掉期 M4
-# DUBAI_SWAP_M5          ?    迪拜掉期 M5
-# DUBAI_SWAP_M6          ?    迪拜掉期 M6
-# DUBAI_SWAP_M7          ?    迪拜掉期 M7
-# DUBAI_SWAP_M8          ?    迪拜掉期 M8
-# DUBAI_SWAP_M9          ?    迪拜掉期 M9
-# DUBAI_SWAP_M10         ?    迪拜掉期 M10
-# DUBAI_SWAP_M11         ?    迪拜掉期 M11
-# DUBAI_SWAP_M12         ?    迪拜掉期 M12
+# 下面 29 條可能在路透上，但還不知道 RIC（現貨評估價通常要另外訂閱 Platts / Argus）：
 # DUBAI_CASH             ?    迪拜現貨
 # OMAN_M1                ?    阿曼期貨 M1
-# MURBAN_M1              ?    穆爾班期貨 M1
-# BRENT_DUBAI_EFS        ?    Brent-Dubai EFS
-# ESPO_DIFF              ?    ESPO 升貼水
 # URALS_DIFF             ?    烏拉爾升貼水
 # UPPER_ZAKUM_DIFF       ?    上扎庫姆升貼水
-# FORTIES_DIFF           ?    福蒂斯升貼水
 # EKOFISK_DIFF           ?    埃科菲斯克升貼水
 # JOHAN_SVERDRUP_DIFF    ?    約翰斯維德魯普升貼水
 # CPC_DIFF               ?    CPC 升貼水
-# BONNY_LIGHT_DIFF       ?    邦尼輕質升貼水
 # WTI_MIDLAND_DIFF       ?    WTI 米德蘭升貼水
-# WTI_MEH_DIFF           ?    WTI 休斯頓升貼水
 # MARS_DIFF              ?    Mars 升貼水
 # WCS_HARDISTY_DIFF      ?    WCS（哈迪斯蒂）升貼水
 # TUPI_CHINA_DIFF        ?    Tupi 到中國升貼水（到岸）
@@ -82,14 +91,8 @@ HO_M2                    HOc2
 # TD15_WS                ?    TD15 西非→中國 VLCC
 # TD20_WS                ?    TD20 西非→歐洲 蘇伊士型
 # TD25_WS                ?    TD25 美灣→歐洲 阿芙拉型
-# SG_GASOLINE_92         ?    新加坡 92# 汽油
-# SG_GASOIL_10PPM        ?    新加坡 10ppm 柴油
-# SG_JET_KERO            ?    新加坡航煤
-# SG_NAPHTHA             ?    新加坡石腦油
-# SG_HSFO_380            ?    新加坡 380cst 高硫燃料油
 # SG_VLSFO               ?    新加坡 0.5% 低硫燃料油
 # JAPAN_NAPHTHA          ?    日本到岸石腦油
-# NWE_EUROBOB            ?    西北歐 Eurobob 汽油
 # NWE_DIESEL_10PPM       ?    西北歐 10ppm 柴油
 # NWE_JET                ?    西北歐航煤
 # NWE_NAPHTHA            ?    西北歐石腦油
@@ -97,9 +100,6 @@ HO_M2                    HOc2
 # FU_M1                  ?    上期所燃料油主力
 # LU_M1                  ?    INE 低硫燃料油主力
 # BU_M1                  ?    上期所瀝青主力
-# PX_CFR_CHINA           ?    PX CFR 中國
-# BENZENE_FOB_KOREA      ?    純苯 FOB 韓國
-# ETHYLENE_CFR_NEA       ?    乙烯 CFR 東北亞
 # PROPYLENE_CFR_CHINA    ?    丙烯 CFR 中國
 # PP_CN                  ?    聚丙烯期貨主力
 # LLDPE_CN               ?    LLDPE 期貨主力

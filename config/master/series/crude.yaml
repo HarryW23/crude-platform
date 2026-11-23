@@ -23,7 +23,8 @@ curves:
      roll: {months_before: 1, day: 25, business_days_before: 3, note: "NYMEX WTI：交割月前一個月 25 日（非工作日取之前最近的工作日）之前 3 個工作日"}}
   - {code: DUBAI_SWAP, name_zh: 迪拜掉期, commodity: DUBAI, location: MEG, kind: swap, unit: USD/bbl,
      months: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], module: common, aliases: ["Dubai Swap M{n}", "迪拜掉期M{n}", "Dubai M{n}"],
-     roll: {months_before: 1, day: last_business, note: "月均價掉期：假設 M1 在交割月前一個月月底換到下一個月。不同數據商的 M1 定義可能不同，務必核對"}}
+     lseg: {ric: "DCBc{n}", field: SETTLE, offset: 1},
+     roll: {months_before: 1, day: last_business, note: "月均價掉期：假設 M1 在交割月前一個月月底換到下一個月。不同數據商的 M1 定義可能不同，務必核對。路透取 NYMEX 迪拜（Platts）日曆掉期期貨的結算價：DCBc1 是正在計價的當月（2026-11-20 為 91.38），DCBc2（88.94）和路透的迪拜 1 個月掉期 DUB-1M-S（88.89）一致，所以 M1 = DCBc2"}}
   - {code: SC, calendar: CN, name_zh: 上海原油期貨, commodity: SC, location: CHINA, kind: futures, unit: CNY/bbl,
      months: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], module: common, aliases: ["ISCc{n}", "SC M{n}", "INE SC M{n}", "上海原油M{n}"],
      roll: {months_before: 1, day: last_business, note: "INE 原油：交割月前一個月的最後一個交易日"}}
@@ -37,19 +38,19 @@ series:
   - {code: OMAN_M1, name_zh: 阿曼期貨 M1, commodity: OMAN, location: MEG, kind: futures, unit: USD/bbl, module: spread,
      contract: M1, aliases: ["Oman M1", "阿曼M1", "DME Oman", "GME Oman"]}
   - {code: MURBAN_M1, name_zh: 穆爾班期貨 M1, commodity: MURBAN, location: MEG, kind: futures, unit: USD/bbl, module: spread,
-     contract: M1, aliases: ["Murban M1", "IFAD Murban", "穆爾班M1"]}
+     contract: M1, aliases: ["Murban M1", "IFAD Murban", "穆爾班M1"], lseg: {ric: "MRBNc1", field: SETTLE}}
   - {code: BRENT_DUBAI_EFS, name_zh: Brent-Dubai EFS, commodity: DUBAI, location: MEG, kind: diff, unit: USD/bbl, module: spread,
-     benchmark: BRENT, aliases: ["EFS", "Brent Dubai EFS"]}
+     benchmark: BRENT, aliases: ["EFS", "Brent Dubai EFS"], lseg: {ric: "DUB-EFS-1M", field: MID_PRICE}}
 
   # ---------- 現貨升貼水 ----------
   - {code: ESPO_DIFF, name_zh: ESPO 升貼水, commodity: ESPO, location: RFE, kind: diff, unit: USD/bbl, module: spread,
-     benchmark: DUBAI, aliases: ["ESPO Diff", "ESPO 升貼水"]}
+     benchmark: DUBAI, aliases: ["ESPO Diff", "ESPO 升貼水"], lseg: {ric: "ESPO-DUB", field: TRDPRC_1}}
   - {code: URALS_DIFF, name_zh: 烏拉爾升貼水, commodity: URALS, location: BALTIC, kind: diff, unit: USD/bbl, module: spread,
      benchmark: DATED_BRENT, aliases: ["Urals Diff", "烏拉爾升貼水"]}
   - {code: UPPER_ZAKUM_DIFF, name_zh: 上扎庫姆升貼水, commodity: UPPER_ZAKUM, location: MEG, kind: diff, unit: USD/bbl, module: spread,
      benchmark: DUBAI, aliases: ["Upper Zakum Diff"]}
   - {code: FORTIES_DIFF, name_zh: 福蒂斯升貼水, commodity: FORTIES, location: NWE, kind: diff, unit: USD/bbl, module: spread,
-     benchmark: DATED_BRENT, aliases: ["Forties Diff"]}
+     benchmark: DATED_BRENT, aliases: ["Forties Diff"], lseg: {ric: "BFO-FOT", field: TRDPRC_1}}
   - {code: EKOFISK_DIFF, name_zh: 埃科菲斯克升貼水, commodity: EKOFISK, location: NWE, kind: diff, unit: USD/bbl, module: spread,
      benchmark: DATED_BRENT, aliases: ["Ekofisk Diff"]}
   - {code: JOHAN_SVERDRUP_DIFF, name_zh: 約翰斯維德魯普升貼水, commodity: JOHAN_SVERDRUP, location: NWE, kind: diff, unit: USD/bbl, module: spread,
@@ -57,11 +58,11 @@ series:
   - {code: CPC_DIFF, name_zh: CPC 升貼水, commodity: CPC, location: MED, kind: diff, unit: USD/bbl, module: spread,
      benchmark: DATED_BRENT, aliases: ["CPC Blend Diff", "CPC Diff"]}
   - {code: BONNY_LIGHT_DIFF, name_zh: 邦尼輕質升貼水, commodity: BONNY_LIGHT, location: WAF, kind: diff, unit: USD/bbl, module: spread,
-     benchmark: DATED_BRENT, aliases: ["Bonny Light Diff"]}
+     benchmark: DATED_BRENT, aliases: ["Bonny Light Diff"], lseg: {ric: "BFO-BON", field: TRDPRC_1}}
   - {code: WTI_MIDLAND_DIFF, name_zh: WTI 米德蘭升貼水, commodity: WTI_MIDLAND, location: USGC, kind: diff, unit: USD/bbl, module: spread,
      benchmark: WTI, aliases: ["WTI Midland Diff", "Midland Diff"]}
   - {code: WTI_MEH_DIFF, name_zh: WTI 休斯頓升貼水, commodity: WTI_MEH, location: USGC, kind: diff, unit: USD/bbl, module: spread,
-     benchmark: WTI, aliases: ["MEH Diff", "WTI Houston Diff"]}
+     benchmark: WTI, aliases: ["MEH Diff", "WTI Houston Diff"], lseg: {ric: "WTC-MEH", field: TRDPRC_1}}
   - {code: MARS_DIFF, name_zh: Mars 升貼水, commodity: MARS, location: USGC, kind: diff, unit: USD/bbl, module: spread,
      benchmark: WTI, aliases: ["Mars Diff"]}
   - {code: WCS_HARDISTY_DIFF, name_zh: WCS（哈迪斯蒂）升貼水, commodity: WCS, location: CANADA, kind: diff, unit: USD/bbl, module: spread,

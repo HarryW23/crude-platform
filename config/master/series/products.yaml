@@ -14,15 +14,15 @@ curves:
 series:
   # ---------- 新加坡 / 亞洲 ----------
   - {code: SG_GASOLINE_92, name_zh: 新加坡 92# 汽油, commodity: GASOLINE, location: SINGAPORE, kind: spot, unit: USD/bbl, module: refinery,
-     aliases: ["Singapore Mogas 92", "Sing 92", "新加坡汽油92"]}
+     aliases: ["Singapore Mogas 92", "Sing 92", "新加坡汽油92"], lseg: {ric: "GL92-SIN", field: SETTLE}}
   - {code: SG_GASOIL_10PPM, name_zh: 新加坡 10ppm 柴油, commodity: GASOIL, location: SINGAPORE, kind: spot, unit: USD/bbl, module: refinery,
-     aliases: ["Singapore Gasoil 10ppm", "Sing Gasoil", "新加坡柴油"]}
+     aliases: ["Singapore Gasoil 10ppm", "Sing Gasoil", "新加坡柴油"], lseg: {ric: "GO10-SIN", field: SETTLE}}
   - {code: SG_JET_KERO, name_zh: 新加坡航煤, commodity: JET, location: SINGAPORE, kind: spot, unit: USD/bbl, module: refinery,
-     aliases: ["Singapore Jet Kero", "Sing Jet", "新加坡航煤"]}
+     aliases: ["Singapore Jet Kero", "Sing Jet", "新加坡航煤"], lseg: {ric: "JET-SIN", field: SETTLE}}
   - {code: SG_NAPHTHA, name_zh: 新加坡石腦油, commodity: NAPHTHA, location: SINGAPORE, kind: spot, unit: USD/bbl, module: refinery,
-     aliases: ["Singapore Naphtha", "Naphtha FOB Singapore", "新加坡石腦油"]}
+     aliases: ["Singapore Naphtha", "Naphtha FOB Singapore", "新加坡石腦油"], lseg: {ric: "NAF-SIN", field: SETTLE}}
   - {code: SG_HSFO_380, name_zh: 新加坡 380cst 高硫燃料油, commodity: HSFO, location: SINGAPORE, kind: spot, unit: USD/t, module: refinery,
-     aliases: ["Singapore 380cst", "Sing HSFO 380", "新加坡高硫380"]}
+     aliases: ["Singapore 380cst", "Sing HSFO 380", "新加坡高硫380"], lseg: {ric: "FO380-SIN", field: SETTLE}}
   - {code: SG_VLSFO, name_zh: 新加坡 0.5% 低硫燃料油, commodity: VLSFO, location: SINGAPORE, kind: spot, unit: USD/t, module: refinery,
      aliases: ["Singapore VLSFO", "Sing Marine 0.5%", "新加坡低硫"]}
   - {code: JAPAN_NAPHTHA, name_zh: 日本到岸石腦油, commodity: NAPHTHA, location: JAPAN, kind: spot, unit: USD/t, module: refinery,
@@ -30,7 +30,7 @@ series:
 
   # ---------- 西北歐 ----------
   - {code: NWE_EUROBOB, name_zh: 西北歐 Eurobob 汽油, commodity: GASOLINE, location: NWE, kind: spot, unit: USD/t, module: refinery,
-     aliases: ["Eurobob", "NWE Gasoline"]}
+     aliases: ["Eurobob", "NWE Gasoline"], lseg: {ric: "EUROBOB-ARA", field: TRDPRC_1}}
   - {code: NWE_DIESEL_10PPM, name_zh: 西北歐 10ppm 柴油, commodity: GASOIL, location: NWE, kind: spot, unit: USD/t, module: refinery,
      aliases: ["NWE Diesel 10ppm", "ULSD NWE"]}
   - {code: NWE_JET, name_zh: 西北歐航煤, commodity: JET, location: NWE, kind: spot, unit: USD/t, module: refinery,
@@ -64,13 +64,13 @@ series:
 
   # ---------- 化工品（一體化煉廠用） ----------
   - {code: PX_CFR_CHINA, name_zh: PX CFR 中國, commodity: PX, location: CHINA, kind: spot, unit: USD/t, module: refinery,
-     aliases: ["PX CFR China", "PX CFR中國"]}
+     aliases: ["PX CFR China", "PX CFR中國"], lseg: {ric: "PXCFRCNSPOT", field: TRDPRC_1}}
   - {code: BENZENE_FOB_KOREA, name_zh: 純苯 FOB 韓國, commodity: BENZENE, location: KOREA, kind: spot, unit: USD/t, module: refinery,
-     aliases: ["Benzene FOB Korea", "純苯FOB韓國"]}
+     aliases: ["Benzene FOB Korea", "純苯FOB韓國"], lseg: {ric: "BZFOBKRSPOT", field: TRDPRC_1}}
   - {code: BENZENE_EC, name_zh: 華東純苯, commodity: BENZENE, location: EAST_CHINA, kind: spot, unit: CNY/t, module: refinery,
      aliases: ["華東純苯", "純苯華東"]}
   - {code: ETHYLENE_CFR_NEA, name_zh: 乙烯 CFR 東北亞, commodity: ETHYLENE, location: NEA, kind: spot, unit: USD/t, module: refinery,
-     aliases: ["Ethylene CFR NE Asia", "乙烯CFR東北亞"]}
+     aliases: ["Ethylene CFR NE Asia", "乙烯CFR東北亞"], lseg: {ric: "ETHYCFRNEASPOT", field: TRDPRC_1}}
   - {code: PROPYLENE_CFR_CHINA, name_zh: 丙烯 CFR 中國, commodity: PROPYLENE, location: CHINA, kind: spot, unit: USD/t, module: refinery,
      aliases: ["Propylene CFR China", "丙烯CFR中國"]}
   - {code: PP_CN, name_zh: 聚丙烯期貨主力, commodity: PP, location: CHINA, kind: futures, unit: CNY/t, module: refinery,

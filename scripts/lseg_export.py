@@ -29,6 +29,7 @@ import argparse
 import csv
 import getpass
 import os
+import re
 import socket
 import sys
 import time
@@ -47,7 +48,13 @@ RESTART_HINT = ("Workspace 的數據通道沒有開。把 Workspace 從右下角
                 "  檢查方法（PowerShell）：netstat -ano | findstr LISTENING | findstr \":90\"\n"
                 "  應該看到 127.0.0.1:9000 或 :9060\n"
                 "  重開後還是沒有：這個帳號或這台機器可能沒開 API 權限，請找 IT / LSEG 確認")
-FIND_TRIES = 8                                # find：每條序列最多試這麼多個 RIC
+FIND_TRIES = 12                               # find：每條序列最多試這麼多個 RIC（--tries 可改）
+CHAIN_TAKE = 3                                # find：鏈（0#…）展開後試前幾個成員
+# 路透歷史數據接口的錯誤代碼在括號裡，例如 (TS.Interday.UserNotPermission.92000, …)：要看它才分得清原因
+ERROR_CODE = re.compile(r"\b(TS\.\w+\.\w+(?:\.\d+)?)")
+ERROR_KINDS = (("NotPermission", "沒權限（帳號沒訂閱這個數據，常見於 Platts / Argus）"),
+               ("Permission", "沒權限（帳號沒訂閱這個數據，常見於 Platts / Argus）"),
+               ("InvalidRIC", "RIC 不存在"), ("NotFound", "RIC 不存在"), ("UserRequestError", "RIC 或請求無效"))
 FIND_DAYS = 30
 
 # LSEG 的庫在新版 pandas 下會刷 FutureWarning，跟取到的數據無關，不顯示
@@ -60,13 +67,18 @@ class Fail(Exception):
 
 # ------------------------------ 讀 RIC 清單 ------------------------------
 
+def strip_comment(line: str) -> str:
+    """# 開頭、或空格後的 # 是註釋；RIC 裡的 #（例如鏈 0#LCO:）不算。"""
+    return re.split(r"(?:^|\s)#", line, maxsplit=1)[0].strip()
+
+
 def read_rics(path: Path) -> list[tuple[str, str, str | None]]:
     """每行：序列代碼  RIC  [字段]。# 開頭是註釋。"""
     if not path.exists():
         raise Fail(f"找不到 {path.name}：它應該和這個腳本放在同一個文件夾")
     out = []
     for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-        line = line.split("#", 1)[0].strip()
+        line = strip_comment(line)
         if not line:
             continue
         parts = line.split()
@@ -187,6 +199,18 @@ class Client:
                 out.append((ric, str(row.get("DocumentTitle") or "").strip()))
         return out
 
+    def chain(self, ric: str) -> list[str]:
+        """展開鏈（0#…）成員 RIC。舊版 eikon 庫或展開失敗時回傳空。"""
+        discovery = getattr(self.lib, "discovery", None)
+        maker = getattr(discovery, "Chain", None) if discovery is not None else None
+        if maker is None:
+            return []
+        try:
+            members = list(maker(ric).constituents or [])
+        except Exception:
+            return []
+        return [str(m) for m in members if m and not str(m).startswith("0#")]
+
     def frame(self, ric: str, start: date, end: date):
         """取一個 RIC 的日度歷史，回傳 pandas DataFrame（索引是日期，列是各字段）。"""
         try:
@@ -304,13 +328,25 @@ def export(days: int, out: Path, rics_path: Path) -> int:
     return 0
 
 
+def explain_error(text: str) -> str:
+    """把庫的錯誤訊息歸類成人話，附上原始錯誤代碼。"""
+    code = ERROR_CODE.search(text)
+    if code:
+        kind = next((zh for key, zh in ERROR_KINDS if key.lower() in code.group(1).lower()), "取數失敗")
+        return f"{kind} [{code.group(1)}]"
+    low = text.lower()
+    if "no data to return" in low or "empty" in low:
+        return "這段時間沒有數據"
+    return " ".join(text.split())[:160]
+
+
 def read_candidates(path: Path, only: set[str] | None) -> list[tuple[str, str, list[str]]]:
-    """每行：序列代碼 | 搜索詞 | 候選 RIC（空格分隔，可以不寫）。# 開頭是註釋。"""
+    """每行：序列代碼 | 搜索詞（幾個用 ; 分開，可以不寫）| 候選 RIC（空格分隔，可以不寫）。# 開頭是註釋。"""
     if not path.exists():
         raise Fail(f"找不到 {path.name}：它應該和這個腳本放在同一個文件夾")
     out = []
     for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-        line = line.split("#", 1)[0].strip()
+        line = strip_comment(line)
         if not line:
             continue
         parts = [p.strip() for p in line.split("|")]
@@ -321,7 +357,7 @@ def read_candidates(path: Path, only: set[str] | None) -> list[tuple[str, str, l
     return out
 
 
-def find(cands_path: Path, out: Path, only: set[str] | None) -> int:
+def find(cands_path: Path, out: Path, only: set[str] | None, tries_per_series: int = FIND_TRIES) -> int:
     """給還不知道 RIC 的序列找 RIC：先試候選，再試搜索到的前幾個，每個取最近一個月看有沒有數、量級對不對。
     結果只含 RIC、標題、最後一天的值，不含歷史數據。"""
     items = read_candidates(cands_path, only)
@@ -336,42 +372,49 @@ def find(cands_path: Path, out: Path, only: set[str] | None) -> int:
         for i, (code, query, guesses) in enumerate(items, 1):
             print(f"\n[{i}/{len(items)}] {code}  搜索：{query or '（不搜索）'}")
             tries: dict[str, str] = {ric: "候選" for ric in guesses}
-            if query:
+            for q in [q.strip() for q in query.split(";") if q.strip()]:     # 可以寫幾個搜索詞，用 ; 分開
                 try:
-                    for ric, title in client.search(query, FIND_TRIES):
+                    for ric, title in client.search(q, tries_per_series):
                         tries.setdefault(ric, title or "搜索結果")
                 except Fail as exc:
                     print(f"  {exc}")
                 finally:
                     time.sleep(PAUSE_SECONDS)
+            for ric in [r for r in tries if r.startswith("0#")]:            # 鏈要展開成合約才取得到數
+                for member in client.chain(ric)[:CHAIN_TAKE]:
+                    tries.setdefault(member, f"鏈 {ric} 的成員")
+                tries.pop(ric)
             ok = 0
-            for ric, title in list(tries.items())[:FIND_TRIES]:
+            for ric, title in list(tries.items())[:tries_per_series]:
+                error = ""
                 try:
                     frame = client.frame(ric, end - timedelta(days=FIND_DAYS), end)
                     field = pick_field(frame, None) if frame is not None and len(frame) else None
                     values = sorted(series_of(frame, field).items()) if field else []
+                    if not values:
+                        error = "這段時間沒有數據"
                 except Fail as exc:
-                    field, values, title = None, [], f"{title}；{str(exc).split('：', 1)[-1][:80]}"
+                    field, values, error = None, [], explain_error(str(exc).split("：", 1)[-1])
                 finally:
                     time.sleep(PAUSE_SECONDS)
                 if values:
                     ok += 1
                     last_day, last_value = values[-1]
                     rows.append([code, ric, "ok", field or "", last_day.isoformat(), f"{last_value:g}",
-                                 str(len(values)), title])
-                    print(f"  ✓ {ric:<16} {field:<9} {last_day} {last_value:<12g} {len(values):>2} 天  {title}")
+                                 str(len(values)), title, ""])
+                    print(f"  ✓ {ric:<18} {field:<9} {last_day} {last_value:<12g} {len(values):>2} 天  {title}")
                 else:
-                    rows.append([code, ric, "none", "", "", "", "0", title])
-                    print(f"  ✗ {ric:<16} 沒有數據  {title}")
+                    rows.append([code, ric, "none", "", "", "", "0", title, error])
+                    print(f"  ✗ {ric:<18} {error}  {title}")
             if not tries:
-                rows.append([code, "", "none", "", "", "", "0", "沒有候選，搜索也沒結果"])
+                rows.append([code, "", "none", "", "", "", "0", "", "沒有候選，搜索也沒結果"])
                 print("  沒有候選，搜索也沒結果")
             found += ok > 0
     finally:
         client.close()
     with out.open("w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f, delimiter="\t")
-        writer.writerow(["序列代碼", "RIC", "結果", "字段", "最後日期", "最後值", "近一月天數", "標題 / 說明"])
+        writer.writerow(["序列代碼", "RIC", "結果", "字段", "最後日期", "最後值", "近一月天數", "標題", "錯誤"])
         writer.writerows(rows)
     print(f"\n{len(items)} 條序列裡，{found} 條找到了至少一個有數據的 RIC。")
     print(f"結果已寫進 {out}（只有 RIC、標題和最後一天的值）：把這個文件發給負責平台的人，由他確認後寫進配置")
@@ -390,13 +433,14 @@ def main(argv: list[str] | None = None) -> int:
     f.add_argument("--only", help="只找這些序列，逗號分隔，例如 OMAN_M1,MURBAN_M1")
     f.add_argument("--out", default=f"lseg_find_{date.today():%Y%m%d}.txt", help="結果文件名")
     f.add_argument("--candidates", default=str(HERE / "lseg_candidates.txt"), help="候選清單文件")
+    f.add_argument("--tries", type=int, default=FIND_TRIES, help=f"每條序列最多試幾個 RIC（預設 {FIND_TRIES}）")
     args = parser.parse_args(argv)
     try:
         if args.command == "probe":
             return probe()
         if args.command == "find":
             only = {c.strip() for c in args.only.split(",") if c.strip()} if args.only else None
-            return find(Path(args.candidates), Path(args.out), only)
+            return find(Path(args.candidates), Path(args.out), only, max(1, args.tries))
         return export(args.days, Path(args.out), Path(args.rics))
     except Fail as exc:
         print(f"✗ {exc}")

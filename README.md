@@ -390,6 +390,12 @@ python lseg_export.py find
 它對每條序列先試 `lseg_candidates.txt` 裡猜的 RIC，再用 LSEG 的搜索找前幾個，各取最近一個月，
 把「哪個 RIC 有數據、用哪個字段、最後一天的值」寫進 `lseg_find_日期.txt`（不含歷史數據）。把這個文件交回來，
 確認量級對（升貼水應該是個位數，拿到 60–100 說明是絕對價）後寫進配置；`--only OMAN_M1,MURBAN_M1` 只找指定的幾條。
+取不到數的，「錯誤」欄按路透的錯誤代碼寫明原因：「沒權限」是帳號沒訂閱（Platts、Argus 常見），
+「RIC 不存在」是代碼不對。搜索結果裡的鏈（`0#` 開頭）會展開成合約再試。
+
+確認過的 RIC 寫在序列的 `lseg: {ric: …, field: …}`；只是含義接近的替代品，加 `proxy: 說明`。
+期貨曲線用 `lseg: {ric: "DCBc{n}", offset: 1}` 這種模板：數據商的月序和這裡的 M1 不一致時用 offset，
+例如 NYMEX 迪拜日曆掉期的 DCBc1 是正在計價的當月，這裡的迪拜掉期 M1 = DCBc2。
 
 連不上時腳本會直接說明：多半是 Workspace 的數據通道沒開（`netstat -ano | findstr LISTENING | findstr ":90"`
 看不到 9000 或 9060），把 Workspace 從托盤完全退出再重開即可。

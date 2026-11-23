@@ -1,75 +1,48 @@
-# crudelab：還不知道 RIC 的序列，給 lseg_export.py find 用
-# 每行：序列代碼 | 搜索詞（英文，交給 LSEG 搜索）| 候選 RIC（空格分隔，是猜的，對不對以實際取數為準）
-# find 先試候選，再試搜索到的前幾個，每個取最近一個月；結果文件發回後，確認過的 RIC 寫進
-# config/master/series/ 的 aliases，再運行 crudelab lseg-rics 重新生成 lseg_rics.txt，這裡對應的行就可以刪掉。
-# 看結果時注意量級：升貼水應該是個位數（美元/桶），如果拿到 60–100 說明是絕對價，不是升貼水。
+# crudelab：還不知道 RIC 的序列，給 lseg_export.py find 用（第二輪）
+# 每行：序列代碼 | 搜索詞（幾個用 ; 分開）| 候選 RIC（空格分隔，是猜的，對不對以實際取數為準）
+# find 先試候選，再試搜索到的結果；鏈（0#…）會展開成合約再試。結果文件發回後，確認過的 RIC 寫進
+# config/master/series/ 的 lseg: {ric: …, field: …}，再運行 crudelab lseg-rics，這裡對應的行就刪掉。
+# 看結果時注意量級：升貼水應該是個位數（美元/桶），拿到 60–100 說明是絕對價。
+#
+# 第一輪（2026-11-23）已確認、寫進配置的：迪拜掉期 M1–M12（DCBc2…，見 crude.yaml 的說明）、穆爾班、
+# Brent-Dubai EFS、ESPO、Forties、Bonny Light、WTI MEH、新加坡 92 汽油 / 10ppm 柴油 / 航煤 / 石腦油 / 380、
+# Eurobob、PX、純苯、乙烯。
+# 第一輪裡 Platts（代碼像 AAGXB00、PJABF00）和 Argus（PA…）的 RIC 全部取不到數：多半是沒訂閱，
+# 這一輪的錯誤欄會寫明是「沒權限」還是「RIC 不存在」。
 
-# ---- 中東基準 ----
-DUBAI_SWAP_M1        | Dubai crude swap month 1        | DUB-SWP1 DUBSWc1 DUBc1
-DUBAI_SWAP_M2        | Dubai crude swap month 2        | DUB-SWP2 DUBSWc2 DUBc2
-DUBAI_SWAP_M3        | Dubai crude swap month 3        | DUB-SWP3 DUBSWc3 DUBc3
-DUBAI_SWAP_M4        |                                 | DUB-SWP4 DUBSWc4 DUBc4
-DUBAI_SWAP_M5        |                                 | DUB-SWP5 DUBSWc5 DUBc5
-DUBAI_SWAP_M6        |                                 | DUB-SWP6 DUBSWc6 DUBc6
-DUBAI_SWAP_M7        |                                 | DUB-SWP7 DUBSWc7 DUBc7
-DUBAI_SWAP_M8        |                                 | DUB-SWP8 DUBSWc8 DUBc8
-DUBAI_SWAP_M9        |                                 | DUB-SWP9 DUBSWc9 DUBc9
-DUBAI_SWAP_M10       |                                 | DUB-SWP10 DUBSWc10 DUBc10
-DUBAI_SWAP_M11       |                                 | DUB-SWP11 DUBSWc11 DUBc11
-DUBAI_SWAP_M12       |                                 | DUB-SWP12 DUBSWc12 DUBc12
-DUBAI_CASH           | Dubai crude spot price          | DUB- DUBAI- DUB-E
-OMAN_M1              | Oman crude oil futures          | OQDc1 DMOc1 OQc1
-MURBAN_M1            | Murban crude oil futures IFAD   | MRBNc1 IFADc1 MBNc1
-BRENT_DUBAI_EFS      | Brent Dubai EFS                 | BDEFS- BRTDUBEFS- EFS-DUB
+# ---- 第一輪找到了替代品、要確認含義的 ----
+DUBAI_CASH           | Dubai crude spot assessment; Dubai partials                  | DUB-1M DUB-M1
+OMAN_M1              | DME Oman crude oil futures; Gulf Mercantile Exchange Oman    | 0#OQ: 0#DOQ: OMANCALMc1
+URALS_DIFF           | Urals Primorsk vs Dated Brent; Urals Baltic                  | BFO-URL-B BFO-URL-NWE BFO-URL-E
+EKOFISK_DIFF         | Ekofisk vs Dated Brent                                       | BFO-EKO
+WTI_MIDLAND_DIFF     | WTI Midland vs WTI Cushing; WTI Midland spot differential    | WTC-MID- WTC-MIDL WTIMIDUSDFMc1
+MARS_DIFF            | Mars vs WTI spot differential; Mars crude spot               | MRS-WTI MARS-WTI MRSUSSWDMc1
+JAPAN_NAPHTHA        | naphtha CFR Japan spot; Naphtha Japan CFR SPOT               | NAFCFRJPSPOT NAF-JPN- SNJFc1
+RDAM_HSFO_35         | fuel oil 3.5% Rotterdam barges spot; HSFO ARA barges         | FO35-ARA FO35-RDM- UXc1
 
-# ---- 升貼水（多半是 Platts / Argus，路透上可能只有絕對價）----
-ESPO_DIFF            | ESPO crude differential         | ESPO- ESPO-DIF
-URALS_DIFF           | Urals crude differential        | URL- URALS- URL-MED
-UPPER_ZAKUM_DIFF     | Upper Zakum crude differential  | UZK- UZAKUM-
-FORTIES_DIFF         | Forties crude differential      | FOR- FORT-
-EKOFISK_DIFF         | Ekofisk crude differential      | EKO- EKOF-
-JOHAN_SVERDRUP_DIFF  | Johan Sverdrup crude differential | JSV- SVERD-
-CPC_DIFF             | CPC Blend crude differential    | CPC- CPCB-
-BONNY_LIGHT_DIFF     | Bonny Light crude differential  | BNY- BONNY-
-WTI_MIDLAND_DIFF     | WTI Midland differential        | WTCLM- WTC-MID MID-
-WTI_MEH_DIFF         | WTI Houston MEH differential    | WTC-MEH MEH- WTCLH-
-MARS_DIFF            | Mars crude differential         | MARS- MRS-
-WCS_HARDISTY_DIFF    | Western Canadian Select Hardisty differential | WCS- WCS-HDY
-TUPI_CHINA_DIFF      | Tupi crude China differential   | TUPI- LULA-
+# ---- 國內期貨：主力合約。c1 是最近月，cv1 按成交量、coi1 按持倉量換月；「主力」應該用 cv1 或 coi1 ----
+FU_M1                | SHFE fuel oil futures                                        | SFUc1 SFUcv1 SFUcoi1 SFUcvoi1
+LU_M1                | INE low sulfur fuel oil futures                              | ILUc1 ILUcv1 ILUcoi1 ILUcvoi1
+BU_M1                | SHFE bitumen futures                                         | SBUc1 SBUcv1 SBUcoi1 SBUcvoi1
+PP_CN                | DCE polypropylene futures                                    | DCCPc1 DCCPcv1 DCCPcoi1 DCCPcvoi1
+LLDPE_CN             | DCE LLDPE futures                                            | DLLc1 DLLcv1 DLLcoi1 DLLcvoi1
+PTA_CN               | ZCE PTA futures                                              | CTAc1 CTAcv1 CTAcoi1 CTAcvoi1
+MEG_CN               | DCE ethylene glycol futures                                  | DEGc1 DEGcv1 DEGcoi1 DEGcvoi1
 
-# ---- 運費 ----
-TD3C_WS              | TD3C Middle East China VLCC worldscale | TD3C- BDTITD3C TD3C
-TD15_WS              | TD15 West Africa China VLCC worldscale | TD15- BDTITD15 TD15
-TD20_WS              | TD20 West Africa Europe Suezmax        | TD20- BDTITD20 TD20
-TD25_WS              | TD25 US Gulf Europe Aframax            | TD25- BDTITD25 TD25
+# ---- 第一輪搜索詞太長、沒搜到結果的，換短的詞再搜 ----
+TD3C_WS              | TD3C; Baltic TD3C; VLCC Middle East China                    | TD3C-BALT BDTI-TD3C .BADI
+TD15_WS              | TD15; Baltic TD15; VLCC West Africa China                    | TD15-BALT BDTI-TD15
+TD20_WS              | TD20; Baltic TD20; Suezmax West Africa                       | TD20-BALT BDTI-TD20
+TD25_WS              | TD25; Baltic TD25; Aframax US Gulf                           | TD25-BALT BDTI-TD25
+SG_VLSFO             | Singapore 0.5% fuel oil; VLSFO Singapore; marine fuel 0.5%   | FO05-SIN LSFO-SIN MF05SGSWMc1
+NWE_DIESEL_10PPM     | diesel 10ppm NWE cargoes spot; ULSD CIF NWE                  | DSL10-NWE- ULSD-NWE- GO10-NWE
+NWE_JET              | jet fuel CIF NWE cargoes spot; jet NWE                       | JET-NWE- JETCIFNWE JET-CIF-NWE-
+NWE_NAPHTHA          | naphtha CIF NWE cargoes spot; naphtha NWE                    | NAF-NWE- NAFCIFNWE NAF-CIF-NWE-
+PROPYLENE_CFR_CHINA  | Propylene China CFR SPOT; propylene CFR China                | PROPCFRCNSPOT PROPYCFRCNSPOT PPYCFRCNSPOT
+TUPI_CHINA_DIFF      | Tupi crude; Lula crude; Brazil crude China differential      | TUPI- LULA- BFO-TUPI
 
-# ---- 新加坡成品油 ----
-SG_GASOLINE_92       | Singapore gasoline 92 RON              | GL92-SIN MOGAS92-SIN SIN92-
-SG_GASOIL_10PPM      | Singapore gasoil 10ppm                 | GO10-SIN GO-SIN 10PPM-SIN
-SG_JET_KERO          | Singapore jet kerosene                 | JET-SIN KERO-SIN
-SG_NAPHTHA           | Singapore naphtha                      | NAF-SIN NAPH-SIN
-SG_HSFO_380          | Singapore fuel oil 380 cst             | FO380-SIN HSFO380-SIN
-SG_VLSFO             | Singapore marine fuel 0.5% VLSFO       | VLSFO-SIN MF05-SIN
-JAPAN_NAPHTHA        | Japan naphtha CFR                      | NAF-JPN NAF-C-JP
-
-# ---- 西北歐成品油 ----
-NWE_EUROBOB          | Eurobob gasoline barges ARA            | EBOB-NWE EUROBOB- EBOB-
-NWE_DIESEL_10PPM     | Northwest Europe diesel 10ppm cargoes  | ULSD-NWE DSL10-NWE
-NWE_JET              | Northwest Europe jet fuel cargoes      | JET-NWE JET-CIF-NWE
-NWE_NAPHTHA          | Northwest Europe naphtha cargoes       | NAF-NWE NAF-CIF-NWE
-RDAM_HSFO_35         | Rotterdam fuel oil 3.5% barges         | FO35-RDM HSFO-RDM
-
-# ---- 國內期貨（主力 / 連續合約）----
-FU_M1                | Shanghai fuel oil futures              | SFFOc1 SFOc1 FUc1
-LU_M1                | INE low sulphur fuel oil futures       | INLUc1 LUc1 ILUc1
-BU_M1                | Shanghai bitumen futures               | SBUc1 SBTc1 BUc1
-PP_CN                | Dalian polypropylene futures           | DPPc1 PPc1 DCPPc1
-LLDPE_CN             | Dalian linear low density polyethylene futures | DPLc1 DLLc1 LLDc1
-PTA_CN               | Zhengzhou PTA futures                  | ZTAc1 TAc1 PTAc1
-MEG_CN               | Dalian ethylene glycol futures         | DEGc1 DMEGc1 EGc1
-
-# ---- 化工現貨 ----
-PX_CFR_CHINA         | paraxylene CFR China                   | PX-CFR-CN PX-CN
-BENZENE_FOB_KOREA    | benzene FOB Korea                      | BZ-FOB-KR BENZ-KR
-ETHYLENE_CFR_NEA     | ethylene CFR Northeast Asia            | ETH-CFR-NEA ETHY-NEA
-PROPYLENE_CFR_CHINA  | propylene CFR China                    | PROP-CFR-CN PRPY-CN
+# ---- 多半是 Platts / Argus：這一輪主要確認錯誤是不是「沒權限」 ----
+UPPER_ZAKUM_DIFF     | Upper Zakum vs Dubai; Upper Zakum crude                      | UZK-DUB UZAK-DUB DBDUZ00
+JOHAN_SVERDRUP_DIFF  | Johan Sverdrup vs Dated Brent                                | BFO-JSV BFO-SVD PA00331196DF0
+CPC_DIFF             | CPC Blend vs Dated Brent                                     | BFO-CPC BFO-CPCB D-AAOFY00
+WCS_HARDISTY_DIFF    | Western Canadian Select Hardisty; WCS Houston                | WCS-HDY- WCSc1 AAPPP00

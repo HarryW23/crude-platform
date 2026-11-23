@@ -54,7 +54,7 @@ def sync_to_db(session: Session, cfg: Config) -> dict[str, int]:
 
     wanted: dict[str, tuple[str, str]] = {}               # 規範化別名 → (原文, 序列)
     for s in cfg.series.values():
-        for alias in (s.code, s.name_zh, *s.aliases):
+        for alias in (s.code, s.name_zh, *s.aliases, *([s.lseg.ric] if s.lseg else [])):
             norm = normalize_alias(alias)
             if norm and len(norm) <= ALIAS_MAX:
                 wanted.setdefault(norm, (alias[:ALIAS_MAX], s.code))

@@ -70,6 +70,14 @@ class CftcRef(Strict):
     report: Literal["disaggregated_futures"] = "disaggregated_futures"
 
 
+class LsegRef(Strict):
+    """在路透 / LSEG Workspace 上的代碼。由 scripts/lseg_export.py 取數；RIC 也會當作導入時的表頭別名。"""
+    ric: str = Field(pattern=r"^[0-9A-Za-z][0-9A-Za-z#.=/^:_+-]{0,39}$")
+    field: str | None = Field(default=None, pattern=r"^[A-Z][A-Z0-9_]{1,24}$")   # 不寫時依次試 SETTLE、TRDPRC_1…
+    # 不是這條序列本身、而是含義接近的替代（例如用掉期代替現貨、用期貨代替評估價）時寫明，數據頁會顯示
+    proxy: str | None = None
+
+
 class SeriesDef(Strict):
     code: str = Code
     name_zh: str
@@ -85,6 +93,7 @@ class SeriesDef(Strict):
     aliases: list[str] = []
     eia_id: str | None = None
     cftc: CftcRef | None = None                          # 由 CFTC 公開報告自動取數
+    lseg: LsegRef | None = None                          # 路透 RIC（舊寫法：放在 aliases 裡，仍然認）
     jin10: str | None = Field(default=None, pattern=r"^[A-Z0-9._]{2,20}$")   # 金十報價的品種代碼（quote://codes）
     notes: str | None = None
     # 只在它所屬的期間內有效：月度值只用於那個月，不沿用到下個月；日期必須記在期間第一天（入庫時檢查）。
@@ -134,6 +143,15 @@ class RollRule(Strict):
         return self
 
 
+class CurveLseg(Strict):
+    """曲線在路透上的 RIC 模板：{n} 換成 月序 + offset。
+    offset 用在數據商的月序和這裡的 M1 定義不同時，例如 NYMEX 迪拜日曆掉期 DCBc1 是正在計價的當月，
+    這裡的 M1 是下一個月，所以 offset: 1（M1 = DCBc2）。"""
+    ric: str = Field(pattern=r"^[0-9A-Za-z][0-9A-Za-z#.=/^:_+-]{0,30}\{n\}[0-9A-Za-z#.=/^:_+-]{0,8}$")
+    field: str | None = Field(default=None, pattern=r"^[A-Z][A-Z0-9_]{1,24}$")
+    offset: int = Field(default=0, ge=0, le=3)
+
+
 class CurveDef(Strict):
     """期貨曲線模板，展開成 {code}_M{n} 多條連續合約序列。aliases 裡的 {n} 換成月序。
 
@@ -151,6 +169,7 @@ class CurveDef(Strict):
     aliases: list[str] = []
     roll: RollRule | None = None
     calendar: str | None = None          # 交易日曆：換月的工作日、斷更檢查都按它算
+    lseg: CurveLseg | None = None        # 路透 RIC 模板（月序和數據商不一致時用它，不要寫進 aliases）
 
     @model_validator(mode="after")
     def _months(self) -> CurveDef:
@@ -162,7 +181,9 @@ class CurveDef(Strict):
         return [SeriesDef(code=f"{self.code}_M{n}", name_zh=f"{self.name_zh} M{n}", commodity=self.commodity,
                           location=self.location, kind=self.kind, unit=self.unit, contract=f"M{n}",
                           module=self.module, aliases=[a.replace("{n}", str(n)) for a in self.aliases],
-                          calendar=self.calendar)
+                          calendar=self.calendar,
+                          lseg=LsegRef(ric=self.lseg.ric.replace("{n}", str(n + self.lseg.offset)),
+                                       field=self.lseg.field) if self.lseg else None)
                 for n in self.months]
 
 

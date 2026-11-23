@@ -217,7 +217,9 @@ _RIC = re.compile(r"^[0-9A-Z]{1,8}c\d{1,2}$|^[0-9A-Za-z.]+=[A-Z]*$|^[A-Z0-9]+-$"
 
 
 def ric_of(s: SeriesDef) -> str | None:
-    """序列別名裡看起來像路透代碼（RIC）的那個。"""
+    """序列的路透代碼（RIC）：優先用 lseg.ric；舊配置裡放在別名中、看起來像 RIC 的也認。"""
+    if s.lseg:
+        return s.lseg.ric
     return next((a for a in s.aliases if _RIC.match(a)), None)
 
 
@@ -233,7 +235,10 @@ def lseg_rics_text(cfg: Config) -> str:
             continue
         ric = ric_of(s)
         (known if ric else unknown).append((s, ric))
-    lines += [f"{s.code:<24} {ric}" for s, ric in known]
+    for s, ric in known:
+        field = s.lseg.field if s.lseg and s.lseg.field else ""
+        note = f"   # 替代：{s.lseg.proxy}" if s.lseg and s.lseg.proxy else ""
+        lines.append(f"{s.code:<24} {ric:<16} {field}".rstrip() + note)
     if unknown:
         lines += ["", f"# 下面 {len(unknown)} 條可能在路透上，但還不知道 RIC（現貨評估價通常要另外訂閱 Platts / Argus）："]
         lines += [f"# {s.code:<22} ?    {s.name_zh}" for s, _ in unknown]
