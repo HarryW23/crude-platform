@@ -5,6 +5,8 @@ __pycache__/
 
 # 數據：數據庫和導入的原始文件。不進 git，請自行備份
 data/
+# 路透導出的行情文件（scripts/lseg_export.py 的輸出）：授權數據，倉庫是公開的，絕不能提交
+reuters_*.csv
 
 # 密鑰：任何形式都不進 git。密鑰的正確位置是 ~/.crudelab/secrets.env（用 crudelab secret set 寫入）
 .env
