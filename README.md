@@ -364,7 +364,7 @@ Workspace 的接口只能在它自己那台電腦上調用，所以用「在那�
 2. Python 3.9 以上，並安裝 LSEG 的庫（`pip install lseg-data`；舊環境裡已有 `refinitiv-data` 或 `eikon` 也能用）。
 3. 一個 App Key：在 Workspace 裡搜索「APPKEY」打開 App Key Generator 生成。**運行時輸入，不要寫進任何文件**；
    要定時運行時用環境變量 `LSEG_APP_KEY`。
-4. 把 `scripts/lseg_export.py` 和 `scripts/lseg_rics.txt` 兩個文件複製到同一個文件夾。
+4. 把 `scripts/lseg_export.py`、`scripts/lseg_rics.txt`、`scripts/lseg_candidates.txt` 複製到同一個文件夾。
 
 先檢測能不能取數（只取 LCOc1 最近兩周）：
 
@@ -380,6 +380,19 @@ python lseg_export.py export
 
 `scripts/lseg_rics.txt` 由配置生成（`crudelab lseg-rics --output scripts/lseg_rics.txt`）：有 RIC 的序列一行一條，
 還不知道 RIC 的列在後面。要補 RIC，在 `config/master/series/` 裡給序列的 `aliases` 加上，再重新生成。
+
+還不知道 RIC 的序列，用 `find` 在那台電腦上找（要把 `scripts/lseg_candidates.txt` 也複製過去）：
+
+```bash
+python lseg_export.py find
+```
+
+它對每條序列先試 `lseg_candidates.txt` 裡猜的 RIC，再用 LSEG 的搜索找前幾個，各取最近一個月，
+把「哪個 RIC 有數據、用哪個字段、最後一天的值」寫進 `lseg_find_日期.txt`（不含歷史數據）。把這個文件交回來，
+確認量級對（升貼水應該是個位數，拿到 60–100 說明是絕對價）後寫進配置；`--only OMAN_M1,MURBAN_M1` 只找指定的幾條。
+
+連不上時腳本會直接說明：多半是 Workspace 的數據通道沒開（`netstat -ano | findstr LISTENING | findstr ":90"`
+看不到 9000 或 9060），把 Workspace 從托盤完全退出再重開即可。
 現貨評估價（Platts、Argus）在路透上通常要另外訂閱，以及確認授權是否允許存進自建系統（待辦 #5）。
 
 腳本導出的 CSV 是純數值，帶到哪台電腦都一樣。如果改用路透 Excel 插件手工導出：插件的公式（`TR(`、`RDP.`、`RHistory(` 等）
