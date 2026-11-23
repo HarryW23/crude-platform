@@ -193,3 +193,35 @@ def test_header_matching_prefers_the_most_specific_tier():
     assert _match(["Brent M1", "LCOc1"], "Brent M1 | LCOc1", resolve) == ("BRENT_M1", None)   # 名稱 + RIC
     code, note = _match(["LCOc1", "CLc1"], "LCOc1 | CLc1", resolve)
     assert code is None and "多條序列" in note                                             # 衝突：不猜
+
+
+def test_files_still_tied_to_the_reuters_addin_are_rejected(session, settings, tmp_path):
+    """路透插件公式一離開那台電腦就變成 #NAME? 或空白：導入時整個文件拒收，提示先貼上為數值。"""
+    from openpyxl import Workbook
+
+    def book(cell):
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "價格"
+        ws.append(["Date", "LCOc1", "CLc1"])
+        ws.append([date(2026, 9, 1), 70.1, 66.5])
+        ws.append([date(2026, 9, 2), 70.4, 66.9])
+        ws["C3"] = cell
+        path = tmp_path / "r.xlsx"
+        wb.save(path)
+        return path.read_bytes()
+
+    def preview(content, name="r.xlsx"):
+        return preview_file(session, settings, content, name, "reuters_xls")
+
+    for formula in ('=TR("CLc1","TR.SETTLEMENTPRICE")', '=_xll.RDP.HistoricalPricing("CLc1")', "=RHistory(B2)"):
+        with pytest.raises(ImportFlowError, match=r"路透公式.*「價格」C3.*貼上「值」"):
+            preview(book(formula))
+    with pytest.raises(ImportFlowError, match=r"#NAME\? 錯誤.*「價格」C3"):
+        preview(book("#NAME?"))                                    # openpyxl 把它存成錯誤值格
+    with pytest.raises(ImportFlowError, match=r"#NAME\? 錯誤.*「CSV」C3"):
+        preview(b"Date,LCOc1,CLc1\n2026-09-01,70.1,66.5\n2026-09-02,70.4,#NAME?\n", "r.csv")
+
+    # 普通公式、#N/A（路透導出裡常見的休市空值）、名字裡碰巧有 TR 的函數：照常導入
+    for ok in ("=B3*0.95", "=TRIM(B3)", "=STR(1)", "#N/A"):
+        assert _cols(preview(book(ok)), "價格")["LCOc1"]["series_code"] == "BRENT_M1"
