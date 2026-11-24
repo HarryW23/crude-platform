@@ -77,6 +77,7 @@ class IndicatorEngine:
         self.scenario = scenario or Scenario()
         self.scenario.validate(cfg)
         self._points: pd.DataFrame | None = None
+        self._have: set[str] | None = None                    # 有數據的序列（missing_series 用）
         self._computed: dict[str, pd.Series] = {}
         self._step: set[str] = set(cfg.parameters)         # 階梯函數型的名字：參數 + 純參數指標
         self._deps: dict[str, tuple[list[str], list[str]]] = {}
@@ -258,8 +259,9 @@ class IndicatorEngine:
         return self._deps[code]
 
     def missing_series(self, code: str) -> list[str]:
-        have = set(self._all_points()["series_code"].unique())
-        return [s for s in self.dependencies(code)[0] if s not in have]
+        if self._have is None:                    # 有數據的序列：一次請求裡不變，只算一次（原來每個指標都掃全部數據點）
+            self._have = set(self._all_points()["series_code"].unique())
+        return [s for s in self.dependencies(code)[0] if s not in self._have]
 
     def missing_parameters(self, code: str) -> list[str]:
         return [p for p in self.dependencies(code)[1]

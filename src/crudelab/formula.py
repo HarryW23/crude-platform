@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import ast
 from collections.abc import Callable
+from functools import lru_cache
 
 import pandas as pd
 
@@ -58,7 +59,10 @@ def _number(node: ast.Constant) -> float:
     return float(node.value)
 
 
+@lru_cache(maxsize=4096)
 def parse(formula: str) -> ast.Expression:
+    """解析並檢查公式。結果會被記住：同一條公式在一次頁面請求裡要用上百次（依賴分析、量綱、計算），
+    原來每次都重新解析。返回的語法樹是共用的，調用方只能讀、不能改。"""
     try:
         tree = ast.parse(str(formula), mode="eval")
     except SyntaxError as exc:
@@ -97,11 +101,16 @@ def _check_call(node: ast.Call, formula: str) -> None:
 
 def names(formula: str) -> list[str]:
     """公式引用的名字：去重、按出現順序、不含函數名。"""
+    return list(_names(formula))
+
+
+@lru_cache(maxsize=4096)
+def _names(formula: str) -> tuple[str, ...]:
     tree = parse(formula)
     function_nodes = {id(n.func) for n in ast.walk(tree) if isinstance(n, ast.Call)}
     found = [n for n in ast.walk(tree) if isinstance(n, ast.Name) and id(n) not in function_nodes]
     found.sort(key=lambda n: (n.lineno, n.col_offset))
-    return list(dict.fromkeys(n.id for n in found))
+    return tuple(dict.fromkeys(n.id for n in found))
 
 
 def uses_window(formula: str) -> bool:

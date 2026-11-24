@@ -9,7 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ...data_needs import ric_of
-from ...ingest import IngestError, Obs, load_points, write_observations
+from ...ingest import IngestError, Obs, load_points, load_points_cached, write_observations
 from ...models import AuditLog, Observation, ObservationRevision
 from ..deps import DB, AppState, get_actor, get_state
 
@@ -33,7 +33,8 @@ def list_series(session: Session = DB, state: AppState = Depends(get_state)):
         select(Observation.series_code, func.count(func.distinct(Observation.obs_date)),
                func.min(Observation.obs_date), func.max(Observation.obs_date))
         .group_by(Observation.series_code))}
-    points = load_points(session, list(coverage))
+    # 和指標引擎用同一個緩存、同一份序列清單（緩存只存一份，清單不同會互相擠掉）：數據沒變時不再重讀全部數據點
+    points = load_points_cached(session, sorted(state.cfg.series))
     latest = points.sort_values("obs_date").groupby("series_code").last() if not points.empty else None
     out = []
     for s in state.cfg.series.values():
