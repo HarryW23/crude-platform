@@ -372,7 +372,7 @@ Workspace 的接口只能在它自己那台電腦上調用，所以用「在那�
 python lseg_export.py probe
 ```
 
-能取數後導出（預設最近約三年；每天更新可以加 `--days 10`）：
+能取數後導出（預設最近約三年；每天更新可以加 `--days 10`；要做長歷史回測可以加 `--days 3700`，約十年）：
 
 ```bash
 python lseg_export.py export

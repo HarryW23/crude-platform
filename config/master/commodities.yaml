@@ -47,6 +47,8 @@
 - {code: FREIGHT_DIRTY, name_zh: 原油油輪運費,     category: freight}
 - {code: FX,            name_zh: 匯率,             category: fx}
 - {code: GOLD,          name_zh: 黃金,             category: metals}
+- {code: RATES,         name_zh: 利率,             category: rates}
+- {code: CRUDE_SUPPLY,  name_zh: 原油產量,         category: fundamental}
 - {code: US_FUNDAMENTAL, name_zh: 美國周度基本面,  category: fundamental}
 - {code: GLOBAL_FUNDAMENTAL, name_zh: 全球供需,     category: fundamental}
 - {code: CN_FUNDAMENTAL, name_zh: 中國基本面,       category: fundamental}

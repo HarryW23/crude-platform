@@ -76,6 +76,23 @@ series:
   - {code: OPEC_CALL_ON_OPEC, vintaged: true, name_zh: 對 OPEC 原油的需求（OPEC）, commodity: GLOBAL_FUNDAMENTAL, location: OPEC, kind: flow, unit: mb/d,
      frequency: quarterly, module: balance, aliases: ["Call on OPEC", "對OPEC原油需求"]}
 
+  # ---------- OPEC+ 分國原油產量（路透每月產量調查，#14） ----------
+  # 月度，記在當月第一天。路透調查之後常有修訂：以最新一次導出為準（不按期保存）。
+  - {code: CRUDE_PROD_SAUDI, name_zh: 沙特原油產量, commodity: CRUDE_SUPPLY, location: SAUDI, kind: flow, unit: mb/d,
+     frequency: monthly, module: balance, provider: lseg_survey, aliases: [Saudi crude production, 沙特產量]}
+  - {code: CRUDE_PROD_IRAQ, name_zh: 伊拉克原油產量, commodity: CRUDE_SUPPLY, location: IRAQ, kind: flow, unit: mb/d,
+     frequency: monthly, module: balance, provider: lseg_survey, aliases: [Iraq crude production, 伊拉克產量]}
+  - {code: CRUDE_PROD_UAE, name_zh: 阿聯酋原油產量, commodity: CRUDE_SUPPLY, location: UAE, kind: flow, unit: mb/d,
+     frequency: monthly, module: balance, provider: lseg_survey, aliases: [UAE crude production, 阿聯酋產量]}
+  - {code: CRUDE_PROD_KUWAIT, name_zh: 科威特原油產量, commodity: CRUDE_SUPPLY, location: KUWAIT, kind: flow, unit: mb/d,
+     frequency: monthly, module: balance, provider: lseg_survey, aliases: [Kuwait crude production, 科威特產量]}
+  - {code: CRUDE_PROD_IRAN, name_zh: 伊朗原油產量, commodity: CRUDE_SUPPLY, location: IRAN, kind: flow, unit: mb/d,
+     frequency: monthly, module: balance, provider: lseg_survey, aliases: [Iran crude production, 伊朗產量]}
+  - {code: CRUDE_PROD_RUSSIA, name_zh: 俄羅斯原油產量, commodity: CRUDE_SUPPLY, location: RUSSIA, kind: flow, unit: mb/d,
+     frequency: monthly, module: balance, provider: lseg_survey, aliases: [Russia crude production, 俄羅斯產量]}
+  - {code: CRUDE_PROD_OPEC, name_zh: OPEC 原油產量合計（調查）, commodity: CRUDE_SUPPLY, location: OPEC, kind: flow,
+     unit: mb/d, frequency: monthly, module: balance, provider: lseg_survey, aliases: [OPEC crude production survey, OPEC產量]}
+
   # ---------- 超預期（來自金十財經日曆，實際 − 公佈時的市場預期） ----------
   # 由 config/jin10.yaml 的 calendar_rules 換算寫入。只有從接入那天起才有數據（日曆接口不給歷史），要積累一段時間。
   - {code: CAL_EIA_CRUDE_SURPRISE, name_zh: EIA 原油庫存超預期, commodity: US_FUNDAMENTAL, location: US, kind: stock, unit: kb,

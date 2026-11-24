@@ -38,3 +38,14 @@
 - {code: MAC_GOLD, name_zh: 現貨黃金, module: positioning, group: 宏觀, unit: USD/oz, formula: "MACRO_XAUUSD"}
 - {code: MAC_OIL_GOLD, name_zh: 油金比（每桶布倫特值多少盎司黃金）, module: positioning, group: 宏觀, unit: oz/bbl,
    formula: "JIN10_UKOIL / MACRO_XAUUSD", notes: 每桶原油值多少盎司黃金；走低 = 原油相對避險資產變弱}
+
+# ---------- 美元與利率（路透，#17） ----------
+- {code: MAC_DXY, name_zh: 美元指數, module: positioning, group: 宏觀, unit: idx, formula: "MACRO_DXY",
+   notes: 美元走強通常壓制以美元計價的大宗商品}
+- {code: MAC_UST10Y, name_zh: 美國 10 年期國債收益率, module: positioning, group: 宏觀, unit: pct, formula: "MACRO_UST10Y"}
+- {code: MAC_US_2S10S, name_zh: 美債期限利差（10 年 − 2 年）, module: positioning, group: 宏觀, unit: pct,
+   formula: "MACRO_UST10Y - MACRO_UST2Y", notes: 倒掛（為負）常被視為經濟衰退的先行信號}
+- {code: MAC_US_REAL10Y, name_zh: 美國 10 年期實際利率, module: positioning, group: 宏觀, unit: pct, formula: "MACRO_REAL10Y",
+   notes: 實際利率越高，持有大宗商品的機會成本越高}
+- {code: MAC_US_BREAKEVEN10Y, name_zh: 美國 10 年期通脹預期（盈虧平衡）, module: positioning, group: 宏觀, unit: pct,
+   formula: "MACRO_UST10Y - MACRO_REAL10Y", notes: 名義收益率減實際收益率；和油價常同向}

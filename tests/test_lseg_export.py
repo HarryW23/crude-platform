@@ -287,3 +287,16 @@ def test_find_stops_trying_chains_when_none_expand(fake_lseg, tmp_path, capsys, 
     assert "這次不再試鏈" in printed
     errors = [line.split("\t")[8] for line in out.read_text(encoding="utf-8").splitlines()[1:]]
     assert errors.count("沒試：這台機器上鏈都展不開") == 2 and len(errors) == 5
+
+
+def test_find_candidates_can_name_the_field(fake_lseg, tmp_path):
+    """國債 RIC 同時有價格和收益率：候選寫 RIC@字段 取指定的那個；沒有那個字段時說清楚有哪些。"""
+    script = load_script()
+    cands = tmp_path / "c.txt"
+    cands.write_text("MACRO_UST10Y | | LCOc1@TRDPRC_1 LCOc1@MID_YLD_1\n", encoding="utf-8")
+    out = tmp_path / "f.txt"
+    assert script.main(["find", "--candidates", str(cands), "--out", str(out)]) == 0
+    rows = [line.split("\t") for line in out.read_text(encoding="utf-8").splitlines()]
+    assert rows[0][6] == f"近 {script.FIND_DAYS} 天點數"
+    assert rows[1][1:4] == ["LCOc1", "ok", "TRDPRC_1"] and rows[1][5] == "89"      # 不是預設的 SETTLE
+    assert rows[2][2] == "none" and rows[2][8].startswith("沒有字段 MID_YLD_1（有：TRDPRC_1、SETTLE")

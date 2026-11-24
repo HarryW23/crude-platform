@@ -15,6 +15,7 @@ atoms:
   - {code: WS,  name_zh: WS 點}
   - {code: pct, name_zh: 百分點}
   - {code: lots, name_zh: 手（期貨合約）}
+  - {code: idx, name_zh: 指數點}
 
 units:
   - {code: USD/bbl, name_zh: 美元/桶,   dimension: price}
@@ -33,3 +34,4 @@ units:
   - {code: mb/d,    name_zh: 百萬桶/日, dimension: flow}
   - {code: pct,     name_zh: 百分點,    dimension: ratio}
   - {code: lots,    name_zh: 手,        dimension: contracts}
+  - {code: idx,     name_zh: 指數點,    dimension: index}

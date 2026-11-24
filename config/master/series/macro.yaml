@@ -5,7 +5,8 @@
 #
 # ⚠ 金十的 UKOIL / USOIL 是它匯總的現貨報價，不是交易所的期貨結算價：存成單獨的序列，
 #   不混進 BRENT_M1 / WTI_M1（否則曲線、月差、回測的口徑會亂）。只用來看紐約下午 5 點的大致位置。
-# 美元指數、美債收益率：金十的品種列表裡沒有（probe 核對過），以後從 FRED 等其他來源接。
+# 美元指數、美債收益率：金十的品種列表裡沒有（probe 核對過），從路透導出（provider: lseg_macro，#17）。
+#   收益率單位是百分點（4.25 = 4.25%）；路透的國債 RIC 同時有價格和收益率字段，lseg.field 要指定收益率那個。
 
 series:
   - {code: MACRO_USDCNH, name_zh: 美元兌離岸人民幣, commodity: FX, location: GLOBAL, kind: fx, unit: CNY/USD, module: common,
@@ -20,3 +21,13 @@ series:
      module: common, jin10: UKOIL, notes: 金十匯總的現貨報價，不是 ICE 結算價}
   - {code: JIN10_USOIL, name_zh: WTI 原油報價（金十）, commodity: WTI, location: CUSHING, kind: spot, unit: USD/bbl,
      module: common, jin10: USOIL, notes: 金十匯總的現貨報價，不是 NYMEX 結算價}
+
+  # ---------- 美元與利率（路透，#17） ----------
+  - {code: MACRO_DXY, name_zh: 美元指數, commodity: FX, location: GLOBAL, kind: fx, unit: idx, module: common,
+     provider: lseg_macro, aliases: [DXY, 美元指數, US Dollar Index]}
+  - {code: MACRO_UST2Y, name_zh: 美國 2 年期國債收益率, commodity: RATES, location: US, kind: ratio, unit: pct,
+     module: common, provider: lseg_macro, aliases: [UST 2Y, 美債2年]}
+  - {code: MACRO_UST10Y, name_zh: 美國 10 年期國債收益率, commodity: RATES, location: US, kind: ratio, unit: pct,
+     module: common, provider: lseg_macro, aliases: [UST 10Y, 美債10年]}
+  - {code: MACRO_REAL10Y, name_zh: 美國 10 年期實際利率（TIPS）, commodity: RATES, location: US, kind: ratio, unit: pct,
+     module: common, provider: lseg_macro, aliases: [TIPS 10Y, 美國實際利率]}

@@ -94,12 +94,23 @@ LLDPE_CN                 DLLoi1           SETTLE
 PTA_CN                   CTAoi1           SETTLE
 MEG_CN                   DEGoi1           SETTLE
 
-# 下面 10 條可能在路透上，但還不知道 RIC（現貨評估價通常要另外訂閱 Platts / Argus）：
+# 下面 21 條可能在路透上，但還不知道 RIC（現貨評估價通常要另外訂閱 Platts / Argus）：
+# CRUDE_PROD_SAUDI       ?    沙特原油產量
+# CRUDE_PROD_IRAQ        ?    伊拉克原油產量
+# CRUDE_PROD_UAE         ?    阿聯酋原油產量
+# CRUDE_PROD_KUWAIT      ?    科威特原油產量
+# CRUDE_PROD_IRAN        ?    伊朗原油產量
+# CRUDE_PROD_RUSSIA      ?    俄羅斯原油產量
+# CRUDE_PROD_OPEC        ?    OPEC 原油產量合計（調查）
 # UPPER_ZAKUM_DIFF       ?    上扎庫姆升貼水
 # EKOFISK_DIFF           ?    埃科菲斯克升貼水
 # JOHAN_SVERDRUP_DIFF    ?    約翰斯維德魯普升貼水
 # WCS_HARDISTY_DIFF      ?    WCS（哈迪斯蒂）升貼水
 # TUPI_CHINA_DIFF        ?    Tupi 到中國升貼水（到岸）
+# MACRO_DXY              ?    美元指數
+# MACRO_UST2Y            ?    美國 2 年期國債收益率
+# MACRO_UST10Y           ?    美國 10 年期國債收益率
+# MACRO_REAL10Y          ?    美國 10 年期實際利率（TIPS）
 # SG_VLSFO               ?    新加坡 0.5% 低硫燃料油
 # NWE_DIESEL_10PPM       ?    西北歐 10ppm 柴油
 # NWE_JET                ?    西北歐航煤

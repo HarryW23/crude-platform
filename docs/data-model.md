@@ -122,7 +122,7 @@
 |---|---|---|---|---|
 | `code` | VARCHAR(32) | 否 | PK | 代碼（主鍵，來自配置） |
 | `name_zh` | VARCHAR(64) | 否 |  | 中文名稱 |
-| `category` | VARCHAR(32) | 否 |  | 類別；取值：crude / product / chem / freight / fx / fundamental / metals |
+| `category` | VARCHAR(32) | 否 |  | 類別；取值：crude / product / chem / freight / fx / fundamental / metals / rates |
 
 ## data_source
 

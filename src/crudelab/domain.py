@@ -14,7 +14,7 @@ import re
 _PLAIN = re.compile(r"[A-Za-z0-9_]+")        # 只收英文字母、數字、下劃線（isalnum 會放過 ¹、é 這類字符）
 
 # 主數據（值來自配置文件，schema.py 的 Literal 是業務定義）
-COMMODITY_CATEGORIES = ("crude", "product", "chem", "freight", "fx", "fundamental", "metals")
+COMMODITY_CATEGORIES = ("crude", "product", "chem", "freight", "fx", "fundamental", "metals", "rates")
 SOURCE_KINDS = ("manual", "excel", "api")
 SOURCE_STATUSES = ("active", "reserved")
 SERIES_KINDS = ("futures", "swap", "spot", "diff", "osp", "freight", "fx", "stock", "flow", "ratio", "position")

@@ -51,7 +51,7 @@ class LocationDef(Strict):
 class CommodityDef(Strict):
     code: str = Code
     name_zh: str
-    category: Literal["crude", "product", "chem", "freight", "fx", "fundamental", "metals"]
+    category: Literal["crude", "product", "chem", "freight", "fx", "fundamental", "metals", "rates"]
 
 
 class SourceDef(Strict):

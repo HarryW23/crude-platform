@@ -63,7 +63,7 @@ ERROR_CODE = re.compile(r"\b(TS\.\w+\.\w+(?:\.\d+)?)")
 ERROR_KINDS = (("NotPermission", "沒權限（帳號沒訂閱這個數據，常見於 Platts / Argus）"),
                ("Permission", "沒權限（帳號沒訂閱這個數據，常見於 Platts / Argus）"),
                ("InvalidRIC", "RIC 不存在"), ("NotFound", "RIC 不存在"), ("UserRequestError", "RIC 或請求無效"))
-FIND_DAYS = 30
+FIND_DAYS = 120                               # find 試取多長時間：月度數據（例如產量調查）30 天內可能只有一個點
 
 # LSEG 的庫在新版 pandas 下會刷 FutureWarning，跟取到的數據無關，不顯示
 warnings.filterwarnings("ignore", category=FutureWarning, module=r"(lseg|refinitiv)(\.|$)")
@@ -285,8 +285,12 @@ def contract_info(frame) -> dict[date, tuple[str, str]]:
     return out
 
 
+def columns_of(frame) -> list[str]:
+    return [str(c[-1] if isinstance(c, tuple) else c) for c in frame.columns]
+
+
 def pick_field(frame, wanted: str | None) -> str | None:
-    columns = [str(c[-1] if isinstance(c, tuple) else c) for c in frame.columns]
+    columns = columns_of(frame)
     if wanted:
         return wanted if wanted in columns else None
     for name in PREFERRED_FIELDS:
@@ -414,7 +418,8 @@ def explain_error(text: str) -> str:
 
 
 def read_candidates(path: Path, only: set[str] | None) -> list[tuple[str, str, list[str]]]:
-    """每行：序列代碼 | 搜索詞（幾個用 ; 分開，可以不寫）| 候選 RIC（空格分隔，可以不寫）。# 開頭是註釋。"""
+    """每行：序列代碼 | 搜索詞（幾個用 ; 分開，可以不寫）| 候選 RIC（空格分隔，可以不寫；RIC@字段 指定字段）。
+    # 開頭是註釋。"""
     if not path.exists():
         raise Fail(f"找不到 {path.name}：它應該和這個腳本放在同一個文件夾")
     out = []
@@ -477,13 +482,16 @@ def find(cands_path: Path, out: Path, only: set[str] | None, tries_per_series: i
                 for member in members:
                     tries.setdefault(member, f"鏈 {ric} 的成員")
             ok = 0
-            for ric, title in list(tries.items())[:tries_per_series]:
+            for token, title in list(tries.items())[:tries_per_series]:
+                ric, _, wanted = token.partition("@")             # 候選可以寫 RIC@字段（國債要取收益率不取價格）
                 error = ""
                 try:
                     frame = fetch(client, ric, end - timedelta(days=FIND_DAYS), end)
-                    field = pick_field(frame, None) if frame is not None and len(frame) else None
+                    field = pick_field(frame, wanted or None) if frame is not None and len(frame) else None
+                    if frame is not None and len(frame) and wanted and field is None:
+                        error = f"沒有字段 {wanted}（有：{'、'.join(columns_of(frame))[:120]}）"
                     values = sorted(series_of(frame, field).items()) if field else []
-                    if not values:
+                    if not values and not error:
                         error = "這段時間沒有數據"
                 except Fail as exc:
                     field, values, error = None, [], explain_error(str(exc).split("：", 1)[-1])
@@ -506,7 +514,8 @@ def find(cands_path: Path, out: Path, only: set[str] | None, tries_per_series: i
         client.close()
     with out.open("w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f, delimiter="\t")
-        writer.writerow(["序列代碼", "RIC", "結果", "字段", "最後日期", "最後值", "近一月天數", "標題", "錯誤"])
+        writer.writerow(["序列代碼", "RIC", "結果", "字段", "最後日期", "最後值", f"近 {FIND_DAYS} 天點數",
+                         "標題", "錯誤"])
         writer.writerows(rows)
     print(f"\n{len(items)} 條序列裡，{found} 條找到了至少一個有數據的 RIC。")
     print(f"結果已寫進 {out}（只有 RIC、標題和最後一天的值）：把這個文件發給負責平台的人，由他確認後寫進配置")

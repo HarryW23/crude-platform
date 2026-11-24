@@ -4,6 +4,12 @@
 - {code: BALTIC,    name_zh: 波羅的海, region: 歐洲}
 - {code: WAF,       name_zh: 西非, region: 非洲}
 - {code: MEG,       name_zh: 中東海灣, region: 中東}
+- {code: SAUDI,     name_zh: 沙特, region: 中東}
+- {code: IRAQ,      name_zh: 伊拉克, region: 中東}
+- {code: UAE,       name_zh: 阿聯酋, region: 中東}
+- {code: KUWAIT,    name_zh: 科威特, region: 中東}
+- {code: IRAN,      name_zh: 伊朗, region: 中東}
+- {code: RUSSIA,    name_zh: 俄羅斯, region: 歐洲}
 - {code: USGC,      name_zh: 美灣, region: 美洲}
 - {code: CUSHING,   name_zh: 庫欣, region: 美洲}
 - {code: NYH,       name_zh: 紐約港, region: 美洲}

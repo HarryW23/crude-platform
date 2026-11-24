@@ -17,3 +17,8 @@
 - {code: BRENT_STRUCTURE_VS_OECD_STOCKS, name_zh: Brent 月差 與 OECD 庫存偏離,
    y: TS_BRENT_M1_M3, x: STK_OECD_VS_5Y, lookback_days: 1825, min_points: 24,
    notes: 月度樣本，點數少，僅作參考}
+
+# 宏觀（#17）：描述性關係，看美元強弱和油價的關係是否穩定；不當作信號。
+- {code: BRENT_VS_DXY, name_zh: Brent 與 美元指數,
+   y: BRENT_M1, x: MACRO_DXY, lookback_days: 1095, method: huber,
+   notes: 美元越強，以美元計價的油價通常越低；危機時期常會失效}
