@@ -75,7 +75,8 @@ def test_manual_mapping_is_learned_for_next_time(session, settings, sample_bytes
     session.commit()
     assert result["learned_aliases"] == 1
     points = load_points(session, ["TD3C_WS", "BRENT_M2"])
-    assert len(to_series(points, "TD3C_WS")) == 60 and to_series(points, "BRENT_M2").empty   # 設為 None 的列不入庫
+    # 設為 None 的列不入庫；備註列裡有一個 0.00，運費不會是 0，跳過
+    assert len(to_series(points, "TD3C_WS")) == 59 and result["skipped"] == 1 and to_series(points, "BRENT_M2").empty
     again = preview_file(session, settings, sample_bytes, "sample.xlsx", "demo")
     assert _cols(again, "期貨")["我自己的備註列"]["series_code"] == "TD3C_WS"
 
@@ -235,3 +236,18 @@ def test_preview_warns_about_repeated_quotes(session, settings):
     hits = [w for w in preview["warnings"] if "連續" in w]
     assert len(hits) == 1 and hits[0].startswith("FORTIES_DIFF（福蒂斯升貼水）有 1 段連續 5 次以上相同的值")
     assert "從 2026-09-01 起連續 7 個數據點都是 1.15" in hits[0]
+
+
+def test_zero_prices_and_data_before_data_from_are_not_imported(session, settings):
+    """絕對價格正好是 0（路透沒報價時填的）和 data_from 之前的數據：預覽寫明、入庫時跳過；升貼水是 0 照常入庫。"""
+    lines = ["Date,OMAN_M1,FORTIES_DIFF,FU_M1",
+             "2018-07-12,70.1,0,3399", "2018-07-13,0,0.1,3399", "2018-07-16,70.5,0.2,3021", "2018-07-17,0,0.3,2893"]
+    preview = preview_file(session, settings, "\n".join(lines).encode(), "r.csv", "reuters_xls")
+    notes = [w for w in preview["warnings"] if "不導入" in w]
+    assert notes[0] == "FU_M1：2018-07-16 之前的 2 個數據點不導入（這條序列只用這天之後的數據，見配置裡的 data_from）"
+    assert notes[1].startswith("OMAN_M1（阿曼期貨 M1）有 2 個值正好是 0，不導入：2018-07-13、2018-07-17。")
+    result = commit_batch(session, preview["batch_id"])
+    assert result["inserted"] == 8 and result["skipped"] == 4
+    stored = {(o.series_code, o.obs_date) for o in session.scalars(select(Observation))}
+    assert ("FORTIES_DIFF", date(2018, 7, 12)) in stored and ("OMAN_M1", date(2018, 7, 13)) not in stored
+    assert ("FU_M1", date(2018, 7, 13)) not in stored and ("FU_M1", date(2018, 7, 16)) in stored

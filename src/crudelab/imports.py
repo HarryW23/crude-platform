@@ -42,6 +42,36 @@ def _duplicates(previews: list[SheetPreview], mapping: dict[str, str | None] | N
             for code, refs in seen.items() if len(refs) > 1]
 
 
+PRICE_KINDS = ("futures", "swap", "spot", "freight", "fx")   # 絕對價格：正好是 0 只會是數據商沒有報價時填的 0
+
+
+def screen(session: Session, observations: list[Obs]) -> tuple[list[Obs], list[str]]:
+    """去掉文件裡明顯不能用的數據點，回傳（留下的，說明）。預覽和入庫用同一個規則，預覽裡會寫明去掉了什麼：
+    - 序列的 data_from 之前的（合約改過規格，見 SeriesDef.data_from）
+    - 絕對價格正好是 0 的：路透在沒有報價的日子會填 0（例如阿曼期貨 2022 年 6 月連續十幾天是 0）。
+      升貼水、官價、比率是 0 是正常的，不去掉；WTI 2020-04-20 的負價也不受影響"""
+    codes = {o.series_code for o in observations}
+    rows = {r.code: r for r in session.scalars(select(Series).where(Series.code.in_(codes)))} if codes else {}
+    early: dict[str, int] = {}
+    zero: dict[str, list[date]] = {}
+    kept = []
+    for o in observations:
+        row = rows.get(o.series_code)
+        if row is not None and row.data_from is not None and o.obs_date < row.data_from:
+            early[o.series_code] = early.get(o.series_code, 0) + 1
+        elif row is not None and row.kind in PRICE_KINDS and o.value == 0:
+            zero.setdefault(o.series_code, []).append(o.obs_date)
+        else:
+            kept.append(o)
+    notes = [f"{code}：{rows[code].data_from} 之前的 {n} 個數據點不導入"
+             "（這條序列只用這天之後的數據，見配置裡的 data_from）" for code, n in sorted(early.items())]
+    for code, days in sorted(zero.items()):
+        shown = "、".join(str(d) for d in sorted(days)[:5]) + (f" 等 {len(days)} 天" if len(days) > 5 else "")
+        notes.append(f"{code}（{rows[code].name_zh}）有 {len(days)} 個值正好是 0，不導入：{shown}。"
+                     "價格不會是 0，這是數據商沒有報價的日子；那幾天當作沒有數據")
+    return kept, notes
+
+
 def _quality_warnings(settings: Settings, observations: list[Obs]) -> list[str]:
     """文件裡的數據質量提醒（不擋導入）：
     - 很長一段相同的值：數據商在沿用舊值（repeats.py，規則見 config/freshness.yaml 的 repeats）
@@ -58,7 +88,8 @@ def _quality_warnings(settings: Settings, observations: list[Obs]) -> list[str]:
     kinds = {c: cfg.series[c].kind for c in daily}
     names = {c: cfg.series[c].name_zh for c in daily}
     commodity = {c: cfg.series[c].commodity for c in daily}
-    return repeats.import_warnings(cfg, by_series) + spikes.import_warnings(kinds, names, daily, commodity)
+    return repeats.import_warnings(cfg, by_series) + spikes.import_warnings(
+        kinds, names, daily, commodity, cfg.freshness.spikes.confirmed)
 
 
 def nothing_importable(preview: dict) -> str | None:
@@ -101,7 +132,8 @@ def preview_file(session: Session, settings: Settings, content: bytes, filename:
         ImportBatch.sha256 == digest, ImportBatch.status == "committed")).all()
     warnings = _duplicates(previews, None)
     warnings += [f"{p.name}：{p.note}" for p in previews if p.note and "沒有讀入" in p.note]
-    warnings += _quality_warnings(settings, observations)
+    observations, screened = screen(session, observations)
+    warnings += screened + _quality_warnings(settings, observations)
     if earlier:
         warnings.append(f"同一個文件之前已導入過（批次 {', '.join(map(str, earlier))}），重複導入不會產生重複數據")
     if vintage is not None:
@@ -128,6 +160,8 @@ def commit_batch(session: Session, batch_id: int, mapping: dict[str, str | None]
         raise ImportFlowError(f"未知的序列代碼：{', '.join(bad)}")
 
     previews, observations = parse_workbook(Path(batch.stored_path), make_resolver(session), mapping)
+    parsed = len(observations)
+    observations, _ = screen(session, observations)
     if batch.vintage is not None:
         observations = [replace(o, vintage=batch.vintage) for o in observations]
     stats = write_observations(session, observations, batch.source_code, batch_id=batch.id, actor=actor)
@@ -158,7 +192,8 @@ def commit_batch(session: Session, batch_id: int, mapping: dict[str, str | None]
             if not code:
                 unmapped.append(f"{sheet.name} {col.ref}：{col.label}")
     batch.status, batch.mapping = "committed", final
-    batch.stats = {**stats, "learned_aliases": learned, "unmapped_columns": len(unmapped)}
+    batch.stats = {**stats, "skipped": parsed - len(observations), "learned_aliases": learned,
+                   "unmapped_columns": len(unmapped)}
     session.add(AuditLog(actor=actor, action="import", entity="import_batch", entity_id=str(batch.id),
                          detail={"filename": batch.filename, **batch.stats}))
     return {"batch_id": batch.id, **batch.stats, "unmapped": unmapped,

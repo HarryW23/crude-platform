@@ -119,6 +119,7 @@ class Series(Base):
     active: Mapped[bool] = mapped_column(Boolean, default=True)      # 已從配置移除的序列置為 False，數據保留
     within_period: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())   # 見 SeriesDef
     vintaged: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())        # 按報告期保存
+    data_from: Mapped[date | None] = mapped_column(Date)             # 這天之前的數據不入庫（見 SeriesDef）
 
 
 class SeriesAlias(Base):

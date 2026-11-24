@@ -103,6 +103,9 @@ class SeriesDef(Strict):
     # 按報告期保存（機構預測：STEO、IEA、OPEC 每期都會修訂過去的數字）：每一期的數字都留著，
     # 回測時按當時已發佈的最新一期取，不會用到後來的修訂。見 models.ObservationVintage
     vintaged: bool = False
+    # 這天之前的數據不用（導入時跳過）：合約改過規格、之前的報價和現在不可比。
+    # 例：上期所燃料油 2018-07-16 重新上市，之前的老合約幾乎沒有成交，報價九成以上的日子不動。
+    data_from: date | None = None
     provider: str | None = None          # 從哪裡取得（數據需求清單的分組，見 data_needs.PROVIDERS）；缺省按序列類型推斷
 
     @model_validator(mode="after")
@@ -735,6 +738,11 @@ class RepeatRule(Strict):
     ignore: list[str] = []          # 不檢查的序列（例如本來就每周才更新一次、每天沿用是正常的）
 
 
+class SpikeRule(Strict):
+    """單日錯價檢查（見 spikes.py）。confirmed：已經核對過、確實是行情的日子，導入時不再提醒。"""
+    confirmed: dict[str, list[date]] = {}
+
+
 class FreshnessDef(Strict):
     defaults: dict[Literal["daily", "weekly", "monthly", "quarterly"], FreshnessRule] = {
         "daily": FreshnessRule(max_days=3, count="weekdays"),
@@ -747,6 +755,7 @@ class FreshnessDef(Strict):
     ignore: list[str] = []                              # 不檢查的序列
     overrides: list[FreshnessOverride] = []
     repeats: RepeatRule = RepeatRule()
+    spikes: SpikeRule = SpikeRule()
 
 
 # ------------------------------ 回測 ------------------------------

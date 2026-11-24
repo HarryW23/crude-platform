@@ -6,7 +6,9 @@
 2026-06-03 一起跳又一起回來），不提醒。
 
 判斷（只看日度序列，至少 MIN_POINTS 個數據點）：
-  日變化的穩健標準差 σ = 1.4826 × 中位數絕對偏差（MAD）
+  日變化的穩健標準差 σ = 1.4826 × 中位數絕對偏差（MAD），只用不為 0 的日變化算：
+  升貼水這類數據常常幾天不動（路透 Bonny Light 八成的日子沒變），把這些 0 算進去 σ 會小到接近 0，
+  正常的一次調價都會被當成錯價（Forties 的 σ 從 0.30 變成 0.04）
   第 t 天：前一天到 t 的變化 d1、t 到後一天的變化 d2 方向相反，兩者都大於 K × σ，
   而且前一天和後一天很接近（|x(t+1) − x(t−1)| < 一半的 min(|d1|, |d2|)）——跳上去又回來。
 只在導入預覽時提醒，不改數據：確實是錯價的話，在路透核對後用手動錄入改正（會留下修訂記錄）。
@@ -43,6 +45,9 @@ def spikes(points: list[tuple[date, float]], k: float) -> list[Spike]:
     days = [p[0] for p in ordered]
     x = np.array([p[1] for p in ordered], dtype=float)
     d = np.diff(x)
+    d = d[d != 0]
+    if len(d) < MIN_POINTS // 2:
+        return []
     sigma = 1.4826 * float(np.median(np.abs(d - np.median(d))))
     if sigma <= 0:
         return []
@@ -56,9 +61,12 @@ def spikes(points: list[tuple[date, float]], k: float) -> list[Spike]:
 
 
 def suspicious(by_series: Mapping[str, list[tuple[date, float]]],
-               commodity: Mapping[str, str] | None = None) -> list[Spike]:
-    """所有序列裡的可疑錯價：自己跳得夠大，而且同一天其他序列沒有一起跳。commodity：序列 → 品種。"""
+               commodity: Mapping[str, str] | None = None,
+               confirmed: Mapping[str, list[date]] | None = None) -> list[Spike]:
+    """所有序列裡的可疑錯價：自己跳得夠大，而且同一天其他序列沒有一起跳。commodity：序列 → 品種。
+    confirmed：已經核對過、確實是行情的日子（config/freshness.yaml 的 spikes.confirmed），不再提醒。"""
     commodity = commodity or {}
+    confirmed = confirmed or {}
     loud = {code: spikes(points, K) for code, points in by_series.items()}
     loose = {code: {s.day for s in spikes(points, PEER_K)} for code, points in by_series.items()}
     out = []
@@ -66,17 +74,18 @@ def suspicious(by_series: Mapping[str, list[tuple[date, float]]],
         for s in found:
             peers = [other for other, days in loose.items() if other != code and s.day in days]
             same = [p for p in peers if commodity.get(p) and commodity.get(p) == commodity.get(code)]
-            if len(peers) < MIN_PEERS and not same:
+            if len(peers) < MIN_PEERS and not same and s.day not in confirmed.get(code, ()):
                 out.append(Spike(code, s.day, s.before, s.value, s.after))
     return sorted(out, key=lambda s: (s.series, s.day))
 
 
 def import_warnings(kinds: Mapping[str, str], names: Mapping[str, str],
                     by_series: Mapping[str, list[tuple[date, float]]],
-                    commodity: Mapping[str, str] | None = None) -> list[str]:
+                    commodity: Mapping[str, str] | None = None,
+                    confirmed: Mapping[str, list[date]] | None = None) -> list[str]:
     """導入預覽的提醒。kinds / names / commodity：序列代碼 → 類型 / 中文名 / 品種（只查價格類的日度序列）。"""
     priced = {c: p for c, p in by_series.items() if kinds.get(c) in KINDS}
-    found = suspicious(priced, commodity)
+    found = suspicious(priced, commodity, confirmed)
     if not found:
         return []
     by_code: dict[str, list[Spike]] = {}
@@ -87,5 +96,6 @@ def import_warnings(kinds: Mapping[str, str], names: Mapping[str, str],
         shown = "；".join(f"{s.day} 是 {s.value:g}（前後兩天 {s.before:g}、{s.after:g}）" for s in items[:3])
         more = f" 等 {len(items)} 處" if len(items) > 3 else ""
         out.append(f"{code}（{names.get(code, code)}）可能有錯價：{shown}{more}。單日跳動後又回到原位，"
-                   "同一天其他序列沒有類似波動；請在路透上核對，確實錯了就在序列頁手動改正")
+                   "同一天其他序列沒有類似波動；請在路透上核對：錯了就在序列頁手動改正，"
+                   "確實是行情就寫進 config/freshness.yaml 的 spikes.confirmed")
     return out

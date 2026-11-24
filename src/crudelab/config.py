@@ -441,7 +441,8 @@ def _validate_freshness(cfg: Config) -> list[str]:
     fr = cfg.freshness
     for label, codes in (("required", fr.required), ("ignore", fr.ignore),
                          ("overrides", [o.series for o in fr.overrides]),
-                         ("repeats.series", fr.repeats.series), ("repeats.ignore", fr.repeats.ignore)):
+                         ("repeats.series", fr.repeats.series), ("repeats.ignore", fr.repeats.ignore),
+                         ("spikes.confirmed", list(fr.spikes.confirmed))):
         errors += [f"freshness.yaml 的 {label}：{code} 不是序列" for code in codes if code not in cfg.series]
     missing = [f for f in ("daily", "weekly", "monthly", "quarterly") if f not in fr.defaults]
     if missing:

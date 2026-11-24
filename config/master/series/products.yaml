@@ -60,7 +60,8 @@ series:
   - {code: CN_JET_EXWORKS, name_zh: 中國航煤出廠價, commodity: JET, location: CHINA, kind: spot, unit: CNY/t, module: refinery,
      frequency: monthly, aliases: ["航煤出廠價", "中國航煤出廠價"]}
   - {code: FU_M1, name_zh: 上期所燃料油主力, commodity: HSFO, location: CHINA, kind: futures, unit: CNY/t, module: refinery,
-     aliases: ["FU主力", "SHFE FU"], lseg: {ric: "SFUoi1", field: SETTLE}}
+     aliases: ["FU主力", "SHFE FU"], lseg: {ric: "SFUoi1", field: SETTLE}, data_from: 2018-07-16,
+     notes: "上期所燃料油 2018-07-16 按新規格（高硫 380）重新上市；之前的老合約幾乎沒有成交，報價九成以上的日子不動，不用"}
   - {code: LU_M1, name_zh: INE 低硫燃料油主力, commodity: VLSFO, location: CHINA, kind: futures, unit: CNY/t, module: refinery,
      aliases: ["LU主力", "INE LU"], lseg: {ric: "ILUcv1", field: SETTLE}}
   - {code: BU_M1, name_zh: 上期所瀝青主力, commodity: BITUMEN, location: CHINA, kind: futures, unit: CNY/t, module: refinery,

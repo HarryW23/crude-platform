@@ -24,6 +24,10 @@ watch: has_data
 required: []
 ignore: []
 repeats: {max_run: 5, kinds: [spot, diff], series: [], ignore: []}
+# spikes     單日錯價提醒（導入預覽）。confirmed：核對過、確實是行情的日子，不再提醒
+spikes:
+  confirmed:
+    WTI_M1: [2020-04-20]        # 5 月合約到期前一天，庫容用盡，結算價 −37.63
 overrides:
   - {series: ARAB_LIGHT_OSP_ASIA, max_days: 40, basis: received}
   - {series: ARAB_MEDIUM_OSP_ASIA, max_days: 40, basis: received}

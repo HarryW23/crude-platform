@@ -508,6 +508,7 @@
 | `active` | BOOLEAN | 否 |  | 已從配置移除的序列置為 False，數據保留 |
 | `within_period` | BOOLEAN | 否 |  | 見 SeriesDef |
 | `vintaged` | BOOLEAN | 否 |  | 按報告期保存 |
+| `data_from` | DATE | 是 |  | 這天之前的數據不入庫（見 SeriesDef） |
 
 ## series_alias
 

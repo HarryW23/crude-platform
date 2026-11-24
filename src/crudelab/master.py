@@ -47,7 +47,7 @@ def sync_to_db(session: Session, cfg: Config) -> dict[str, int]:
                       **({"cftc": s.cftc.model_dump()} if s.cftc else {}),
                       **({"jin10": s.jin10} if s.jin10 else {})},
         notes=s.notes, active=True, within_period=s.within_period,
-        vintaged=s.vintaged) for s in cfg.series.values()])
+        vintaged=s.vintaged, data_from=s.data_from) for s in cfg.series.values()])
     session.flush()
     for stale in session.scalars(select(Series).where(Series.code.not_in(list(cfg.series)))):
         stale.active = False

@@ -60,3 +60,22 @@ def test_same_commodity_jumping_together_is_a_market_move():
     assert len(spikes.suspicious(series)) == 2                               # 不知道品種：只有一個夥伴，不夠
     commodity = {"SG_NAPHTHA": "NAPHTHA", "JAPAN_NAPHTHA": "NAPHTHA", "BRENT_M1": "BRENT"}
     assert spikes.suspicious(series, commodity) == []
+
+
+def test_flat_days_do_not_shrink_the_normal_move_and_confirmed_days_are_skipped():
+    """升貼水常常幾天不動：σ 只用不為 0 的日變化算，否則一次正常調價都會被當成錯價。核對過的行情日不提醒。"""
+    rng = np.random.default_rng(21)
+    days = [date(2026, 1, 1) + timedelta(days=i) for i in range(200)]
+    x, value = [], 1.0
+    for i in range(200):
+        if i % 4 == 0:                                         # 每四天才調一次價
+            value += rng.normal(0, 0.3)
+        x.append(value)
+    x[101] = x[100] + 1.2                                      # 一次 4σ 的調價、隔天又調回：正常
+    flat = list(zip(days, x, strict=True))
+    assert spikes.spikes(flat, spikes.K) == []
+    _, a = walk(31)
+    a[40] += 30
+    series = {"WTI_M1": list(zip(days[:80], a, strict=True))}
+    assert len(spikes.suspicious(series)) == 1
+    assert spikes.suspicious(series, confirmed={"WTI_M1": [days[40]]}) == []
