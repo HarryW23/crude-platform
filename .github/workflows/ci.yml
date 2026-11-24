@@ -20,7 +20,10 @@ jobs:
       - run: crudelab check
       - run: python scripts/check_types.py
       - run: python scripts/check_lock.py --offline
-      - run: coverage run -m pytest -q
+      # 多核並行跑，標了 serial 的（起真實服務進程、佔端口）之後單獨順序跑；兩次的覆蓋率合併後再看下限
+      - run: coverage run -m pytest -q -n auto -m "not serial"
+      - run: coverage run -m pytest -q -m serial
+      - run: coverage combine
       - run: coverage report
   postgres:
     # 同一套測試在 PostgreSQL 上再跑一遍（#34）：每個測試從遷移好的模板庫複製一個新庫。
@@ -38,7 +41,7 @@ jobs:
           docker run -d --name pg -p 5432:5432 -e POSTGRES_HOST_AUTH_METHOD=trust "postgres:$major"
           for i in $(seq 1 30); do docker exec pg pg_isready -U postgres && break; sleep 2; done
       - run: pip install -e ".[dev,postgres]" -c constraints.txt
-      - run: pytest -q
+      - run: pytest -q -n auto -m "not serial" && pytest -q -m serial
         env:
           CRUDELAB_TEST_PG: postgresql+psycopg://postgres@localhost:5432
   oldest-python:
@@ -53,7 +56,7 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install -e ".[dev]" -c constraints.txt
-      - run: pytest -q
+      - run: pytest -q -n auto -m "not serial" && pytest -q -m serial
   e2e:
     # 瀏覽器巡檢：用演示數據啟動前台和後台，逐頁打開（淺色 / 深色），檢查腳本錯誤、錯誤提示、橫向滾動
     runs-on: ubuntu-latest

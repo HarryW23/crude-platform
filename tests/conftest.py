@@ -38,8 +38,10 @@ def isolated_credentials(tmp_path, monkeypatch):
 # 每個測試從模板複製一份（PostgreSQL 用 CREATE DATABASE … TEMPLATE，SQLite 複製文件，都是毫秒級）。
 # 用到 loaded 夾具的測試直接從帶演示數據的模板開始，不必每個都重新導入一遍（原來每個測試準備要 1.5 秒）。
 TEST_PG = os.environ.get("CRUDELAB_TEST_PG", "").rstrip("/")
-PG_TEMPLATE = "crudelab_test_template"
-PG_TEMPLATE_LOADED = "crudelab_test_template_loaded"
+# 多核並行（pytest -n）時每個進程各建一套模板：名字帶上進程編號，互不刪除對方的模板
+_WORKER = os.environ.get("PYTEST_XDIST_WORKER", "main")
+PG_TEMPLATE = f"crudelab_test_template_{_WORKER}"
+PG_TEMPLATE_LOADED = f"crudelab_test_template_loaded_{_WORKER}"
 
 
 def _pg_admin():
@@ -89,6 +91,11 @@ def templates(tmp_path_factory, cfg):
     from sqlalchemy import text
     admin = _pg_admin()
     names = {"base": PG_TEMPLATE, "loaded": PG_TEMPLATE_LOADED}
+    with admin.connect() as c:                   # 上次被中途殺掉（Ctrl+C、超時）沒來得及刪的本進程測試庫
+        leftovers = c.execute(text("SELECT datname FROM pg_database WHERE datname LIKE :p"),
+                              {"p": f"t\\_{_WORKER}\\_%"}).scalars().all()
+        for name in leftovers:
+            c.execute(text(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)'))
     out = {}
     for kind, name in names.items():
         with admin.connect() as c:
@@ -120,7 +127,7 @@ def settings(request, tmp_path: Path, templates) -> Settings:
     import uuid
 
     from sqlalchemy import text
-    name = f"t_{uuid.uuid4().hex[:16]}"
+    name = f"t_{_WORKER}_{uuid.uuid4().hex[:12]}"
     admin = _pg_admin()
     with admin.connect() as c:
         c.execute(text(f"CREATE DATABASE {name}" + ("" if empty else f" TEMPLATE {template_db}")))

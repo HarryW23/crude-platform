@@ -29,6 +29,9 @@ if os.environ.get("CRUDELAB_SKIP_SLOW"):
 if os.environ.get("CRUDELAB_TEST_PG"):
     pytest.skip("多進程測試用 SQLite 數據文件；PostgreSQL 的並發由數據庫自己保證", allow_module_level=True)
 
+# 起真實的前台 / 後台進程、佔端口、等真實時間：並行跑測試時（pytest -n）不能和別的測試同時跑，單獨順序跑
+pytestmark = pytest.mark.serial
+
 PASSWORD = "multi-process-pass-1234"      # secret-scan: ok（測試裡臨時建的帳號，只存在於臨時目錄）
 CLI = [sys.executable, "-m", "crudelab.cli"]
 

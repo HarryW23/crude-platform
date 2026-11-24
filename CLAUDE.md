@@ -14,3 +14,10 @@
   每次新開的環境都要先設一次（寫在倉庫的 .git/config 裡，不改全局設定）。
 - 提交說明末尾照常帶上 Claude 的 `Co-Authored-By` 行。
 - 不要改寫已經推上去的歷史。
+
+## 測試
+
+- 提交前先跑測試，失敗不提交。快的跑法：`python -m pytest -n auto -m "not serial" && python -m pytest -m serial`
+  （多核並行；標了 `serial` 的會起真實服務進程、佔端口，單獨順序跑）。CI 也是這樣跑
+- 新測試要起進程、佔端口或依賴真實等待時間：標 `@pytest.mark.serial`；需要空庫（不用遷移好的模板）：標 `@pytest.mark.empty_db`
+- 測試只能寫臨時目錄（tmp_path），不能寫項目裡的文件：並行時會互相覆蓋
