@@ -14,6 +14,7 @@ from .config import normalize_alias
 from .connectors.excel import SheetPreview, parse_workbook
 from .ingest import Obs, write_observations
 from .models import AuditLog, DataSource, ImportBatch, Series, SeriesAlias
+from .schema import PRICE_KINDS
 from .settings import Settings
 
 
@@ -40,9 +41,6 @@ def _duplicates(previews: list[SheetPreview], mapping: dict[str, str | None] | N
                 seen.setdefault(code, []).append(f"{sheet.name} {col.ref}")
     return [f"{code} 被多處對應：{'；'.join(refs)}（日期重疊時以後面的為準）"
             for code, refs in seen.items() if len(refs) > 1]
-
-
-PRICE_KINDS = ("futures", "swap", "spot", "freight", "fx")   # 絕對價格：正好是 0 只會是數據商沒有報價時填的 0
 
 
 def screen(session: Session, observations: list[Obs]) -> tuple[list[Obs], list[str]]:

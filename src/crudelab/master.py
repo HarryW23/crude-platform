@@ -5,7 +5,8 @@ config/ 是主數據的唯一來源，數據庫裡的主數據表只是它的鏡
   字典類（單位、地區、品種、數據源、序列、參數說明）  以配置為準覆蓋；配置裡刪掉的序列和參數置為 inactive，數據保留
   參數數值    配置只提供初始值：參數還沒有任何版本時寫入；之後一律以後台為準，不覆蓋
   參數核對狀態  只在新建時取配置值；之後以後台為準
-  不用的數據點  序列的 data_from 之前、bad_days 裡的：已經入庫的移除（舊值進修訂記錄），手動錄入的不動
+  不用的數據點  序列的 data_from 之前、bad_days 裡的、絕對價格正好是 0 的：已經入庫的移除
+              （舊值進修訂記錄），手動錄入的不動
   別名        配置來的別名（origin=config）以配置為準：新增、改指向、配置裡刪掉的也刪掉；
               後台學到的別名（origin=learned）是人工確認過的，不動，同名時優先於配置
 """
@@ -32,6 +33,7 @@ from .models import (
     Unit,
     utcnow,
 )
+from .schema import PRICE_KINDS
 
 SYSTEM_ACTOR = "config"
 ALIAS_MAX = 128               # series_alias 兩個字段的長度上限（PostgreSQL 會嚴格檢查）
@@ -116,15 +118,19 @@ def sync_to_db(session: Session, cfg: Config) -> dict[str, int]:
 
 
 def _drop_unusable(session: Session, cfg: Config) -> int:
-    """配置裡標了不用的數據點（data_from 之前、bad_days），已經入庫的移除：舊值記進修訂記錄，可以追溯。
+    """導入時會跳過的數據點（data_from 之前、bad_days、絕對價格正好是 0，見 imports.screen），
+    在規則加上之前已經入庫的，這裡移除：舊值記進修訂記錄，可以追溯。
     後台手動錄入的（數據源類型 manual）是人工確認過的，不動。"""
     manual = set(session.scalars(select(DataSource.code).where(DataSource.kind == "manual")))
     now = utcnow()
     removed = 0
     for s in cfg.series.values():
-        if s.data_from is None and not s.bad_days:
+        priced = s.kind in PRICE_KINDS
+        if s.data_from is None and not s.bad_days and not priced:
             continue
         unusable: ColumnElement[bool] = Observation.obs_date.in_(s.bad_days) if s.bad_days else false()
+        if priced:
+            unusable = or_(unusable, Observation.value == 0)
         if s.data_from is not None:
             unusable = or_(unusable, Observation.obs_date < s.data_from)
         rows = list(session.scalars(select(Observation).where(
@@ -138,6 +144,6 @@ def _drop_unusable(session: Session, cfg: Config) -> int:
         if rows:
             session.add(AuditLog(actor=SYSTEM_ACTOR, action="remove_points", entity="series", entity_id=s.code,
                                  detail={"dates": sorted(o.obs_date.isoformat() for o in rows),
-                                         "reason": "配置裡的 data_from / bad_days"}))
+                                         "reason": "data_from 之前 / bad_days / 價格正好是 0"}))
             removed += len(rows)
     return removed

@@ -266,13 +266,17 @@ def test_bad_days_are_skipped_on_import_and_removed_on_config_sync(session, sett
     assert commit_batch(session, preview["batch_id"])["skipped"] == 1
 
     # 配置加上 bad_days 之前就入庫了的：繞過導入直接寫進去，模擬舊數據
-    write_observations(session, [Obs("OMAN_M1", bad, 117.23), Obs("MARS_DIFF", date(2018, 10, 31), 0.0)], "reuters_xls")
+    write_observations(session, [Obs("OMAN_M1", bad, 117.23), Obs("MARS_DIFF", date(2018, 10, 31), 0.0),
+                                 Obs("OMAN_M1", date(2022, 6, 9), 0.0), Obs("FORTIES_DIFF", date(2022, 6, 9), 0.0)],
+                       "reuters_xls")
     write_observations(session, [Obs("MARS_DIFF", date(2018, 11, 30), 3.3)], "manual")
     result = sync_to_db(session, cfg)
-    assert result["removed_points"] == 2
+    assert result["removed_points"] == 3                       # 升貼水是 0 的（FORTIES_DIFF）留著
     left = {(o.series_code, o.obs_date, o.source_code) for o in session.scalars(select(Observation))}
     assert ("OMAN_M1", bad, "reuters_xls") not in left and ("MARS_DIFF", date(2018, 11, 30), "manual") in left
-    revision = session.scalars(select(ObservationRevision).where(ObservationRevision.series_code == "OMAN_M1")).one()
+    assert ("FORTIES_DIFF", date(2022, 6, 9), "reuters_xls") in left
+    revision = session.scalars(select(ObservationRevision).where(ObservationRevision.series_code == "OMAN_M1",
+                                                                 ObservationRevision.obs_date == bad)).one()
     assert revision.value == 117.23 and revision.replaced_by == "config"
     assert session.scalars(select(AuditLog).where(AuditLog.action == "remove_points")).all()
     assert sync_to_db(session, cfg)["removed_points"] == 0

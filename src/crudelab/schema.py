@@ -19,6 +19,8 @@ EPOCH = date(1900, 1, 1)          # 「自始生效」的生效日期
 
 Module = Literal["spread", "balance", "geo", "refinery", "positioning", "common"]
 SeriesKind = Literal["futures", "swap", "spot", "diff", "osp", "freight", "fx", "stock", "flow", "ratio", "position"]
+# 絕對價格：正好是 0 只會是數據商沒有報價時填的 0（導入時跳過，見 imports.screen）。升貼水、官價、比率是 0 是正常的
+PRICE_KINDS: tuple[str, ...] = ("futures", "swap", "spot", "freight", "fx")
 Frequency = Literal["daily", "weekly", "monthly", "quarterly"]      # 由細到粗
 ModuleName = Literal["spread", "balance", "refinery", "positioning", "geo"]      # 方向信號的模組（推演的權重按它分）
 FREQUENCY_ORDER: tuple[str, ...] = ("daily", "weekly", "monthly", "quarterly")
