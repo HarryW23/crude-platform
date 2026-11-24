@@ -41,7 +41,11 @@ jobs:
           docker run -d --name pg -p 5432:5432 -e POSTGRES_HOST_AUTH_METHOD=trust "postgres:$major"
           for i in $(seq 1 30); do docker exec pg pg_isready -U postgres && break; sleep 2; done
       - run: pip install -e ".[dev,postgres]" -c constraints.txt
-      - run: pytest -q -n auto -m "not serial" && pytest -q -m serial
+      - run: pytest -q -n auto -m "not serial"
+        env:
+          CRUDELAB_TEST_PG: postgresql+psycopg://postgres@localhost:5432
+      # 現有的 serial 測試（多進程）在 PostgreSQL 上整個跳過：一個都沒選到時 pytest 返回 5，這裡算正常；其他非 0 照樣失敗
+      - run: pytest -q -m serial || [ $? -eq 5 ]
         env:
           CRUDELAB_TEST_PG: postgresql+psycopg://postgres@localhost:5432
   oldest-python:
