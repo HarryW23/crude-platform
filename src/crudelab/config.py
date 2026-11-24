@@ -320,9 +320,11 @@ def _load_sections(ld: _Loader, cfg: Config) -> None:
     if calendars_doc:
         cfg.calendar_defs = ld.keyed(calendars_doc.calendars, "交易日曆")
         cfg.calendars = {code: build_calendar(d) for code, d in cfg.calendar_defs.items()}
-    for curve in cfg.curves.values():                 # 換月的工作日按曲線的日曆算
-        if curve.roll is not None and curve.calendar in cfg.calendars:
-            curve.roll._calendar = cfg.calendars[curve.calendar]
+    for curve in cfg.curves.values():                 # 換月的工作日：換月規則自己指定的日曆，否則曲線的交易日曆
+        if curve.roll is not None:
+            code = curve.roll.calendar or curve.calendar
+            if code in cfg.calendars:
+                curve.roll._calendar = cfg.calendars[code]
 
 
 def load_config(config_dir: Path) -> Config:
@@ -389,6 +391,8 @@ def _validate_dictionary(cfg: Config) -> list[str]:
     for c in cfg.curves.values():
         if c.calendar is not None and c.calendar not in cfg.calendars:
             errors.append(f"曲線 {c.code}：交易日曆 {c.calendar} 不在 calendars.yaml 裡")
+        if c.roll is not None and c.roll.calendar is not None and c.roll.calendar not in cfg.calendars:
+            errors.append(f"曲線 {c.code}：換月規則的日曆 {c.roll.calendar} 不在 calendars.yaml 裡")
     return errors
 
 

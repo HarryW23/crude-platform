@@ -24,10 +24,10 @@ series:
 
   # ---------- 美元與利率（路透，#17） ----------
   - {code: MACRO_DXY, name_zh: 美元指數, commodity: FX, location: GLOBAL, kind: fx, unit: idx, module: common,
-     provider: lseg_macro, aliases: [DXY, 美元指數, US Dollar Index]}
+     provider: lseg_macro, aliases: [DXY, 美元指數, US Dollar Index], lseg: {ric: ".DXY", field: TRDPRC_1}}
   - {code: MACRO_UST2Y, name_zh: 美國 2 年期國債收益率, commodity: RATES, location: US, kind: ratio, unit: pct,
-     module: common, provider: lseg_macro, aliases: [UST 2Y, 美債2年]}
+     module: common, provider: lseg_macro, aliases: [UST 2Y, 美債2年], lseg: {ric: "US2YT=RR", field: MID_YLD_1}}
   - {code: MACRO_UST10Y, name_zh: 美國 10 年期國債收益率, commodity: RATES, location: US, kind: ratio, unit: pct,
-     module: common, provider: lseg_macro, aliases: [UST 10Y, 美債10年]}
+     module: common, provider: lseg_macro, aliases: [UST 10Y, 美債10年], lseg: {ric: "US10YT=RR", field: MID_YLD_1}}
   - {code: MACRO_REAL10Y, name_zh: 美國 10 年期實際利率（TIPS）, commodity: RATES, location: US, kind: ratio, unit: pct,
-     module: common, provider: lseg_macro, aliases: [TIPS 10Y, 美國實際利率]}
+     module: common, provider: lseg_macro, aliases: [TIPS 10Y, 美國實際利率], lseg: {ric: "US10YTIP=RR", field: MID_YLD_1}}

@@ -3,8 +3,8 @@
 curves:
   - {code: GASOIL_ICE, calendar: ICE_EU, name_zh: ICE 柴油期貨, commodity: GASOIL, location: NWE, kind: futures, unit: USD/t,
      months: [1, 2, 3], module: refinery, aliases: ["LGOc{n}", "ICE Gasoil M{n}"],
-     roll: {months_before: 0, day: 14, business_days_before: 2, count_from_day: true, verified: true,
-            note: "ICE Gasoil：交割月 14 日之前的第 2 個工作日（14 日是周末時直接從 14 日往前數，不先挪到周五）。2026-11-23 用路透 LGOc1 的到期日核對 36 次換月"}}
+     roll: {months_before: 0, day: 14, business_days_before: 2, count_from_day: true, calendar: UK_BANK, verified: true,
+            note: "ICE Gasoil：交割月 14 日之前的第 2 個工作日（14 日是周末時直接從 14 日往前數，不先挪到周五）；工作日按英國銀行假日算（UK_BANK）。2026-11-24 用路透 LGOc1 的到期日核對 2016-10～2026-11 共 122 次換月"}}
   - {code: RBOB, calendar: CME, name_zh: RBOB 汽油期貨, commodity: GASOLINE, location: NYH, kind: futures, unit: USD/gal,
      months: [1, 2], module: refinery, aliases: ["RBc{n}", "RBOB M{n}"],
      roll: {months_before: 1, day: last_business, verified: true,

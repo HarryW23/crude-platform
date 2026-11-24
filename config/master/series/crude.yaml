@@ -17,9 +17,8 @@
 curves:
   - {code: BRENT, calendar: ICE_EU, name_zh: 布倫特期貨, commodity: BRENT, location: NWE, kind: futures, unit: USD/bbl,
      months: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], module: common, aliases: ["LCOc{n}", "Brent M{n}", "布倫特M{n}", "ICE Brent M{n}"],
-     roll: {months_before: 2, day: last_business, not_eve_of: ["12-25", "01-01"], verified: true,
-            overrides: {"2026-10": 2026-08-28},
-            note: "ICE Brent：交割月前第二個月的最後一個工作日；正好是聖誕或元旦前一個工作日時再提前一個工作日。2026-10 合約：8 月 31 日是英國夏季銀行假日（Brent 照常交易，但不算到期的工作日），提前到 8 月 28 日。2026-11-23 用路透 LCOc1 的到期日核對 2023-11～2026-11 共 36 次換月"}}
+     roll: {months_before: 2, day: last_business, not_eve_of: ["12-25", "01-01"], calendar: UK_BANK, verified: true,
+            note: "ICE Brent：交割月前第二個月的最後一個工作日；正好是聖誕或元旦前一個工作日時再提前一個工作日。工作日按英國銀行假日算（UK_BANK：Brent 在銀行假日照常交易，但不算到期的工作日）。2026-11-24 用路透 LCOc1 的到期日核對 2016-10～2026-11 共 121 次換月"}}
   - {code: WTI, calendar: CME, name_zh: WTI 期貨, commodity: WTI, location: CUSHING, kind: futures, unit: USD/bbl,
      months: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], module: common, aliases: ["CLc{n}", "WTI M{n}", "NYMEX WTI M{n}"],
      roll: {months_before: 1, day: 25, business_days_before: 3, verified: true,

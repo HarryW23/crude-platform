@@ -54,15 +54,15 @@ PROVIDERS: dict[str, Provider] = {p.code: p for p in (
     Provider("fx", "匯率", "路透導出 Excel 後導入", "任一行情訂閱", "Excel 導入可用"),
     Provider("lseg_macro", "美元指數、美債收益率", "`scripts/lseg_export.py` 從路透導出後導入", "路透 / LSEG 訂閱",
              "導出腳本可用", "國債 RIC 同時有價格和收益率字段：配置裡的 lseg.field 要指定收益率那個，否則會取到價格。"),
-    Provider("lseg_survey", "OPEC+ 分國原油產量（路透每月產量調查）", "`scripts/lseg_export.py` 從路透導出後導入",
-             "路透 / LSEG 訂閱", "導出腳本可用",
-             "月度數據。配額和可持續產能是參數（config/parameters/opec.yaml），需要你按 OPEC+ 的決定錄入。"),
+
     Provider("cn_vendor", "國內現貨價（隆眾、卓創、金聯創等）",
              "資訊商網站或終端導出 Excel 後導入", "國內資訊商訂閱；之後可接其 API（`CN_VENDOR_API_KEY`）",
              "Excel 導入可用；API 預留",
              "山東地煉汽柴油、液化氣、石油焦，華東汽柴油和純苯，航煤出廠價。兩個中國煉廠模型依賴這一組。"),
     Provider("agency", "機構月報（IEA、OPEC）", "從月報的表格整理成 Excel 後導入",
-             "IEA 月報需訂閱；OPEC 月報公開", "Excel 導入可用", "只用於和 EIA 口徑對照，不影響平衡表本身。"),
+             "IEA 月報需訂閱；OPEC 月報公開", "Excel 導入可用",
+             "IEA / OPEC 的供需只用於和 EIA 口徑對照，不影響平衡表本身。OPEC+ 分國產量（CRUDE_PROD_*）取 OPEC 月報的"
+             "二手來源表；配額和可持續產能是參數（config/parameters/opec.yaml），需要你按 OPEC+ 的決定錄入。"),
     Provider("consult", "煉廠檢修（諮詢機構）", "從諮詢機構的報告整理成 Excel 後導入",
              "IIR、Platts、Energy Aspects 等任一家的訂閱", "Excel 導入可用",
              "全球煉廠停工量（檢修 + 非計劃）。各家口徑不同，固定用一家。"),
@@ -217,7 +217,7 @@ def render(cfg: Config) -> str:
 
 # ------------------------------ 給 LSEG 導出腳本的 RIC 清單 ------------------------------
 
-LSEG_PROVIDERS = ("exchange_intl", "exchange_cn", "pra", "freight", "fx", "lseg_macro", "lseg_survey")      # 路透終端上可能取得到的
+LSEG_PROVIDERS = ("exchange_intl", "exchange_cn", "pra", "freight", "fx", "lseg_macro")      # 路透終端上可能取得到的
 _RIC = re.compile(r"^[0-9A-Z]{1,8}c\d{1,2}$|^[0-9A-Za-z.]+=[A-Z]*$|^[A-Z0-9]+-$")
 
 

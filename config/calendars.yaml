@@ -39,6 +39,28 @@ calendars:
       - {name: 聖誕節, month: 12, day: 25, observe: next_weekdays}
       - {name: 節禮日, month: 12, day: 26, observe: next_weekdays}
 
+  - code: UK_BANK
+    name_zh: 英國（英格蘭）銀行假日：ICE 合約算到期日用
+    verified: true
+    source: 英國政府銀行假日表；2016-10 ~ 2026-11 用路透 LCOc1、LGOc1 的實際到期日核對過
+    notes: >-
+      ICE Futures Europe 在英國銀行假日（復活節星期一、五月的兩個、八月的一個）照常交易 Brent、柴油，
+      但算合約到期的「工作日」時不算這些日子：例如 2020-08-31、2021-05-31、2026-08-31（周一銀行假日）
+      那個月的 Brent 提前到前一個周五到期，2020-04 的柴油因復活節星期一提前一天。所以只給換月規則用
+      （roll.calendar），交易日曆仍是 ICE_EU。
+      臨時調整的年份寫在 dates：規則會照常推出原來那天（例如 2020-05-04、2022-05-30 其實不是假日），
+      這兩天不在月底，也不在 14 日前後，不影響 Brent、柴油的到期日。
+    rules:
+      - {name: 元旦, month: 1, day: 1, observe: next_weekdays}
+      - {name: 耶穌受難日, easter_offset: -2}
+      - {name: 復活節星期一, easter_offset: 1}
+      - {name: 五月初銀行假日, month: 5, weekday: 0, nth: 1}
+      - {name: 春季銀行假日, month: 5, weekday: 0, nth: -1}
+      - {name: 夏季銀行假日, month: 8, weekday: 0, nth: -1}
+      - {name: 聖誕節, month: 12, day: 25, observe: next_weekdays}
+      - {name: 節禮日, month: 12, day: 26, observe: next_weekdays}
+    dates: [2020-05-08, 2022-06-02, 2022-06-03, 2022-09-19, 2023-05-08]
+
   - code: CN
     name_zh: 中國（上期所 / 上海國際能源交易中心、國內現貨）
     verified: true

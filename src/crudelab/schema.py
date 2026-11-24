@@ -137,6 +137,9 @@ class RollRule(Strict):
     business_days_before: int = Field(default=0, ge=0, le=10)
     count_from_day: bool = False
     not_eve_of: list[str] = Field(default=[], max_length=4)
+    # 算到期用的工作日日曆（config/calendars.yaml 的代碼）；不寫就用曲線的交易日曆。
+    # 交易所在某些假日照常交易、但到期日不算那天時用（ICE：英國銀行假日，見 UK_BANK）
+    calendar: str | None = None
     verified: bool = False                        # 規則是否已經和交易所 / 數據商的實際換月日核對過
     note: str | None = None
     overrides: dict[str, date] = {}               # 合約月份 "YYYY-MM" → 實際最後交易日（假期等例外）

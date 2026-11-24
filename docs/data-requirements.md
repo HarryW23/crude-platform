@@ -16,9 +16,8 @@
 | 油輪運價（波羅的海交易所 TD 航線） | 4 | 路透終端導出 Excel 後導入 | 路透訂閱（含波羅的海交易所數據） | Excel 導入可用 |
 | 匯率 | 1 | 路透導出 Excel 後導入 | 任一行情訂閱 | Excel 導入可用 |
 | 美元指數、美債收益率 | 4 | `scripts/lseg_export.py` 從路透導出後導入 | 路透 / LSEG 訂閱 | 導出腳本可用 |
-| OPEC+ 分國原油產量（路透每月產量調查） | 7 | `scripts/lseg_export.py` 從路透導出後導入 | 路透 / LSEG 訂閱 | 導出腳本可用 |
 | 國內現貨價（隆眾、卓創、金聯創等） | 10 | 資訊商網站或終端導出 Excel 後導入 | 國內資訊商訂閱；之後可接其 API（`CN_VENDOR_API_KEY`） | Excel 導入可用；API 預留 |
-| 機構月報（IEA、OPEC） | 4 | 從月報的表格整理成 Excel 後導入 | IEA 月報需訂閱；OPEC 月報公開 | Excel 導入可用 |
+| 機構月報（IEA、OPEC） | 11 | 從月報的表格整理成 Excel 後導入 | IEA 月報需訂閱；OPEC 月報公開 | Excel 導入可用 |
 | 煉廠檢修（諮詢機構） | 1 | 從諮詢機構的報告整理成 Excel 後導入 | IIR、Platts、Energy Aspects 等任一家的訂閱 | Excel 導入可用 |
 | CFTC / ICE 持倉報告 | 6 | 定時任務自動取（CFTC 公開接口；ICE 由路透導出） | CFTC 不需要；ICE 見路透 | CFTC 接口已接通 |
 | 金十數據 | 10 | 定時任務自動取（財經日曆、報價） | `JIN10_TOKEN`（`crudelab secret set JIN10_TOKEN`） | 已接通 |
@@ -212,20 +211,6 @@ WS 點折成 美元/桶 還需要 Worldscale 每年的基準費率，見下面�
 | `MACRO_UST10Y` | 美國 10 年期國債收益率 | pct | 日 | 資金持倉 3 |
 | `MACRO_REAL10Y` | 美國 10 年期實際利率（TIPS） | pct | 日 | 資金持倉 2 |
 
-### OPEC+ 分國原油產量（路透每月產量調查）
-
-月度數據。配額和可持續產能是參數（config/parameters/opec.yaml），需要你按 OPEC+ 的決定錄入。
-
-| 代碼 | 名稱 | 單位 | 頻率 | 用到它的指標 |
-|---|---|---|---|---|
-| `CRUDE_PROD_SAUDI` | 沙特原油產量 | mb/d | 月 | 供需 4 |
-| `CRUDE_PROD_IRAQ` | 伊拉克原油產量 | mb/d | 月 | 供需 4 |
-| `CRUDE_PROD_UAE` | 阿聯酋原油產量 | mb/d | 月 | 供需 4 |
-| `CRUDE_PROD_KUWAIT` | 科威特原油產量 | mb/d | 月 | 供需 4 |
-| `CRUDE_PROD_IRAN` | 伊朗原油產量 | mb/d | 月 | （目前沒有指標用到） |
-| `CRUDE_PROD_RUSSIA` | 俄羅斯原油產量 | mb/d | 月 | 供需 2 |
-| `CRUDE_PROD_OPEC` | OPEC 原油產量合計（調查） | mb/d | 月 | （目前沒有指標用到） |
-
 ### 國內現貨價（隆眾、卓創、金聯創等）
 
 山東地煉汽柴油、液化氣、石油焦，華東汽柴油和純苯，航煤出廠價。兩個中國煉廠模型依賴這一組。
@@ -245,7 +230,7 @@ WS 點折成 美元/桶 還需要 Worldscale 每年的基準費率，見下面�
 
 ### 機構月報（IEA、OPEC）
 
-只用於和 EIA 口徑對照，不影響平衡表本身。
+IEA / OPEC 的供需只用於和 EIA 口徑對照，不影響平衡表本身。OPEC+ 分國產量（CRUDE_PROD_*）取 OPEC 月報的二手來源表；配額和可持續產能是參數（config/parameters/opec.yaml），需要你按 OPEC+ 的決定錄入。
 
 | 代碼 | 名稱 | 單位 | 頻率 | 用到它的指標 |
 |---|---|---|---|---|
@@ -253,6 +238,13 @@ WS 點折成 美元/桶 還需要 Worldscale 每年的基準費率，見下面�
 | `IEA_WORLD_SUPPLY` | 全球供應（IEA） | mb/d | 季（按報告期保存：補錄歷史報告時填發佈日期） | 供需 1 |
 | `OPEC_WORLD_DEMAND` | 全球需求（OPEC） | mb/d | 季（按報告期保存：補錄歷史報告時填發佈日期） | 供需 1 |
 | `OPEC_CALL_ON_OPEC` | 對 OPEC 原油的需求（OPEC） | mb/d | 季（按報告期保存：補錄歷史報告時填發佈日期） | （目前沒有指標用到） |
+| `CRUDE_PROD_SAUDI` | 沙特原油產量 | mb/d | 月 | 供需 4 |
+| `CRUDE_PROD_IRAQ` | 伊拉克原油產量 | mb/d | 月 | 供需 4 |
+| `CRUDE_PROD_UAE` | 阿聯酋原油產量 | mb/d | 月 | 供需 4 |
+| `CRUDE_PROD_KUWAIT` | 科威特原油產量 | mb/d | 月 | 供需 4 |
+| `CRUDE_PROD_IRAN` | 伊朗原油產量 | mb/d | 月 | （目前沒有指標用到） |
+| `CRUDE_PROD_RUSSIA` | 俄羅斯原油產量 | mb/d | 月 | 供需 2 |
+| `CRUDE_PROD_OPEC` | OPEC 原油產量合計（調查） | mb/d | 月 | （目前沒有指標用到） |
 
 ### 煉廠檢修（諮詢機構）
 
