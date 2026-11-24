@@ -513,3 +513,18 @@ def test_event_expected_impact(loaded, cfg, client):
     assert len(impacts["events"]) == 1
     body = client.get("/api/events/impacts").json()
     assert body["events"][str(e.id)]["W1"]["expected"] == pytest.approx(1.0)
+
+
+def test_balance_period_starting_on_the_horizon_end_is_not_counted():
+    """2026-11-24 發現：1 周期限的終點正好是 12-01，12 月那一期和期限重疊 0 天，卻被算進期數和平均。"""
+    import pandas as pd
+
+    from crudelab.projection import _balance_change
+    idx = pd.to_datetime(["2026-11-01", "2026-12-01"])
+    base = pd.Series([0.0, 0.0], index=idx)
+    scenario = pd.Series([-1.0, -5.0], index=idx)                         # 12 月的變化大很多
+    today, end = pd.Timestamp("2026-11-24"), pd.Timestamp("2026-12-01")
+    change, stock, n = _balance_change(base, scenario, today, end, 31)
+    assert n == 1 and change == pytest.approx(-1.0) and stock == pytest.approx(-7.0)
+    change, stock, n = _balance_change(base, scenario, today, end + pd.Timedelta(days=1), 31)
+    assert n == 2 and stock == pytest.approx(-7.0 - 5.0)                    # 多一天就跨進 12 月

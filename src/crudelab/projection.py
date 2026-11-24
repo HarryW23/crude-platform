@@ -249,13 +249,14 @@ def _volatility(prices: pd.Series, lookback: int, min_points: int) -> float | No
 
 def _balance_change(base: pd.Series, scenario: pd.Series, today: pd.Timestamp, end: pd.Timestamp,
                     period_days: int) -> tuple[float | None, float | None, int]:
-    """期限內的平衡變化。期間與 [今天, 期限末] 有重疊就算在內。
+    """期限內的平衡變化。期間與 [今天, 期限末) 有重疊（至少一天）就算在內：期限末當天才開始的那一期不算，
+    它和期限的重疊是 0 天，算進去會把它的平衡變化平均進來。
 
     回傳（各期平衡變化的平均, 累積的庫存變化, 用到的期數）。庫存變化 = Σ 平衡變化 × 該期落在窗口內的天數：
     平衡的單位是「每日」（例如 百萬桶/日），乘上天數就是庫存（百萬桶）。
     """
     frame = pd.DataFrame({"base": base, "scenario": scenario}).dropna()
-    window = frame[(frame.index <= end) & (frame.index + pd.Timedelta(days=period_days) > today)]
+    window = frame[(frame.index < end) & (frame.index + pd.Timedelta(days=period_days) > today)]
     if window.empty:
         return None, None, 0
     diff = window["scenario"] - window["base"]
