@@ -122,13 +122,28 @@ def _indicator_section(lines: list[str], title: str, groups: dict[str, list[dict
 
 
 def render_markdown(facts: dict) -> str:
-    c, sig = facts["coverage"], facts["signals"]
+    c = facts["coverage"]
     lines = [f"# 原油市場{facts['kind_name']}", "",
              f"數據截至 {facts['data_date'] or '（無數據）'}，生成於 {facts['generated_at']} UTC。", "",
              f"可計算的指標 {c['indicators_ok']} / {c['indicators_total']}；"
              f"待核對的參數 {c['parameters_unverified']} / {c['parameters_total']}。"
              + ("含待核對參數的結果僅供參考。" if c["parameters_unverified"] else ""), ""]
 
+    _signals_section(lines, facts)
+    _fair_value_section(lines, facts)
+    _indicator_section(lines, "地域價差", facts["indicators"].get("spread", {}))
+    _balance_section(lines, facts)
+    _indicator_section(lines, "供需指標", facts["indicators"].get("balance", {}), level=3)
+    _refinery_section(lines, facts)
+    _indicator_section(lines, "裂解與價差", facts["indicators"].get("refinery", {}), level=3)
+    _event_section(lines, facts)
+    _projection_section(lines, facts)
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _signals_section(lines: list[str], facts: dict) -> None:
+    """方向信號：綜合與各模組。"""
+    sig = facts["signals"]
     lines += ["## 方向信號", "",
               f"綜合：**{sig['overall']['label']}**"
               + (f"（{sig['overall']['score']:+.2f}，分數範圍 −1 至 +1）"
@@ -140,6 +155,10 @@ def render_markdown(facts: dict) -> str:
                      for m in sig["modules"]])
     lines += ["信號衡量的是各指標相對自身歷史的位置，不是預測。", ""]
 
+
+
+def _fair_value_section(lines: list[str], facts: dict) -> None:
+    """基本面公允價值：每個模型的偏離和因子貢獻。"""
     lines += ["## 基本面公允價值", ""]
     for fv in facts.get("fair_values", []):
         if fv["fair"] is None:
@@ -157,8 +176,10 @@ def render_markdown(facts: dict) -> str:
     if not facts.get("fair_values"):
         lines += ["沒有定義公允價值模型。", ""]
 
-    _indicator_section(lines, "地域價差", facts["indicators"].get("spread", {}))
 
+
+def _balance_section(lines: list[str], facts: dict) -> None:
+    """供需平衡表：最新一期和預測期。"""
     lines += ["## 供需平衡", ""]
     for b in facts["balances"]:
         if b["status"] != "ok":
@@ -170,16 +191,20 @@ def render_markdown(facts: dict) -> str:
         if b["forecast"]:
             lines += _table(["預測期", *[f["date"][:7] for f in b["forecast"]]],
                             [[f"平衡（{b['unit']}）", *[_s(f["value"]) for f in b["forecast"]]]])
-    _indicator_section(lines, "供需指標", facts["indicators"].get("balance", {}), level=3)
 
+
+def _refinery_section(lines: list[str], facts: dict) -> None:
+    """煉廠盈利模型。"""
     lines += ["## 煉廠盈利", ""]
     lines += _table(["模型", "日期", "毛利", "上期變化", "20 期變化", "單位", "備註"],
                     [[r["name_zh"], r["last_date"] or "", _n(r["last_value"]) if r["status"] == "ok" else "—",
                       _s(r["chg_1d"]), _s(r["chg_20d"]), r["unit"],
                       (f"含 {r['unverified']} 項待核對假設" if r["unverified"] else "") if r["status"] == "ok"
                       else STATUS_TEXT[r["status"]]] for r in facts["refineries"]])
-    _indicator_section(lines, "裂解與價差", facts["indicators"].get("refinery", {}), level=3)
 
+
+def _event_section(lines: list[str], facts: dict) -> None:
+    """進行中的地緣事件。"""
     lines += ["## 地緣事件", ""]
     if facts["events"]:
         lines += _table(["事件", "狀態", "開始", "方向判斷", "量化影響"],
@@ -189,6 +214,10 @@ def render_markdown(facts: dict) -> str:
     else:
         lines += ["目前沒有已確認且仍在進行的事件。", ""]
 
+
+
+def _projection_section(lines: list[str], facts: dict) -> None:
+    """價格推演：各分支的中樞和區間。"""
     lines += ["## 價格推演", ""]
     p = facts["projection"]
     if p is None:
@@ -217,7 +246,6 @@ def render_markdown(facts: dict) -> str:
                   "各分支的中樞 = 當前價格 + 基本面回歸 + 供需效應 + 直接價格調整；機率和敏感度是人為設定。"
                   + ("" if not p.get("drift") or not p["drift"].get("effects")
                      else f"本推演使用 {p['drift']['name_zh']} 的基本面回歸。"), ""]
-    return "\n".join(lines).rstrip() + "\n"
 
 
 def full_markdown(report: Report) -> str:

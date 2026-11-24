@@ -525,42 +525,12 @@ def _clean(value):
 # ------------------------------ 主流程 ------------------------------
 
 def run(session: Session, cfg: Config, options: Options) -> dict:
-    if options.mode not in MODES:
-        raise BacktestError(f"回測模式必須是：{'、'.join(MODES)}")
     step = options.resolved_step()
-    if not 1 <= step <= 60:
-        raise BacktestError("評估間隔必須在 1 到 60 個交易日之間")
-    if not cfg.signals:
-        raise BacktestError("還沒有定義任何信號")
     anchor, horizons, settings = anchor_of(cfg), horizons_of(cfg), cfg.backtest
     engine = IndicatorEngine(session, cfg)
     prices, unadjusted = engine.adjusted_series(anchor)
-    if len(prices) < 2:
-        raise BacktestError(f"{cfg.name_of(anchor)}（{anchor}）沒有足夠的價格數據，無法回測")
-    days = prices.index
-    if options.start:
-        days = days[days >= pd.Timestamp(options.start)]
-    if options.end:
-        days = days[days <= pd.Timestamp(options.end)]
-    if options.start and options.end and options.start >= options.end:
-        raise BacktestError("開始日期必須早於結束日期")
-    dates = days[::step]
-    if len(dates) < 2:
-        raise BacktestError("所選區間裡的交易日太少")
-
-    exact: set = set()
-    if options.mode == "observation":
-        scores, exact = _observation_scores(engine, cfg, dates)
-        vol = _observation_volatility(prices, cfg, dates)
-        fits = {}
-        for code, model in cfg.fair_values.items():         # 同一個 fit_at：每個日期只用之前的數據擬合
-            frame = fair_value.aligned_frame(engine, cfg, model, lags=settings.publication_lag_days)
-            fits[code] = {t: fair_value.fit_at(frame, t, model) for t in dates}
-    else:
-        scores, vol, fits = _vintage(session, cfg, dates, anchor)
-    if options.mode == "observation":
-        for code, values in fair_value_scores(cfg, fits, dates).items():
-            scores[code] = values
+    dates = _evaluation_dates(cfg, options, anchor, prices, step)
+    scores, vol, fits, exact = _scores(session, cfg, engine, options.mode, dates, anchor, prices)
     modules, overall = aggregate(cfg, engine, scores)
     fwd = forward_returns(prices, dates, horizons)
 
@@ -568,21 +538,9 @@ def run(session: Session, cfg: Config, options: Options) -> dict:
         return {h.code: evaluate(series, fwd[h.code], h.trading_days, step, settings.neutral_band,
                                  settings.min_effective_samples) for h in horizons}
 
-    coarse = {"monthly", "quarterly"}
-    signal_rows: list[dict[str, Any]] = []
-    for code, s in cfg.signals.items():
-        fv = cfg.fair_values.get(s.input) if s.source == "fair_value" else None
-        approx_inputs = [f.input for f in fv.factors] if fv else [s.input]
-        signal_rows.append({
-            "code": code, "name_zh": s.name_zh, "module": s.module, "input": s.input, "source": s.source,
-            "input_name": fv.name_zh if fv else cfg.name_of(s.input), "direction": s.direction,
-            "approx": options.mode == "observation" and code not in exact
-            and any(cfg.frequency_of(i) in coarse for i in approx_inputs),
-            "vintage_exact": code in exact,
-            "scored": int(scores[code].notna().sum()), "by_horizon": by_horizon(scores[code])})
+    signal_rows = _signal_rows(cfg, engine, options.mode, scores, exact, by_horizon)
     module_rows = [{"module": m, "name_zh": signals.MODULE_NAMES[m], "scored": int(modules[m].notna().sum()),
                     "by_horizon": by_horizon(modules[m])} for m in DATA_MODULES]
-
     points = {code: {h.code: _points(scores[code], fwd[h.code]) for h in horizons} for code in cfg.signals}
     points["OVERALL"] = {h.code: _points(overall, fwd[h.code]) for h in horizons}
     fair_rows = []
@@ -594,33 +552,7 @@ def run(session: Session, cfg: Config, options: Options) -> dict:
         fair_rows.append(row)
         points[f"FV:{code}"] = {h.code: _points(score, target_fwd[h.code]) for h in horizons}
     calibration = calibrate(cfg, engine, scores, fwd, horizons, step)
-    for row in signal_rows:                           # 輸入有沒有明顯趨勢：最近一個評估日、回看期內斜率的 t 值
-        sdef = cfg.signals[row["code"]]
-        if sdef.source == "fair_value":
-            row.update(detrend="none", trend_t=None, trending_share=None)
-            continue
-        frame = signals.rolling_scores(engine.values(sdef.input), sdef.lookback_days, sdef.min_points,
-                                       sdef.direction, sdef.detrend)
-        trend = frame["trend_t"].dropna()
-        row["detrend"] = sdef.detrend
-        row["trend_t"] = float(trend.iloc[-1]) if len(trend) else None
-        row["trending_share"] = float((trend.abs() > 2).mean()) if len(trend) else None
     weekly = dates[:: max(1, 5 // step)]
-    caveats = [
-        (f"{cfg.name_of(anchor)} 的收益已按換月調整；有 {unadjusted} 次換月因缺遠月數據沒能調整，那幾天含跳動。"
-         if unadjusted else f"{cfg.name_of(anchor)} 的收益已按換月調整（同一合約對比）。")
-        if engine.rolled_curves(anchor) else f"{cfg.name_of(anchor)} 不是期貨曲線上的合約，收益按原始價格計算。",
-        "評估日之間的收益窗口互相重疊，統計按「有效樣本」計算；有效樣本少於 "
-        f"{settings.min_effective_samples} 的結果標為樣本不足，不要當結論用。",
-        "地緣模組不參與回測：事件的方向判斷沒有歷史版本。綜合分數只由"
-        + "、".join(signals.MODULE_NAMES[m] for m in DATA_MODULES) + "這幾個模組構成。",
-        "價格區間只檢驗推演的基準分支；情境分支是人的假設，無法回測。",
-        "公允價值的漂移假設因子在期限內不變；它的回測檢驗的正是這個假設下，加漂移是否讓推演的中樞更準。",
-    ]
-    if options.mode == "observation":
-        caveats.insert(0, "按數據日期回測：假設每個數據在「日期 + 發佈延遲」那天就已知道，用的是今天看到的數值。"
-                          "月度、季度數據可能被修訂過，帶預測期的數據也還原不出當時的預測，"
-                          "用到它們的信號標為「近似」，結果可能偏樂觀。")
     return _clean({
         "mode": options.mode, "mode_name": MODES[options.mode], "anchor": anchor, "anchor_name": cfg.name_of(anchor),
         "start": dates[0].date().isoformat(), "end": dates[-1].date().isoformat(), "step": step,
@@ -642,7 +574,93 @@ def run(session: Session, cfg: Config, options: Options) -> dict:
         "series": {"dates": [d.date().isoformat() for d in weekly],
                    "price": [float(prices.get(d, np.nan)) for d in weekly],
                    "overall": [float(overall.get(d, np.nan)) for d in weekly]},
-        "caveats": caveats})
+        "caveats": _caveats(cfg, engine, options.mode, anchor, unadjusted)})
+
+
+def _evaluation_dates(cfg: Config, options: Options, anchor: str, prices: pd.Series, step: int) -> pd.DatetimeIndex:
+    """檢查參數，回傳評估日（錨定價格有數據的交易日，每隔 step 個取一個）。"""
+    if options.mode not in MODES:
+        raise BacktestError(f"回測模式必須是：{'、'.join(MODES)}")
+    if not 1 <= step <= 60:
+        raise BacktestError("評估間隔必須在 1 到 60 個交易日之間")
+    if not cfg.signals:
+        raise BacktestError("還沒有定義任何信號")
+    if len(prices) < 2:
+        raise BacktestError(f"{cfg.name_of(anchor)}（{anchor}）沒有足夠的價格數據，無法回測")
+    days = prices.index
+    if options.start:
+        days = days[days >= pd.Timestamp(options.start)]
+    if options.end:
+        days = days[days <= pd.Timestamp(options.end)]
+    if options.start and options.end and options.start >= options.end:
+        raise BacktestError("開始日期必須早於結束日期")
+    dates = days[::step]
+    if len(dates) < 2:
+        raise BacktestError("所選區間裡的交易日太少")
+    return dates
+
+
+def _scores(session: Session, cfg: Config, engine: IndicatorEngine, mode: str, dates: pd.DatetimeIndex,
+            anchor: str, prices: pd.Series) -> tuple[dict[str, pd.Series], pd.Series, dict, set]:
+    """每個信號在各評估日的分數、各評估日的波動率、各公允價值模型在各評估日的擬合，以及「嚴格按期」的信號。"""
+    if mode != "observation":
+        scores, vol, fits = _vintage(session, cfg, dates, anchor)
+        return scores, vol, fits, set()
+    scores, exact = _observation_scores(engine, cfg, dates)
+    vol = _observation_volatility(prices, cfg, dates)
+    fits = {}
+    for code, model in cfg.fair_values.items():             # 同一個 fit_at：每個日期只用之前的數據擬合
+        frame = fair_value.aligned_frame(engine, cfg, model, lags=cfg.backtest.publication_lag_days)
+        fits[code] = {t: fair_value.fit_at(frame, t, model) for t in dates}
+    scores.update(fair_value_scores(cfg, fits, dates))
+    return scores, vol, fits, exact
+
+
+def _signal_rows(cfg: Config, engine: IndicatorEngine, mode: str, scores: dict[str, pd.Series], exact: set,
+                 by_horizon) -> list[dict[str, Any]]:
+    """每個信號一行：各期限的表現，是否近似（用到修訂過的月度數據），以及輸入有沒有明顯趨勢。"""
+    coarse = {"monthly", "quarterly"}
+    rows: list[dict[str, Any]] = []
+    for code, s in cfg.signals.items():
+        fv = cfg.fair_values.get(s.input) if s.source == "fair_value" else None
+        approx_inputs = [f.input for f in fv.factors] if fv else [s.input]
+        row: dict[str, Any] = {
+            "code": code, "name_zh": s.name_zh, "module": s.module, "input": s.input, "source": s.source,
+            "input_name": fv.name_zh if fv else cfg.name_of(s.input), "direction": s.direction,
+            "approx": mode == "observation" and code not in exact
+            and any(cfg.frequency_of(i) in coarse for i in approx_inputs),
+            "vintage_exact": code in exact,
+            "scored": int(scores[code].notna().sum()), "by_horizon": by_horizon(scores[code])}
+        if s.source == "fair_value":
+            row.update(detrend="none", trend_t=None, trending_share=None)
+        else:                                       # 輸入有沒有明顯趨勢：最近一個評估日、回看期內斜率的 t 值
+            frame = signals.rolling_scores(engine.values(s.input), s.lookback_days, s.min_points, s.direction,
+                                           s.detrend)
+            trend = frame["trend_t"].dropna()
+            row.update(detrend=s.detrend, trend_t=float(trend.iloc[-1]) if len(trend) else None,
+                       trending_share=float((trend.abs() > 2).mean()) if len(trend) else None)
+        rows.append(row)
+    return rows
+
+
+def _caveats(cfg: Config, engine: IndicatorEngine, mode: str, anchor: str, unadjusted: int) -> list[str]:
+    settings = cfg.backtest
+    caveats = [
+        (f"{cfg.name_of(anchor)} 的收益已按換月調整；有 {unadjusted} 次換月因缺遠月數據沒能調整，那幾天含跳動。"
+         if unadjusted else f"{cfg.name_of(anchor)} 的收益已按換月調整（同一合約對比）。")
+        if engine.rolled_curves(anchor) else f"{cfg.name_of(anchor)} 不是期貨曲線上的合約，收益按原始價格計算。",
+        "評估日之間的收益窗口互相重疊，統計按「有效樣本」計算；有效樣本少於 "
+        f"{settings.min_effective_samples} 的結果標為樣本不足，不要當結論用。",
+        "地緣模組不參與回測：事件的方向判斷沒有歷史版本。綜合分數只由"
+        + "、".join(signals.MODULE_NAMES[m] for m in DATA_MODULES) + "這幾個模組構成。",
+        "價格區間只檢驗推演的基準分支；情境分支是人的假設，無法回測。",
+        "公允價值的漂移假設因子在期限內不變；它的回測檢驗的正是這個假設下，加漂移是否讓推演的中樞更準。",
+    ]
+    if mode == "observation":
+        caveats.insert(0, "按數據日期回測：假設每個數據在「日期 + 發佈延遲」那天就已知道，用的是今天看到的數值。"
+                          "月度、季度數據可能被修訂過，帶預測期的數據也還原不出當時的預測，"
+                          "用到它們的信號標為「近似」，結果可能偏樂觀。")
+    return caveats
 
 
 # ------------------------------ 權重校準 ------------------------------
