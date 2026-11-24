@@ -1,4 +1,5 @@
 import os
+import shutil
 from pathlib import Path
 
 import pytest
@@ -31,9 +32,14 @@ def isolated_credentials(tmp_path, monkeypatch):
 
 # 在 PostgreSQL 上跑全部測試（#34）：設 CRUDELAB_TEST_PG 為不含庫名的連接串，例如
 #   CRUDELAB_TEST_PG=postgresql+psycopg://postgres@127.0.0.1:5432 pytest
-# 先建一個遷移到最新的模板庫，每個測試從模板複製一個新庫（毫秒級），結束後刪掉。不設就用 SQLite。
+# 不設就用 SQLite。
+#
+# 模板（兩種數據庫都一樣）：整個測試會話只做一次「遷移到最新 + 同步配置」，以及「再導入演示數據」，
+# 每個測試從模板複製一份（PostgreSQL 用 CREATE DATABASE … TEMPLATE，SQLite 複製文件，都是毫秒級）。
+# 用到 loaded 夾具的測試直接從帶演示數據的模板開始，不必每個都重新導入一遍（原來每個測試準備要 1.5 秒）。
 TEST_PG = os.environ.get("CRUDELAB_TEST_PG", "").rstrip("/")
 PG_TEMPLATE = "crudelab_test_template"
+PG_TEMPLATE_LOADED = "crudelab_test_template_loaded"
 
 
 def _pg_admin():
@@ -42,29 +48,74 @@ def _pg_admin():
 
 
 @pytest.fixture(scope="session")
-def pg_template():
+def cfg():
+    return load_config(CONFIG_DIR)
+
+
+def _build(settings: Settings, cfg, with_sample: bool) -> None:
+    """在 settings 指向的庫裡：遷移、同步配置，需要時導入演示數據。用完把連接還原成「沒有連接」。"""
+    saved = db._engine, db._factory
+    try:
+        db.init_engine(settings)
+        with db.session_scope() as s:
+            sync_to_db(s, cfg)
+        if with_sample:
+            sample = settings.data_dir / "sample.xlsx"
+            write_sample_workbook(sample)
+            with db.session_scope() as s:
+                preview = preview_file(s, settings, sample.read_bytes(), "sample.xlsx", "demo")
+                commit_batch(s, preview["batch_id"])
+        if settings.database_url.startswith("sqlite"):            # 把 WAL 併回主文件，模板才是一個完整的文件
+            with db._engine.connect() as c:
+                c.exec_driver_sql("PRAGMA wal_checkpoint(TRUNCATE)")
+        db._engine.dispose()
+    finally:
+        db._engine, db._factory = saved
+
+
+@pytest.fixture(scope="session")
+def templates(tmp_path_factory, cfg):
+    """{"base": (數據目錄, 庫), "loaded": 同上，帶演示數據}。數據目錄裡有導入過的原始文件（SQLite 的庫文件也在裡面）；
+    庫：SQLite 為 None，PostgreSQL 是模板庫的名字。"""
     if not TEST_PG:
-        yield None
+        out = {}
+        for kind in ("base", "loaded"):
+            root = tmp_path_factory.mktemp(f"template_{kind}") / "data"
+            _build(Settings(config_dir=CONFIG_DIR, data_dir=root, database_url=f"sqlite:///{root / 'test.db'}"),
+                   cfg, kind == "loaded")
+            out[kind] = (root, None)
+        yield out
         return
-    from sqlalchemy import create_engine, text
+    from sqlalchemy import text
     admin = _pg_admin()
+    names = {"base": PG_TEMPLATE, "loaded": PG_TEMPLATE_LOADED}
+    out = {}
+    for kind, name in names.items():
+        with admin.connect() as c:
+            c.execute(text(f"DROP DATABASE IF EXISTS {name} WITH (FORCE)"))
+            c.execute(text(f"CREATE DATABASE {name}"))
+        data = tmp_path_factory.mktemp(f"template_{kind}") / "data"
+        _build(Settings(config_dir=CONFIG_DIR, data_dir=data, database_url=f"{TEST_PG}/{name}"), cfg, kind == "loaded")
+        out[kind] = (data, name)
+    yield out
     with admin.connect() as c:
-        c.execute(text(f"DROP DATABASE IF EXISTS {PG_TEMPLATE} WITH (FORCE)"))
-        c.execute(text(f"CREATE DATABASE {PG_TEMPLATE}"))
-    engine = create_engine(f"{TEST_PG}/{PG_TEMPLATE}")
-    db.migrate(engine)
-    engine.dispose()
-    yield PG_TEMPLATE
-    with admin.connect() as c:
-        c.execute(text(f"DROP DATABASE IF EXISTS {PG_TEMPLATE} WITH (FORCE)"))
+        for name in names.values():
+            c.execute(text(f"DROP DATABASE IF EXISTS {name} WITH (FORCE)"))
     admin.dispose()
 
 
 @pytest.fixture()
-def settings(tmp_path: Path, pg_template) -> Settings:
-    if not pg_template:
-        yield Settings(config_dir=CONFIG_DIR, data_dir=tmp_path / "data",
-                       database_url=f"sqlite:///{tmp_path / 'data' / 'test.db'}")
+def settings(request, tmp_path: Path, templates) -> Settings:
+    empty = request.node.get_closest_marker("empty_db") is not None
+    kind = "loaded" if "loaded" in request.fixturenames else "base"
+    data = tmp_path / "data"
+    template_dir, template_db = templates[kind]
+    if empty:
+        data.mkdir(parents=True)
+    else:
+        shutil.copytree(template_dir, data)                       # 導入過的原始文件（SQLite 連同庫文件）
+    if not TEST_PG:
+        yield Settings(config_dir=CONFIG_DIR, data_dir=data, database_url=f"sqlite:///{data / 'test.db'}")
         return
     import uuid
 
@@ -72,8 +123,8 @@ def settings(tmp_path: Path, pg_template) -> Settings:
     name = f"t_{uuid.uuid4().hex[:16]}"
     admin = _pg_admin()
     with admin.connect() as c:
-        c.execute(text(f"CREATE DATABASE {name} TEMPLATE {pg_template}"))
-    yield Settings(config_dir=CONFIG_DIR, data_dir=tmp_path / "data", database_url=f"{TEST_PG}/{name}")
+        c.execute(text(f"CREATE DATABASE {name}" + ("" if empty else f" TEMPLATE {template_db}")))
+    yield Settings(config_dir=CONFIG_DIR, data_dir=data, database_url=f"{TEST_PG}/{name}")
     if db._engine is not None:
         db._engine.dispose()
     with admin.connect() as c:
@@ -81,16 +132,9 @@ def settings(tmp_path: Path, pg_template) -> Settings:
     admin.dispose()
 
 
-@pytest.fixture(scope="session")
-def cfg():
-    return load_config(CONFIG_DIR)
-
-
 @pytest.fixture()
 def session(settings, cfg):
-    db.init_engine(settings)
-    with db.session_scope() as s:
-        sync_to_db(s, cfg)
+    db.init_engine(settings)                                       # 模板已經遷移、同步過配置
     s = db.get_session()
     yield s
     s.close()
@@ -104,11 +148,8 @@ def sample_path(tmp_path) -> Path:
 
 
 @pytest.fixture()
-def loaded(session, settings, sample_path):
-    """已導入演示數據的會話。"""
-    preview = preview_file(session, settings, sample_path.read_bytes(), "sample.xlsx", "demo")
-    commit_batch(session, preview["batch_id"])
-    session.commit()
+def loaded(session):
+    """已導入演示數據的會話（settings 看到測試用了 loaded，就從帶演示數據的模板複製）。"""
     return session
 
 

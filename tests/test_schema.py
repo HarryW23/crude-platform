@@ -1,4 +1,5 @@
 """表結構：遷移腳本建出來的庫必須和 models.py 一致。改了模型忘了寫遷移，這個測試會失敗。"""
+import pytest
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
 
@@ -19,6 +20,7 @@ def test_migrate_is_repeatable(settings):
     db.init_engine(settings)
 
 
+@pytest.mark.empty_db
 def test_every_migration_rolls_back_and_forward(settings):
     """升級到最新 → 一步步降級到最初 → 再升級：每個 downgrade 都能跑（出事時要能回滾），
     回來之後的表結構仍和 models.py 完全一致。SQLite 和 PostgreSQL（CRUDELAB_TEST_PG）都跑。"""

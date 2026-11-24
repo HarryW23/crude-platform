@@ -42,6 +42,7 @@ crudelab = ["web/**/*", "migrations/**/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["empty_db: 從空庫開始（不從遷移好、同步過配置的模板複製），例如測遷移本身"]
 # 我們自己的代碼（含測試）觸發的棄用警告直接算失敗；第三方庫的照常只警告（免得上游一升級 CI 就無故變紅）
 filterwarnings = [
   "error::DeprecationWarning:crudelab.*",
