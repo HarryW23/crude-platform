@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import copy
+import threading
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any
@@ -27,7 +28,7 @@ from sqlalchemy.orm import Session
 from . import contracts
 from . import formula as fx
 from .config import Config
-from .ingest import load_points, load_points_cached, to_series
+from .ingest import data_fingerprint, load_points, load_points_cached, to_series
 from .models import ImportBatch, Parameter, ParameterVersion
 from .schema import EPOCH
 
@@ -68,6 +69,22 @@ class Scenario:
             raise KeyError(f"情境裡有不存在的名字：{', '.join(unknown)}")
 
 
+@dataclass
+class _Shared:
+    """跨請求共用的計算結果（見 IndicatorEngine._attach_shared）。"""
+    cfg: Config                                   # 用 is 比對：配置重新載入後是新的對象
+    key: tuple                                    # 數據指紋 + 參數版本
+    computed: dict[str, pd.Series] = field(default_factory=dict)
+    step: set[str] = field(default_factory=set)
+    raw: dict[str, pd.Series] = field(default_factory=dict)
+    have: set[str] | None = None
+    summaries: dict[tuple[str, date], dict] = field(default_factory=dict)
+
+
+_shared: _Shared | None = None
+_shared_lock = threading.Lock()
+
+
 class IndicatorEngine:
     def __init__(self, session: Session, cfg: Config, as_of: datetime | None = None,
                  scenario: Scenario | None = None, vintage: date | None = None):
@@ -86,6 +103,28 @@ class IndicatorEngine:
         self._pin: pd.Timestamp | None = None               # 見 pinned()
         self._raw_cache: dict[str, pd.Series] = {}           # 序列代碼 → 原始值（和固定合約視圖共用）
         self._views: dict[pd.Timestamp, IndicatorEngine] = {}
+        self._summaries: dict[tuple[str, date], dict] | None = None
+        self._shared: _Shared | None = None
+        if as_of is None and vintage is None and not (self.scenario.parameters or self.scenario.shifts
+                                                       or self.scenario.ranged):
+            self._attach_shared()
+
+    def _attach_shared(self) -> None:
+        """看的是「現在的數據、沒有情境」時，計算結果在請求之間共用：每個頁面請求都要算上百個指標，
+        數據和參數沒變時直接用上一次的結果。任何數據寫入或修訂、參數改版、配置重新載入都會換一份新的。
+        歷史時點（as_of）、按期（vintage）、情境推演的引擎每次的輸入都不同，不共用。
+
+        共用的字典在多個請求之間同時讀寫：每個值都是算完整之後一次放進去的，讀到的要麼沒有、要麼是完整的。"""
+        global _shared
+        params = tuple((k, tuple(f.index), tuple(f["value"])) for k, f in sorted(self._versions.items()))
+        key = (data_fingerprint(self.session, sorted(self.cfg.series)), params, tuple(sorted(self._verified.items())))
+        with _shared_lock:
+            if _shared is None or _shared.cfg is not self.cfg or _shared.key != key:
+                _shared = _Shared(self.cfg, key, step=set(self.cfg.parameters))
+            shared = _shared
+        self._computed, self._step, self._raw_cache = shared.computed, shared.step, shared.raw
+        self._summaries = shared.summaries
+        self._shared = shared
 
     # ------------------------------ 輸入 ------------------------------
     def _load_versions(self) -> dict[str, pd.DataFrame]:
@@ -124,11 +163,11 @@ class IndicatorEngine:
 
     def _raw(self, code: str) -> pd.Series:
         """一條序列的原始值。第一次調用時把所有數據點按序列分組一次，之後直接取（不再每次篩整張表）。"""
-        if not self._raw_cache:
-            points = self._all_points()
-            for name, part in points.groupby("series_code", sort=False):
-                self._raw_cache[str(name)] = to_series(part, str(name))
-            self._raw_cache.setdefault("", pd.Series(dtype=float))      # 標記：已經分組過（數據為空時也不重來）
+        if "" not in self._raw_cache:                                   # "" 是「已經分組過」的標記
+            groups = self._all_points().groupby("series_code", sort=False)
+            grouped = {str(name): to_series(part, str(name)) for name, part in groups}
+            grouped[""] = pd.Series(dtype=float)
+            self._raw_cache.update(grouped)          # 一次放進去：共用時別的請求不會讀到分了一半的結果
         cached = self._raw_cache.get(code)
         return cached.copy() if cached is not None else pd.Series(dtype=float, index=pd.DatetimeIndex([]), name=code)
 
@@ -142,6 +181,7 @@ class IndicatorEngine:
         if anchor not in self._views:
             view = copy.copy(self)            # 共用已載入的數據和分組緩存
             view._pin, view._computed, view._step, view._views = anchor, {}, set(self._step), {}
+            view._summaries, view._shared = None, None     # 固定合約的結果不能混進共用的結果
             self._views[anchor] = view
         return self._views[anchor]
 
@@ -259,8 +299,14 @@ class IndicatorEngine:
         return self._deps[code]
 
     def missing_series(self, code: str) -> list[str]:
-        if self._have is None:                    # 有數據的序列：一次請求裡不變，只算一次（原來每個指標都掃全部數據點）
-            self._have = set(self._all_points()["series_code"].unique())
+        if self._have is None:                    # 有數據的序列：數據不變就不變，只算一次（原來每個指標都掃全部數據點）
+            shared = self._shared
+            if shared is not None and shared.have is not None:
+                self._have = shared.have
+            else:
+                self._have = set(self._all_points()["series_code"].unique())
+                if shared is not None:
+                    shared.have = self._have
         return [s for s in self.dependencies(code)[0] if s not in self._have]
 
     def missing_parameters(self, code: str) -> list[str]:
@@ -327,6 +373,16 @@ class IndicatorEngine:
         return float(values[ts]) if ts in values.index else None
 
     def summary(self, code: str) -> dict:
+        """指標的摘要（最新值、變化、歷史分位）。共用結果時按（指標, 今天）記住：日期變了「最新」也會變。"""
+        today_key = (code, date.today())
+        if self._summaries is not None and today_key in self._summaries:
+            return dict(self._summaries[today_key])
+        out = self._summary(code)
+        if self._summaries is not None:
+            self._summaries[today_key] = out
+        return dict(out)
+
+    def _summary(self, code: str) -> dict:
         ind = self.cfg.indicators[code]
         every = self.compute(code)
         # 「最新值」只看已經發生的期間；日期在今天之後的值是預測，不算最新（as_of 視圖以 as_of 那天為今天）

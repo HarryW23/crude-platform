@@ -267,7 +267,7 @@ _load_lock = threading.Lock()
 _cache: tuple[tuple, pd.DataFrame] | None = None
 
 
-def _fingerprint(session: Session, codes: list[str]) -> tuple:
+def data_fingerprint(session: Session, codes: list[str]) -> tuple:
     """數據有沒有變：任何寫入、修訂、刪除都會改變條數、最新修改時間或最大編號；數據源優先級變了也算。"""
     count, last_update, last_id = session.execute(
         select(func.count(), func.max(Observation.updated_at), func.max(Observation.id))).one()
@@ -282,7 +282,7 @@ def load_points_cached(session: Session, codes: list[str]) -> pd.DataFrame:
     回傳的表是共用的：調用方只能讀，不能改。
     """
     global _cache
-    key = _fingerprint(session, sorted(codes))
+    key = data_fingerprint(session, sorted(codes))
     with _cache_lock:
         if _cache is not None and _cache[0] == key:
             return _cache[1]
