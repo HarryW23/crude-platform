@@ -280,3 +280,22 @@ def test_bad_days_are_skipped_on_import_and_removed_on_config_sync(session, sett
     assert revision.value == 117.23 and revision.replaced_by == "config"
     assert session.scalars(select(AuditLog).where(AuditLog.action == "remove_points")).all()
     assert sync_to_db(session, cfg)["removed_points"] == 0
+
+
+def test_opec_template_and_report_table_layouts(session, settings):
+    """OPEC 月報的產量：照模板填（月份在行）或把月報的表原樣貼進來（國家在行、月份在列，夾著年度、季度、變化列）。"""
+    from pathlib import Path
+    template = (Path(__file__).parents[1] / "docs" / "templates" / "opec_production.csv").read_text(encoding="utf-8")
+    header = template.splitlines()[0]
+    filled = f"{header}\n2026-10,9980,4320,3400,2550,3290,9320,28500\n2026-09,9950,4310,3390,2540,3300,9300,28400"
+    preview = preview_file(session, settings, filled.encode(), "opec.csv", "reuters_xls")
+    codes = {c["series_code"] for s in preview["sheets"] for c in s["columns"] if c["n_values"] == 2}
+    assert codes == {f"CRUDE_PROD_{k}" for k in ("SAUDI", "IRAQ", "UAE", "KUWAIT", "IRAN", "RUSSIA", "OPEC")}
+
+    report = (",2024,2025,3Q25,Sep25,Oct25,Oct/Sep\nSaudi Arabia,8980,9500,9700,9950,9980,30\n"
+              "IR Iran,3250,3280,3290,3300,3290,-10\nTotal OPEC,26600,27900,28300,28400,28500,100")
+    preview = preview_file(session, settings, report.encode(), "momr.csv", "reuters_xls")
+    assert "CSV：3Q25 是季度匯總，和月度數據混在一起，沒有讀入" in preview["warnings"]
+    commit_batch(session, preview["batch_id"])
+    saudi = to_series(load_points(session, ["CRUDE_PROD_SAUDI"]), "CRUDE_PROD_SAUDI")
+    assert {str(d.date()): v for d, v in saudi.items()} == {"2025-09-01": 9950.0, "2025-10-01": 9980.0}

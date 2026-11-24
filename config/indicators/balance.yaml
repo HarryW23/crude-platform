@@ -57,27 +57,27 @@
    formula: "IEA_WORLD_SUPPLY - IEA_WORLD_DEMAND"}
 
 # ---------- OPEC+ 產量對配額、閒置產能（#14；配額和產能是參數，見 config/parameters/opec.yaml） ----------
-- {code: OPEC_OVER_SAUDI, name_zh: 沙特超產（產量 − 配額）, module: balance, group: OPEC+ 產量, unit: mb/d,
+- {code: OPEC_OVER_SAUDI, name_zh: 沙特超產（產量 − 配額）, module: balance, group: OPEC+ 產量, unit: kb/d,
    formula: "CRUDE_PROD_SAUDI - OPEC_QUOTA_SAUDI", notes: 正 = 超產，負 = 欠產}
-- {code: OPEC_OVER_IRAQ, name_zh: 伊拉克超產, module: balance, group: OPEC+ 產量, unit: mb/d,
+- {code: OPEC_OVER_IRAQ, name_zh: 伊拉克超產, module: balance, group: OPEC+ 產量, unit: kb/d,
    formula: "CRUDE_PROD_IRAQ - OPEC_QUOTA_IRAQ"}
-- {code: OPEC_OVER_UAE, name_zh: 阿聯酋超產, module: balance, group: OPEC+ 產量, unit: mb/d,
+- {code: OPEC_OVER_UAE, name_zh: 阿聯酋超產, module: balance, group: OPEC+ 產量, unit: kb/d,
    formula: "CRUDE_PROD_UAE - OPEC_QUOTA_UAE"}
-- {code: OPEC_OVER_KUWAIT, name_zh: 科威特超產, module: balance, group: OPEC+ 產量, unit: mb/d,
+- {code: OPEC_OVER_KUWAIT, name_zh: 科威特超產, module: balance, group: OPEC+ 產量, unit: kb/d,
    formula: "CRUDE_PROD_KUWAIT - OPEC_QUOTA_KUWAIT"}
-- {code: OPEC_OVER_RUSSIA, name_zh: 俄羅斯超產, module: balance, group: OPEC+ 產量, unit: mb/d,
+- {code: OPEC_OVER_RUSSIA, name_zh: 俄羅斯超產, module: balance, group: OPEC+ 產量, unit: kb/d,
    formula: "CRUDE_PROD_RUSSIA - OPEC_QUOTA_RUSSIA"}
-- {code: OPEC_OVER_TOTAL, name_zh: 五國超產合計, module: balance, group: OPEC+ 產量, unit: mb/d,
+- {code: OPEC_OVER_TOTAL, name_zh: 五國超產合計, module: balance, group: OPEC+ 產量, unit: kb/d,
    formula: "OPEC_OVER_SAUDI + OPEC_OVER_IRAQ + OPEC_OVER_UAE + OPEC_OVER_KUWAIT + OPEC_OVER_RUSSIA",
    notes: 為正 = 整體在超產，實際供應比配額多}
-- {code: OPEC_SPARE_SAUDI, name_zh: 沙特閒置產能, module: balance, group: OPEC+ 產量, unit: mb/d,
+- {code: OPEC_SPARE_SAUDI, name_zh: 沙特閒置產能, module: balance, group: OPEC+ 產量, unit: kb/d,
    formula: "OPEC_CAPACITY_SAUDI - CRUDE_PROD_SAUDI"}
-- {code: OPEC_SPARE_IRAQ, name_zh: 伊拉克閒置產能, module: balance, group: OPEC+ 產量, unit: mb/d,
+- {code: OPEC_SPARE_IRAQ, name_zh: 伊拉克閒置產能, module: balance, group: OPEC+ 產量, unit: kb/d,
    formula: "OPEC_CAPACITY_IRAQ - CRUDE_PROD_IRAQ"}
-- {code: OPEC_SPARE_UAE, name_zh: 阿聯酋閒置產能, module: balance, group: OPEC+ 產量, unit: mb/d,
+- {code: OPEC_SPARE_UAE, name_zh: 阿聯酋閒置產能, module: balance, group: OPEC+ 產量, unit: kb/d,
    formula: "OPEC_CAPACITY_UAE - CRUDE_PROD_UAE"}
-- {code: OPEC_SPARE_KUWAIT, name_zh: 科威特閒置產能, module: balance, group: OPEC+ 產量, unit: mb/d,
+- {code: OPEC_SPARE_KUWAIT, name_zh: 科威特閒置產能, module: balance, group: OPEC+ 產量, unit: kb/d,
    formula: "OPEC_CAPACITY_KUWAIT - CRUDE_PROD_KUWAIT"}
-- {code: OPEC_SPARE_GULF, name_zh: 海灣四國閒置產能合計, module: balance, group: OPEC+ 產量, unit: mb/d,
+- {code: OPEC_SPARE_GULF, name_zh: 海灣四國閒置產能合計, module: balance, group: OPEC+ 產量, unit: kb/d,
    formula: "OPEC_SPARE_SAUDI + OPEC_SPARE_IRAQ + OPEC_SPARE_UAE + OPEC_SPARE_KUWAIT",
    notes: 全球閒置產能幾乎都在這四國；越少，供應中斷時越沒有緩衝}

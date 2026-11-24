@@ -79,21 +79,23 @@ series:
   # ---------- OPEC+ 分國原油產量（OPEC 月報「二手來源」表，#14） ----------
   # 月度，記在當月第一天。路透上找不到產量調查的 RIC（2026-11-24 find：Platts 的 OPEC+ 調查沒權限，
   # 只有沙特央行的年度數據），改用 OPEC 月報（MOMR）的二手來源表：公開、每月一次，也是 OPEC 考核配額的口徑；
-  # 俄羅斯在 OPEC+ 的二手來源表裡。整理成 Excel 後導入；之後的月報會修訂前幾個月，以最新一期為準。
-  - {code: CRUDE_PROD_SAUDI, name_zh: 沙特原油產量, commodity: CRUDE_SUPPLY, location: SAUDI, kind: flow, unit: mb/d,
-     frequency: monthly, module: balance, provider: agency, aliases: [Saudi crude production, 沙特產量]}
-  - {code: CRUDE_PROD_IRAQ, name_zh: 伊拉克原油產量, commodity: CRUDE_SUPPLY, location: IRAQ, kind: flow, unit: mb/d,
-     frequency: monthly, module: balance, provider: agency, aliases: [Iraq crude production, 伊拉克產量]}
-  - {code: CRUDE_PROD_UAE, name_zh: 阿聯酋原油產量, commodity: CRUDE_SUPPLY, location: UAE, kind: flow, unit: mb/d,
-     frequency: monthly, module: balance, provider: agency, aliases: [UAE crude production, 阿聯酋產量]}
-  - {code: CRUDE_PROD_KUWAIT, name_zh: 科威特原油產量, commodity: CRUDE_SUPPLY, location: KUWAIT, kind: flow, unit: mb/d,
-     frequency: monthly, module: balance, provider: agency, aliases: [Kuwait crude production, 科威特產量]}
-  - {code: CRUDE_PROD_IRAN, name_zh: 伊朗原油產量, commodity: CRUDE_SUPPLY, location: IRAN, kind: flow, unit: mb/d,
-     frequency: monthly, module: balance, provider: agency, aliases: [Iran crude production, 伊朗產量]}
-  - {code: CRUDE_PROD_RUSSIA, name_zh: 俄羅斯原油產量, commodity: CRUDE_SUPPLY, location: RUSSIA, kind: flow, unit: mb/d,
-     frequency: monthly, module: balance, provider: agency, aliases: [Russia crude production, 俄羅斯產量]}
-  - {code: CRUDE_PROD_OPEC, name_zh: OPEC 原油產量合計（調查）, commodity: CRUDE_SUPPLY, location: OPEC, kind: flow,
-     unit: mb/d, frequency: monthly, module: balance, provider: agency, aliases: [OPEC crude production survey, OPEC產量]}
+  # 俄羅斯在 OPEC+（DoC）國家的二手來源表裡。單位千桶/日，和月報、配額決定一致。
+  # 每月照 docs/templates/opec_production.csv 填一行（或把月報表格原樣貼進 Excel，表頭用月報的國家名），
+  # 在後台導入；之後的月報會修訂前幾個月，修訂的數一起填上、重新導入即可（會留下修訂記錄）。
+  - {code: CRUDE_PROD_SAUDI, name_zh: 沙特原油產量, commodity: CRUDE_SUPPLY, location: SAUDI, kind: flow, unit: kb/d,
+     frequency: monthly, module: balance, provider: agency, aliases: [Saudi crude production, 沙特產量, 沙特（千桶/日）, "Saudi Arabia"]}
+  - {code: CRUDE_PROD_IRAQ, name_zh: 伊拉克原油產量, commodity: CRUDE_SUPPLY, location: IRAQ, kind: flow, unit: kb/d,
+     frequency: monthly, module: balance, provider: agency, aliases: [Iraq crude production, 伊拉克產量, 伊拉克（千桶/日）, "Iraq"]}
+  - {code: CRUDE_PROD_UAE, name_zh: 阿聯酋原油產量, commodity: CRUDE_SUPPLY, location: UAE, kind: flow, unit: kb/d,
+     frequency: monthly, module: balance, provider: agency, aliases: [UAE crude production, 阿聯酋產量, 阿聯酋（千桶/日）, "UAE"]}
+  - {code: CRUDE_PROD_KUWAIT, name_zh: 科威特原油產量, commodity: CRUDE_SUPPLY, location: KUWAIT, kind: flow, unit: kb/d,
+     frequency: monthly, module: balance, provider: agency, aliases: [Kuwait crude production, 科威特產量, 科威特（千桶/日）, "Kuwait"]}
+  - {code: CRUDE_PROD_IRAN, name_zh: 伊朗原油產量, commodity: CRUDE_SUPPLY, location: IRAN, kind: flow, unit: kb/d,
+     frequency: monthly, module: balance, provider: agency, aliases: [Iran crude production, 伊朗產量, 伊朗（千桶/日）, "IR Iran"]}
+  - {code: CRUDE_PROD_RUSSIA, name_zh: 俄羅斯原油產量, commodity: CRUDE_SUPPLY, location: RUSSIA, kind: flow, unit: kb/d,
+     frequency: monthly, module: balance, provider: agency, aliases: [Russia crude production, 俄羅斯產量, 俄羅斯（千桶/日）, "Russia"]}
+  - {code: CRUDE_PROD_OPEC, name_zh: OPEC 原油產量合計（二手來源）, commodity: CRUDE_SUPPLY, location: OPEC, kind: flow,
+     unit: kb/d, frequency: monthly, module: balance, provider: agency, aliases: [OPEC crude production survey, OPEC產量, OPEC 合計（千桶/日）, "Total OPEC"]}
 
   # ---------- 超預期（來自金十財經日曆，實際 − 公佈時的市場預期） ----------
   # 由 config/jin10.yaml 的 calendar_rules 換算寫入。只有從接入那天起才有數據（日曆接口不給歷史），要積累一段時間。

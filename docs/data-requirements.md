@@ -230,7 +230,7 @@ WS 點折成 美元/桶 還需要 Worldscale 每年的基準費率，見下面�
 
 ### 機構月報（IEA、OPEC）
 
-IEA / OPEC 的供需只用於和 EIA 口徑對照，不影響平衡表本身。OPEC+ 分國產量（CRUDE_PROD_*）取 OPEC 月報的二手來源表；配額和可持續產能是參數（config/parameters/opec.yaml），需要你按 OPEC+ 的決定錄入。
+IEA / OPEC 的供需只用於和 EIA 口徑對照，不影響平衡表本身。OPEC+ 分國產量（CRUDE_PROD_*，千桶/日）取 OPEC 月報的二手來源表，每月照 docs/templates/opec_production.csv 填一行導入，或把月報表格原樣貼進 Excel 導入（季度匯總列自動跳過）；配額和可持續產能是參數（config/parameters/opec.yaml），需要你按 OPEC+ 的決定錄入。
 
 | 代碼 | 名稱 | 單位 | 頻率 | 用到它的指標 |
 |---|---|---|---|---|
@@ -238,13 +238,13 @@ IEA / OPEC 的供需只用於和 EIA 口徑對照，不影響平衡表本身。O
 | `IEA_WORLD_SUPPLY` | 全球供應（IEA） | mb/d | 季（按報告期保存：補錄歷史報告時填發佈日期） | 供需 1 |
 | `OPEC_WORLD_DEMAND` | 全球需求（OPEC） | mb/d | 季（按報告期保存：補錄歷史報告時填發佈日期） | 供需 1 |
 | `OPEC_CALL_ON_OPEC` | 對 OPEC 原油的需求（OPEC） | mb/d | 季（按報告期保存：補錄歷史報告時填發佈日期） | （目前沒有指標用到） |
-| `CRUDE_PROD_SAUDI` | 沙特原油產量 | mb/d | 月 | 供需 4 |
-| `CRUDE_PROD_IRAQ` | 伊拉克原油產量 | mb/d | 月 | 供需 4 |
-| `CRUDE_PROD_UAE` | 阿聯酋原油產量 | mb/d | 月 | 供需 4 |
-| `CRUDE_PROD_KUWAIT` | 科威特原油產量 | mb/d | 月 | 供需 4 |
-| `CRUDE_PROD_IRAN` | 伊朗原油產量 | mb/d | 月 | （目前沒有指標用到） |
-| `CRUDE_PROD_RUSSIA` | 俄羅斯原油產量 | mb/d | 月 | 供需 2 |
-| `CRUDE_PROD_OPEC` | OPEC 原油產量合計（調查） | mb/d | 月 | （目前沒有指標用到） |
+| `CRUDE_PROD_SAUDI` | 沙特原油產量 | kb/d | 月 | 供需 4 |
+| `CRUDE_PROD_IRAQ` | 伊拉克原油產量 | kb/d | 月 | 供需 4 |
+| `CRUDE_PROD_UAE` | 阿聯酋原油產量 | kb/d | 月 | 供需 4 |
+| `CRUDE_PROD_KUWAIT` | 科威特原油產量 | kb/d | 月 | 供需 4 |
+| `CRUDE_PROD_IRAN` | 伊朗原油產量 | kb/d | 月 | （目前沒有指標用到） |
+| `CRUDE_PROD_RUSSIA` | 俄羅斯原油產量 | kb/d | 月 | 供需 2 |
+| `CRUDE_PROD_OPEC` | OPEC 原油產量合計（二手來源） | kb/d | 月 | （目前沒有指標用到） |
 
 ### 煉廠檢修（諮詢機構）
 
@@ -293,15 +293,15 @@ IEA / OPEC 的供需只用於和 EIA 口徑對照，不影響平衡表本身。O
 | `FLAT_TD20` | TD20 基準費率（西非→鹿特丹） | USD/t | Worldscale 年度 flat rate |
 | `FLAT_TD25` | TD25 基準費率（美灣→歐洲） | USD/t | Worldscale 年度 flat rate |
 | `ESPO_FREIGHT_CN` | ESPO 科茲米諾→山東 運費 | USD/bbl | 短程阿芙拉型運費，波動大，請按實際成交水平錄入並隨時更新 |
-| `OPEC_QUOTA_SAUDI` | 沙特配額 | mb/d |  |
-| `OPEC_QUOTA_IRAQ` | 伊拉克配額 | mb/d |  |
-| `OPEC_QUOTA_UAE` | 阿聯酋配額 | mb/d |  |
-| `OPEC_QUOTA_KUWAIT` | 科威特配額 | mb/d |  |
-| `OPEC_QUOTA_RUSSIA` | 俄羅斯配額 | mb/d |  |
-| `OPEC_CAPACITY_SAUDI` | 沙特可持續產能 | mb/d |  |
-| `OPEC_CAPACITY_IRAQ` | 伊拉克可持續產能 | mb/d |  |
-| `OPEC_CAPACITY_UAE` | 阿聯酋可持續產能 | mb/d |  |
-| `OPEC_CAPACITY_KUWAIT` | 科威特可持續產能 | mb/d |  |
+| `OPEC_QUOTA_SAUDI` | 沙特配額 | kb/d |  |
+| `OPEC_QUOTA_IRAQ` | 伊拉克配額 | kb/d |  |
+| `OPEC_QUOTA_UAE` | 阿聯酋配額 | kb/d |  |
+| `OPEC_QUOTA_KUWAIT` | 科威特配額 | kb/d |  |
+| `OPEC_QUOTA_RUSSIA` | 俄羅斯配額 | kb/d |  |
+| `OPEC_CAPACITY_SAUDI` | 沙特可持續產能 | kb/d |  |
+| `OPEC_CAPACITY_IRAQ` | 伊拉克可持續產能 | kb/d |  |
+| `OPEC_CAPACITY_UAE` | 阿聯酋可持續產能 | kb/d |  |
+| `OPEC_CAPACITY_KUWAIT` | 科威特可持續產能 | kb/d |  |
 | `PROJ_PRICE_PER_STOCK` | 庫存對價格的敏感度 | USD/bbl/mb | 全球庫存每多累積 1 百萬桶，Brent 下跌多少美元/桶。推演按期限算累庫：過剩 1 百萬桶/日持續 30 天 = 累庫 30 百萬桶。 這是推演的核心假設，沒有預設值。推演頁會給出從歷史估計的值和它的可信度，可以在這裡採用，也可以自己填 |
 
 其中運費基準費率（`FLAT_*`）來自 Worldscale 協會的年度費率表，需要訂閱，每年 1 月 1 日更新一次，錄入時按年填生效日期。

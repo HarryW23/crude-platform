@@ -27,7 +27,7 @@ from openpyxl.utils import get_column_letter
 from openpyxl.utils.exceptions import InvalidFileException
 
 from ..ingest import Obs
-from ..periods import parse_period
+from ..periods import is_quarter, parse_period
 
 # 讀取上限。超過時不會靜默丟棄：預覽裡會標明這張表被截斷了。
 MAX_ROWS, MAX_COLS, HEADER_DEPTH = 200_000, 16_384, 12
@@ -361,6 +361,14 @@ def _parse_sheet(name: str, grid: list[list], resolver: Resolver,
     r0 = next(i for i, d in enumerate(dates) if d is not None)
     data_rows = [i for i in range(r0, len(grid)) if dates[i] is not None]
     header_rows = range(max(0, r0 - HEADER_DEPTH), r0)
+    # 月度和季度混在一起（例如 OPEC 月報的表：2025、3Q25、Sep25、Oct25）：季度那幾格是匯總（平均），
+    # 記在季度第一天會和那個月的數撞在一起、或者被當成那個月的數，不讀；整張都是季度的照常讀
+    quarters = [i for i in data_rows if isinstance(grid[i][jd], str) and is_quarter(grid[i][jd])]
+    summary_note = None
+    if quarters and len(quarters) < len(data_rows):
+        data_rows = [i for i in data_rows if i not in set(quarters)]
+        labels = "、".join(str(grid[i][jd]).strip() for i in quarters[:4]) + (" 等" if len(quarters) > 4 else "")
+        summary_note = f"{labels} 是季度匯總，和月度數據混在一起，沒有讀入"
 
     def cell_ref(i: int, j: int) -> str:          # 回到原文件的座標
         r, c = (j, i) if transposed else (i, j)
@@ -383,7 +391,7 @@ def _parse_sheet(name: str, grid: list[list], resolver: Resolver,
                and len({dates[i] for i in data_rows}) < 0.7 * len(data_rows))
 
     preview = SheetPreview(name, "long" if is_long else ("wide_transposed" if transposed else "wide"),
-                           date_ref=line_ref(jd))
+                           date_ref=line_ref(jd), note=summary_note)
     observations: list[Obs] = []
 
     def finish(col: ColumnPreview, points: list[tuple[date, float, str]]):

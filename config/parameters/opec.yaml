@@ -1,14 +1,14 @@
-# OPEC+ 配額和產能（#14）。沒填數值 = 需要你提供，用到的指標顯示「缺參數」。
+# OPEC+ 配額和產能（#14），單位千桶/日（和 OPEC+ 公布的配額表一致）。沒填數值 = 需要你提供，用到的指標顯示「缺參數」。
 # 配額由 OPEC+ 部長級會議決定、經常調整：每次調整在後台參數頁按生效日期加一個版本（versions），
 # 歷史的超產 / 欠產才會按當時的配額算。自願減產（沙特等額外減的部分）是否算進配額，按你們的口徑統一。
 # 產能指「可持續產能」（90 天內能達到並維持的產量），常用 IEA / EIA 的估計；伊朗不受配額約束，只算產能。
 
-- {key: OPEC_QUOTA_SAUDI, name_zh: 沙特配額, unit: mb/d, group: OPEC+ 配額}
-- {key: OPEC_QUOTA_IRAQ, name_zh: 伊拉克配額, unit: mb/d, group: OPEC+ 配額}
-- {key: OPEC_QUOTA_UAE, name_zh: 阿聯酋配額, unit: mb/d, group: OPEC+ 配額}
-- {key: OPEC_QUOTA_KUWAIT, name_zh: 科威特配額, unit: mb/d, group: OPEC+ 配額}
-- {key: OPEC_QUOTA_RUSSIA, name_zh: 俄羅斯配額, unit: mb/d, group: OPEC+ 配額}
-- {key: OPEC_CAPACITY_SAUDI, name_zh: 沙特可持續產能, unit: mb/d, group: OPEC+ 產能}
-- {key: OPEC_CAPACITY_IRAQ, name_zh: 伊拉克可持續產能, unit: mb/d, group: OPEC+ 產能}
-- {key: OPEC_CAPACITY_UAE, name_zh: 阿聯酋可持續產能, unit: mb/d, group: OPEC+ 產能}
-- {key: OPEC_CAPACITY_KUWAIT, name_zh: 科威特可持續產能, unit: mb/d, group: OPEC+ 產能}
+- {key: OPEC_QUOTA_SAUDI, name_zh: 沙特配額, unit: kb/d, group: OPEC+ 配額}
+- {key: OPEC_QUOTA_IRAQ, name_zh: 伊拉克配額, unit: kb/d, group: OPEC+ 配額}
+- {key: OPEC_QUOTA_UAE, name_zh: 阿聯酋配額, unit: kb/d, group: OPEC+ 配額}
+- {key: OPEC_QUOTA_KUWAIT, name_zh: 科威特配額, unit: kb/d, group: OPEC+ 配額}
+- {key: OPEC_QUOTA_RUSSIA, name_zh: 俄羅斯配額, unit: kb/d, group: OPEC+ 配額}
+- {key: OPEC_CAPACITY_SAUDI, name_zh: 沙特可持續產能, unit: kb/d, group: OPEC+ 產能}
+- {key: OPEC_CAPACITY_IRAQ, name_zh: 伊拉克可持續產能, unit: kb/d, group: OPEC+ 產能}
+- {key: OPEC_CAPACITY_UAE, name_zh: 阿聯酋可持續產能, unit: kb/d, group: OPEC+ 產能}
+- {key: OPEC_CAPACITY_KUWAIT, name_zh: 科威特可持續產能, unit: kb/d, group: OPEC+ 產能}

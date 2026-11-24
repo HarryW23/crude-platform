@@ -18,6 +18,12 @@ _YEAR_Q = re.compile(r"^(\d{4})\s*-?\s*Q([1-4])$", re.I)                       #
 _Q_YEAR = re.compile(r"^([1-4])Q\s*'?(\d{4}|\d{2})$|^Q([1-4])\s*'?(\d{4}|\d{2})$", re.I)   # 3Q26  Q3 2026
 
 
+def is_quarter(text: str) -> bool:
+    """「2026Q3」「3Q26」「Q3 2026」這類季度寫法。"""
+    text = text.strip()
+    return bool(_YEAR_Q.match(text) or _Q_YEAR.match(text))
+
+
 def _year(text: str) -> int:
     value = int(text)
     return value + 2000 if value < 100 else value
