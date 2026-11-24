@@ -54,3 +54,15 @@ def test_api_filters_by_category_and_computes_from_imported_prices(client, loade
     assert len(everything) >= 10
     old = next(a for a in everything if a["code"] == "KUWAIT_1990")
     assert old["status"] == "no_data" and old["moves"] == {}              # 演示數據沒有 1990 年：不給數字
+
+
+def test_base_price_is_the_real_close_not_the_roll_adjusted_level():
+    """漲跌用換月調整後的價格算，顯示的基準價要是當天的實際收盤。
+    （2026-11 用三年路透數據體檢時發現：長期貼水下，2025-06-12 的 Brent 實際 69.36，調整後只有 46.9。）"""
+    raw = pd.Series(69.36, index=DAYS)
+    adjusted = raw * 0.676                                                 # 倒推出來的歷史水平低很多
+    adjusted[DAYS > pd.Timestamp("2019-09-13")] *= 1.07
+    r = analogs.reaction(adjusted, pd.Series(dtype=float), date(2019, 9, 14), raw)
+    assert r["base_price"] == 69.36 and r["moves"]["d1"] == pytest.approx(0.07)
+    without_raw = analogs.reaction(adjusted, pd.Series(dtype=float), date(2019, 9, 14))     # 沒給原始價格：照舊
+    assert without_raw["base_price"] == pytest.approx(69.36 * 0.676)
