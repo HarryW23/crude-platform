@@ -106,12 +106,17 @@ class SeriesDef(Strict):
     # 這天之前的數據不用（導入時跳過）：合約改過規格、之前的報價和現在不可比。
     # 例：上期所燃料油 2018-07-16 重新上市，之前的老合約幾乎沒有成交，報價九成以上的日子不動。
     data_from: date | None = None
+    # 核對過、確實是錯的日子（例如路透把盤中最高價當成了收盤價）：導入時跳過，
+    # 已經入庫的在同步配置（crudelab init）時移除，舊值留在修訂記錄裡。後台手動錄入的值不受影響
+    bad_days: list[date] = []
     provider: str | None = None          # 從哪裡取得（數據需求清單的分組，見 data_needs.PROVIDERS）；缺省按序列類型推斷
 
     @model_validator(mode="after")
     def _period(self) -> SeriesDef:
         if self.within_period and self.frequency not in ("monthly", "quarterly"):
             raise ValueError(f"序列 {self.code}：within_period 只用於月度或季度序列")
+        if self.bad_days and self.vintaged:
+            raise ValueError(f"序列 {self.code}：按報告期保存的序列不用 bad_days，錯了的那一期重新導入正確的數字")
         return self
 
     @property

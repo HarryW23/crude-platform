@@ -5,6 +5,7 @@ config/ 是主數據的唯一來源，數據庫裡的主數據表只是它的鏡
   字典類（單位、地區、品種、數據源、序列、參數說明）  以配置為準覆蓋；配置裡刪掉的序列和參數置為 inactive，數據保留
   參數數值    配置只提供初始值：參數還沒有任何版本時寫入；之後一律以後台為準，不覆蓋
   參數核對狀態  只在新建時取配置值；之後以後台為準
+  不用的數據點  序列的 data_from 之前、bad_days 裡的：已經入庫的移除（舊值進修訂記錄），手動錄入的不動
   別名        配置來的別名（origin=config）以配置為準：新增、改指向、配置裡刪掉的也刪掉；
               後台學到的別名（origin=learned）是人工確認過的，不動，同名時優先於配置
 """
@@ -12,11 +13,25 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import false, or_, select
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.elements import ColumnElement
 
 from .config import Config, normalize_alias
-from .models import Commodity, DataSource, Location, Parameter, ParameterVersion, Series, SeriesAlias, Unit
+from .models import (
+    AuditLog,
+    Commodity,
+    DataSource,
+    Location,
+    Observation,
+    ObservationRevision,
+    Parameter,
+    ParameterVersion,
+    Series,
+    SeriesAlias,
+    Unit,
+    utcnow,
+)
 
 SYSTEM_ACTOR = "config"
 ALIAS_MAX = 128               # series_alias 兩個字段的長度上限（PostgreSQL 會嚴格檢查）
@@ -47,7 +62,8 @@ def sync_to_db(session: Session, cfg: Config) -> dict[str, int]:
                       **({"cftc": s.cftc.model_dump()} if s.cftc else {}),
                       **({"jin10": s.jin10} if s.jin10 else {})},
         notes=s.notes, active=True, within_period=s.within_period,
-        vintaged=s.vintaged, data_from=s.data_from) for s in cfg.series.values()])
+        vintaged=s.vintaged, data_from=s.data_from,
+        bad_days=[d.isoformat() for d in sorted(s.bad_days)] or None) for s in cfg.series.values()])
     session.flush()
     for stale in session.scalars(select(Series).where(Series.code.not_in(list(cfg.series)))):
         stale.active = False
@@ -72,6 +88,8 @@ def sync_to_db(session: Session, cfg: Config) -> dict[str, int]:
             session.add(SeriesAlias(alias_norm=norm, alias=alias, series_code=code, origin="config"))
             new_aliases += 1
 
+    removed = _drop_unusable(session, cfg)
+
     existing = {p.key: p for p in session.scalars(select(Parameter))}
     has_versions = set(session.scalars(select(ParameterVersion.key).distinct()))
     seeded = 0
@@ -94,4 +112,32 @@ def sync_to_db(session: Session, cfg: Config) -> dict[str, int]:
 
     return {"series": len(cfg.series), "parameters": len(cfg.parameters), "indicators": len(cfg.indicators),
             "refinery_models": len(cfg.refineries), "balances": len(cfg.balances),
-            "new_aliases": new_aliases, "seeded_parameter_versions": seeded}
+            "new_aliases": new_aliases, "seeded_parameter_versions": seeded, "removed_points": removed}
+
+
+def _drop_unusable(session: Session, cfg: Config) -> int:
+    """配置裡標了不用的數據點（data_from 之前、bad_days），已經入庫的移除：舊值記進修訂記錄，可以追溯。
+    後台手動錄入的（數據源類型 manual）是人工確認過的，不動。"""
+    manual = set(session.scalars(select(DataSource.code).where(DataSource.kind == "manual")))
+    now = utcnow()
+    removed = 0
+    for s in cfg.series.values():
+        if s.data_from is None and not s.bad_days:
+            continue
+        unusable: ColumnElement[bool] = Observation.obs_date.in_(s.bad_days) if s.bad_days else false()
+        if s.data_from is not None:
+            unusable = or_(unusable, Observation.obs_date < s.data_from)
+        rows = list(session.scalars(select(Observation).where(
+            Observation.series_code == s.code, Observation.source_code.not_in(manual), unusable)))
+        for obs in rows:
+            session.add(ObservationRevision(
+                series_code=obs.series_code, obs_date=obs.obs_date, source_code=obs.source_code, value=obs.value,
+                batch_id=obs.batch_id, source_ref=obs.source_ref, recorded_at=obs.updated_at,
+                replaced_at=now, replaced_by=SYSTEM_ACTOR))
+            session.delete(obs)
+        if rows:
+            session.add(AuditLog(actor=SYSTEM_ACTOR, action="remove_points", entity="series", entity_id=s.code,
+                                 detail={"dates": sorted(o.obs_date.isoformat() for o in rows),
+                                         "reason": "配置裡的 data_from / bad_days"}))
+            removed += len(rows)
+    return removed

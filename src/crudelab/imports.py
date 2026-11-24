@@ -48,23 +48,29 @@ PRICE_KINDS = ("futures", "swap", "spot", "freight", "fx")   # 絕對價格：�
 def screen(session: Session, observations: list[Obs]) -> tuple[list[Obs], list[str]]:
     """去掉文件裡明顯不能用的數據點，回傳（留下的，說明）。預覽和入庫用同一個規則，預覽裡會寫明去掉了什麼：
     - 序列的 data_from 之前的（合約改過規格，見 SeriesDef.data_from）
+    - 序列的 bad_days 裡的：核對過是錯的日子
     - 絕對價格正好是 0 的：路透在沒有報價的日子會填 0（例如阿曼期貨 2022 年 6 月連續十幾天是 0）。
       升貼水、官價、比率是 0 是正常的，不去掉；WTI 2020-04-20 的負價也不受影響"""
     codes = {o.series_code for o in observations}
     rows = {r.code: r for r in session.scalars(select(Series).where(Series.code.in_(codes)))} if codes else {}
     early: dict[str, int] = {}
     zero: dict[str, list[date]] = {}
+    bad: dict[str, list[date]] = {}
     kept = []
     for o in observations:
         row = rows.get(o.series_code)
         if row is not None and row.data_from is not None and o.obs_date < row.data_from:
             early[o.series_code] = early.get(o.series_code, 0) + 1
+        elif row is not None and row.bad_days and o.obs_date.isoformat() in row.bad_days:
+            bad.setdefault(o.series_code, []).append(o.obs_date)
         elif row is not None and row.kind in PRICE_KINDS and o.value == 0:
             zero.setdefault(o.series_code, []).append(o.obs_date)
         else:
             kept.append(o)
     notes = [f"{code}：{rows[code].data_from} 之前的 {n} 個數據點不導入"
              "（這條序列只用這天之後的數據，見配置裡的 data_from）" for code, n in sorted(early.items())]
+    notes += [f"{code}：{'、'.join(str(d) for d in sorted(days))} 核對過是錯價，不導入（見配置裡的 bad_days）"
+              for code, days in sorted(bad.items())]
     for code, days in sorted(zero.items()):
         shown = "、".join(str(d) for d in sorted(days)[:5]) + (f" 等 {len(days)} 天" if len(days) > 5 else "")
         notes.append(f"{code}（{rows[code].name_zh}）有 {len(days)} 個值正好是 0，不導入：{shown}。"

@@ -120,6 +120,7 @@ class Series(Base):
     within_period: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())   # 見 SeriesDef
     vintaged: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())        # 按報告期保存
     data_from: Mapped[date | None] = mapped_column(Date)             # 這天之前的數據不入庫（見 SeriesDef）
+    bad_days: Mapped[list | None] = mapped_column(JSON)              # 核對過是錯的日子（ISO 日期），不入庫
 
 
 class SeriesAlias(Base):

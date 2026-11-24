@@ -251,3 +251,28 @@ def test_zero_prices_and_data_before_data_from_are_not_imported(session, setting
     stored = {(o.series_code, o.obs_date) for o in session.scalars(select(Observation))}
     assert ("FORTIES_DIFF", date(2018, 7, 12)) in stored and ("OMAN_M1", date(2018, 7, 13)) not in stored
     assert ("FU_M1", date(2018, 7, 13)) not in stored and ("FU_M1", date(2018, 7, 16)) in stored
+
+
+def test_bad_days_are_skipped_on_import_and_removed_on_config_sync(session, settings, cfg):
+    """核對過是錯的日子（bad_days）：導入時跳過；改配置前已經入庫的，同步配置時移除、舊值進修訂記錄；手動錄入的不動。"""
+    from crudelab.ingest import Obs, write_observations
+    from crudelab.master import sync_to_db
+    from crudelab.models import AuditLog, ObservationRevision
+    bad = date(2026, 4, 28)
+    assert bad in cfg.series["OMAN_M1"].bad_days and date(2018, 10, 31) in cfg.series["MARS_DIFF"].bad_days
+    lines = ["Date,OMAN_M1", "2026-04-27,96.94", "2026-04-28,117.23", "2026-04-29,96.34"]
+    preview = preview_file(session, settings, "\n".join(lines).encode(), "r.csv", "reuters_xls")
+    assert "OMAN_M1：2026-04-28 核對過是錯價，不導入（見配置裡的 bad_days）" in preview["warnings"]
+    assert commit_batch(session, preview["batch_id"])["skipped"] == 1
+
+    # 配置加上 bad_days 之前就入庫了的：繞過導入直接寫進去，模擬舊數據
+    write_observations(session, [Obs("OMAN_M1", bad, 117.23), Obs("MARS_DIFF", date(2018, 10, 31), 0.0)], "reuters_xls")
+    write_observations(session, [Obs("MARS_DIFF", date(2018, 11, 30), 3.3)], "manual")
+    result = sync_to_db(session, cfg)
+    assert result["removed_points"] == 2
+    left = {(o.series_code, o.obs_date, o.source_code) for o in session.scalars(select(Observation))}
+    assert ("OMAN_M1", bad, "reuters_xls") not in left and ("MARS_DIFF", date(2018, 11, 30), "manual") in left
+    revision = session.scalars(select(ObservationRevision).where(ObservationRevision.series_code == "OMAN_M1")).one()
+    assert revision.value == 117.23 and revision.replaced_by == "config"
+    assert session.scalars(select(AuditLog).where(AuditLog.action == "remove_points")).all()
+    assert sync_to_db(session, cfg)["removed_points"] == 0

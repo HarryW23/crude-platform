@@ -33,7 +33,10 @@ series:
 
   # ---------- 西北歐 ----------
   - {code: NWE_EUROBOB, name_zh: 西北歐 Eurobob 汽油, commodity: GASOLINE, location: NWE, kind: spot, unit: USD/t, module: refinery,
-     aliases: ["Eurobob", "NWE Gasoline"], lseg: {ric: "EUROBOB-ARA", field: TRDPRC_1}}
+     aliases: ["Eurobob", "NWE Gasoline"], lseg: {ric: "EUROBOB-ARA", field: TRDPRC_1},
+     # 2026-07-16 是 976.8（前後 1075.5、1117.5）：路透當天報道西北歐汽油裂解只跌 0.57 美元、Platts 成交在 1082–1100；
+     # 2026-08-05 是 1059.3（前後 924.3、925.3）。兩天 RBOB 和新加坡 92 都沒有類似變化
+     bad_days: [2026-07-16, 2026-08-05]}
   - {code: NWE_DIESEL_10PPM, name_zh: 西北歐 10ppm 柴油, commodity: GASOIL, location: NWE, kind: spot, unit: USD/t, module: refinery,
      aliases: ["NWE Diesel 10ppm", "ULSD NWE"]}
   - {code: NWE_JET, name_zh: 西北歐航煤, commodity: JET, location: NWE, kind: spot, unit: USD/t, module: refinery,

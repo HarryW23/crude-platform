@@ -509,6 +509,7 @@
 | `within_period` | BOOLEAN | 否 |  | 見 SeriesDef |
 | `vintaged` | BOOLEAN | 否 |  | 按報告期保存 |
 | `data_from` | DATE | 是 |  | 這天之前的數據不入庫（見 SeriesDef） |
+| `bad_days` | JSON | 是 |  | 核對過是錯的日子（ISO 日期），不入庫 |
 
 ## series_alias
 

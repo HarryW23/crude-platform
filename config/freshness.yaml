@@ -26,8 +26,16 @@ ignore: []
 repeats: {max_run: 5, kinds: [spot, diff], series: [], ignore: []}
 # spikes     單日錯價提醒（導入預覽）。confirmed：核對過、確實是行情的日子，不再提醒
 spikes:
+  # 錯的那些不寫在這裡，寫在序列配置的 bad_days（導入時跳過、已入庫的移除）
   confirmed:
-    WTI_M1: [2020-04-20]        # 5 月合約到期前一天，庫容用盡，結算價 −37.63
+    WTI_M1: [2020-04-20]            # 5 月合約到期前一天，庫容用盡，結算價 −37.63
+    HO_M1: [2022-04-28]             # 5 月合約到期前一天的逼倉：結算 5.1354，次日到期 4.7817（Sprague MarketWatch）
+    SC_M1: [2022-03-31]             # SC2204 最後交易日，到期合約成交稀，次日 M1 換成 2205
+    SG_JET_KERO: [2026-04-08]       # 美伊停火，新加坡航煤收 193.53，汽柴油同日跌兩位數（路透）
+    TD3C_WS: [2020-03-24, 2026-03-16, 2026-04-17]   # 2020-03 TD15 同日同樣下跌；2026-03 中旬霍爾木茲危機短暫超過 WS600；
+                                                    # 2026-04-17 Brent 單日跌 11%
+    TD20_WS: [2020-03-16]           # 2020-03 中旬 TD3C、TD15 同一天也見頂回落
+    WTI_MIDLAND_DIFF: [2018-06-06, 2018-08-10]      # 2018 年二疊紀管輸瓶頸，米德蘭升貼水一兩天內來回 2–3 美元很常見
 overrides:
   - {series: ARAB_LIGHT_OSP_ASIA, max_days: 40, basis: received}
   - {series: ARAB_MEDIUM_OSP_ASIA, max_days: 40, basis: received}

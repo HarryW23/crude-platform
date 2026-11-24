@@ -40,7 +40,9 @@ series:
      aliases: ["Dubai Cash", "Dubai Spot", "迪拜現貨"], lseg: {ric: "DUB-1M", field: MID_PRICE}}
   - {code: OMAN_M1, name_zh: 阿曼期貨 M1, commodity: OMAN, location: MEG, kind: futures, unit: USD/bbl, module: spread,
      contract: M1, aliases: ["Oman M1", "阿曼M1", "DME Oman", "GME Oman"],
-     lseg: {ric: "OMANCALMc1", field: TRDPRC_1, proxy: "阿曼掉期評估價（路透貢獻者），不是 DME 阿曼期貨（帳號沒有 DME 權限）"}}
+     lseg: {ric: "OMANCALMc1", field: TRDPRC_1, proxy: "阿曼掉期評估價（路透貢獻者），不是 DME 阿曼期貨（帳號沒有 DME 權限）"},
+     # 2026-04-28 是 117.23，正好是 GME 阿曼 7 月合約當天的盤中最高價（Barchart），結算約 103；前後兩天 96.9、96.3
+     bad_days: [2026-04-28]}
   - {code: MURBAN_M1, name_zh: 穆爾班期貨 M1, commodity: MURBAN, location: MEG, kind: futures, unit: USD/bbl, module: spread,
      contract: M1, aliases: ["Murban M1", "IFAD Murban", "穆爾班M1"], lseg: {ric: "MRBNc1", field: SETTLE}}
   - {code: BRENT_DUBAI_EFS, name_zh: Brent-Dubai EFS, commodity: DUBAI, location: MEG, kind: diff, unit: USD/bbl, module: spread,
@@ -66,12 +68,16 @@ series:
      benchmark: DATED_BRENT, aliases: ["Bonny Light Diff"], lseg: {ric: "BFO-BON", field: TRDPRC_1}}
   - {code: WTI_MIDLAND_DIFF, name_zh: WTI 米德蘭升貼水, commodity: WTI_MIDLAND, location: USGC, kind: diff, unit: USD/bbl, module: spread,
      benchmark: WTI, aliases: ["WTI Midland Diff", "Midland Diff"],
-     lseg: {ric: "WTIMIDUSDFMc1", field: MID_PRICE, proxy: "米德蘭對 WTI 的掉期升貼水（月度連續 1），不是現貨升貼水"}}
+     lseg: {ric: "WTIMIDUSDFMc1", field: MID_PRICE, proxy: "米德蘭對 WTI 的掉期升貼水（月度連續 1），不是現貨升貼水"},
+     # 2018 年月底的 0（同 Mars）；2026-03-05 是 −7.17，前後兩天 1.15、0.55，同一天休斯頓 1.85、Mars 2.17 都正常
+     bad_days: [2018-10-31, 2018-11-30, 2026-03-05]}
   - {code: WTI_MEH_DIFF, name_zh: WTI 休斯頓升貼水, commodity: WTI_MEH, location: USGC, kind: diff, unit: USD/bbl, module: spread,
      benchmark: WTI, aliases: ["MEH Diff", "WTI Houston Diff"], lseg: {ric: "WTC-MEH", field: TRDPRC_1}}
   - {code: MARS_DIFF, name_zh: Mars 升貼水, commodity: MARS, location: USGC, kind: diff, unit: USD/bbl, module: spread,
      benchmark: WTI, aliases: ["Mars Diff"],
-     lseg: {ric: "MRSUSSWDMc1", field: MID_PRICE, proxy: "Mars 對 WTI 的掉期升貼水（月度連續 1），不是現貨升貼水"}}
+     lseg: {ric: "MRSUSSWDMc1", field: MID_PRICE, proxy: "Mars 對 WTI 的掉期升貼水（月度連續 1），不是現貨升貼水"},
+     # 2018–2019 月底幾天路透填了 0（同一天米德蘭也是 0，休斯頓正常），前後兩天都在 3–5 美元
+     bad_days: [2018-10-31, 2018-11-30, 2019-01-31]}
   - {code: WCS_HARDISTY_DIFF, name_zh: WCS（哈迪斯蒂）升貼水, commodity: WCS, location: CANADA, kind: diff, unit: USD/bbl, module: spread,
      benchmark: WTI, aliases: ["WCS Diff", "WCS Hardisty Diff"]}
   - {code: TUPI_CHINA_DIFF, name_zh: Tupi 到中國升貼水（到岸）, commodity: TUPI, location: CHINA, kind: diff, unit: USD/bbl, module: spread,
