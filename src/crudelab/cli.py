@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 from pathlib import Path
@@ -371,76 +372,82 @@ def _backup_file(settings, cfg, given: str) -> Path:
 
 
 def cmd_jin10(args) -> int:
-    """金十數據：probe 把真實接口的樣子列出來（用來核對字段和規則）；usage 看今天的用量。不打印 token。"""
-    import json as _json
-    from datetime import UTC, datetime
-
+    """金十數據：probe 把真實接口的樣子列出來（用來核對字段和規則）；usage 看今天的用量；backfill 補歷史收盤價。
+    不打印 token。"""
     from . import jin10
     from .config import load_config
-    from .connectors.mcp import MCPError
     settings = get_settings()
     db.init_engine(settings)
     cfg = load_config(settings.config_dir)
-    if args.action == "backfill":
-        if not 1 <= args.days <= 2000:
-            print("--days 要在 1 到 2000 之間", file=sys.stderr)
-            return 1
-        from .master import sync_to_db
-        with db.session_scope() as session:              # 先把配置裡的序列同步進數據庫（剛更新、還沒啟動過也能用）
-            sync_to_db(session, cfg)
-            if not jin10.quote_series(session):
-                print("配置裡沒有登記 jin10 代碼的序列（config/master/series/macro.yaml），沒有可以補的。", file=sys.stderr)
-                return 1
-        try:
-            client = jin10.Jin10(cfg)
-        except jin10.Jin10NotReady as exc:
-            print(exc, file=sys.stderr)
-            return 1
-        import time as _time
-        started = _time.monotonic()
-        interactive = sys.stdout.isatty()
-
-        def progress(event, info):
-            if event == "plan":
-                print(f"紐約交易日 {info['first']} → {info['last']}：{info['series']} 個品種 × {info['days']} 天 = "
-                      f"最多調用 get_kline {info['calls']} 次（今天還剩 {info['left']} 次）。")
-                print(f"從最近一天往前補，連續 {jin10.STOP_AFTER_MISSES} 個交易日取不到就停（超出金十保存的範圍）。"
-                      "每次調用約 1–2 秒；每補完一個品種寫入並打印一行，按 Ctrl+C 中斷不會丟失已完成的。")
-            elif event == "day" and interactive:
-                print(f"\r  正在補 {info['series']}（第 {info['n']}/{info['of']} 個品種）："
-                      f"{info['i']}/{info['days']} 天，已用 {_time.monotonic() - started:.0f} 秒", end="", flush=True)
-            elif event == "series":
-                r = info
-                print(("\r\033[K" if interactive else "") +
-                      f"  ✓ {r['series']:<16} {r['code']:<8} 取到 {r['closes']}/{r['days']} 天"
-                      f"（最早 {r['earliest'] or '—'}），沒取到 {r['no_trading']} 天，"
-                      f"新增 {r['written']}，更正 {r['corrected']}"
-                      + (f"；{r['stopped_at']} 之前金十沒有數據，停止" if r["stopped_at"] else ""), flush=True)
-        try:
-            with db.session_scope() as session:
-                jin10.backfill_closes(session, cfg, client, args.days, progress=progress)
-        except KeyboardInterrupt:
-            print("\n已中斷：前面打 ✓ 的品種已經寫入；再運行一次會跳過已有的值（但仍會調用金十）。", file=sys.stderr)
-            return 130
-        except (MCPError, jin10.Jin10LimitReached) as exc:
-            print(f"\n回填失敗：{exc}（前面打 ✓ 的品種已經寫入）", file=sys.stderr)
-            return 1
-        finally:
-            client.close()
-        print(f"完成，用時 {_time.monotonic() - started:.0f} 秒。")
-        print("金十只保存最近一兩天的分鐘線：更早的歷史從金十補不了，要從其他來源導入（見 README「金十數據」）。")
-        return 0
     if args.action == "usage":
         tools = ("list_calendar", "list_flash", "search_flash", "get_quote", "get_kline", "quote://codes")
         print(f"今天（北京時間 {jin10.beijing_today()}）各工具的調用次數，上限 {cfg.jin10.max_calls_per_tool_per_day}：")
         for tool in tools:
             print(f"  {tool:<16} {jin10.used_today(tool)}")
         return 0
+    if args.action == "backfill" and not 1 <= args.days <= 2000:
+        print("--days 要在 1 到 2000 之間", file=sys.stderr)
+        return 1
+    if args.action == "backfill":
+        from .master import sync_to_db
+        with db.session_scope() as session:              # 先把配置裡的序列同步進數據庫（剛更新、還沒啟動過也能用）
+            sync_to_db(session, cfg)
+            if not jin10.quote_series(session):
+                print("配置裡沒有登記 jin10 代碼的序列（config/master/series/macro.yaml），沒有可以補的。", file=sys.stderr)
+                return 1
     try:
         client = jin10.Jin10(cfg)
     except jin10.Jin10NotReady as exc:
         print(exc, file=sys.stderr)
         return 1
+    try:
+        return _jin10_backfill(cfg, client, args.days) if args.action == "backfill" else _jin10_probe(cfg, client)
+    finally:
+        client.close()
+
+
+def _jin10_backfill(cfg, client, days: int) -> int:
+    import time as _time
+
+    from . import jin10
+    from .connectors.mcp import MCPError
+    started = _time.monotonic()
+    interactive = sys.stdout.isatty()
+
+    def progress(event, info):
+        if event == "plan":
+            print(f"紐約交易日 {info['first']} → {info['last']}：{info['series']} 個品種 × {info['days']} 天 = "
+                  f"最多調用 get_kline {info['calls']} 次（今天還剩 {info['left']} 次）。")
+            print(f"從最近一天往前補，連續 {jin10.STOP_AFTER_MISSES} 個交易日取不到就停（超出金十保存的範圍）。"
+                  "每次調用約 1–2 秒；每補完一個品種寫入並打印一行，按 Ctrl+C 中斷不會丟失已完成的。")
+        elif event == "day" and interactive:
+            print(f"\r  正在補 {info['series']}（第 {info['n']}/{info['of']} 個品種）："
+                  f"{info['i']}/{info['days']} 天，已用 {_time.monotonic() - started:.0f} 秒", end="", flush=True)
+        elif event == "series":
+            r = info
+            print(("\r\033[K" if interactive else "") +
+                  f"  ✓ {r['series']:<16} {r['code']:<8} 取到 {r['closes']}/{r['days']} 天"
+                  f"（最早 {r['earliest'] or '—'}），沒取到 {r['no_trading']} 天，"
+                  f"新增 {r['written']}，更正 {r['corrected']}"
+                  + (f"；{r['stopped_at']} 之前金十沒有數據，停止" if r["stopped_at"] else ""), flush=True)
+    try:
+        with db.session_scope() as session:
+            jin10.backfill_closes(session, cfg, client, days, progress=progress)
+    except KeyboardInterrupt:
+        print("\n已中斷：前面打 ✓ 的品種已經寫入；再運行一次會跳過已有的值（但仍會調用金十）。", file=sys.stderr)
+        return 130
+    except (MCPError, jin10.Jin10LimitReached) as exc:
+        print(f"\n回填失敗：{exc}（前面打 ✓ 的品種已經寫入）", file=sys.stderr)
+        return 1
+    print(f"完成，用時 {_time.monotonic() - started:.0f} 秒。")
+    print("金十只保存最近一兩天的分鐘線：更早的歷史從金十補不了，要從其他來源導入（見 README「金十數據」）。")
+    return 0
+
+
+def _jin10_probe(cfg, client) -> int:
+    """逐項檢測，每項失敗只打印原因、接著做下一項。"""
+    from . import jin10
+    from .connectors.mcp import MCPError
 
     def show(title, fn):
         print(f"\n== {title}")
@@ -449,91 +456,106 @@ def cmd_jin10(args) -> int:
         except (MCPError, jin10.Jin10LimitReached) as exc:
             print(f"  ✗ {exc}")
             return None
-    try:
-        tools = show("連接與工具", lambda: client.client.list_tools())
-        if tools is not None:
-            print(f"  ✓ 已連接（協議 {client.client.protocol}，服務 {client.client.server_info.get('name', '?')}）")
-            print("  工具：" + "、".join(tools))
-        codes = show("品種代碼（quote://codes）", lambda: client.resource("quote://codes"))
-        if codes is not None:
-            flat = _json.dumps(codes, ensure_ascii=False)
-            items = jin10.rows_of(codes) or (codes if isinstance(codes, list) else [])
-            print(f"  共約 {len(items)} 個；前幾個：{flat[:300]}")
-            listed = {str(r.get("code")) for r in items if isinstance(r, dict)}
-            wanted = sorted({s.jin10 for s in cfg.series.values() if s.jin10})
-            missing = [c for c in wanted if c not in listed]
-            print(f"  配置裡登記的 {len(wanted)} 個代碼：{'全部在列表裡' if not missing else '缺 ' + '、'.join(missing)}")
-            extra = [f"{r.get('code')}={r.get('name')}" for r in items if isinstance(r, dict)
-                     and any(k in str(r.get("name")) + str(r.get("code")) for k in ("债", "債", "利率", "US10", "US02", "Bond"))]
-            print(f"  利率 / 債券類：{'、'.join(extra) or '沒有'}")
-        quote = show("報價 UKOIL", lambda: client.call("get_quote", code="UKOIL"))
-        if quote is not None:
-            print("  " + _json.dumps(quote, ensure_ascii=False)[:400])
-        def close_check():
-            day = jin10.completed_trade_days(datetime.now(UTC).replace(tzinfo=None), 1)[0]
-            got = jin10.close_on(client, "UKOIL", day)
-            if got is None:
-                return f"紐約 {day} 沒有取到收盤價（可能休市）"
-            return f"紐約 {day} 16:59 的 K 線：{got[1]:%Y-%m-%d %H:%M}Z，收盤 {got[0]}"
-        result = show("收盤價 UKOIL（get_kline，time = 紐約 16:59 的秒）", close_check)
+    tools = show("連接與工具", lambda: client.client.list_tools())
+    if tools is not None:
+        print(f"  ✓ 已連接（協議 {client.client.protocol}，服務 {client.client.server_info.get('name', '?')}）")
+        print("  工具：" + "、".join(tools))
+    codes = show("品種代碼（quote://codes）", lambda: client.resource("quote://codes"))
+    if codes is not None:
+        _jin10_probe_codes(cfg, codes)
+    quote = show("報價 UKOIL", lambda: client.call("get_quote", code="UKOIL"))
+    if quote is not None:
+        print("  " + json.dumps(quote, ensure_ascii=False)[:400])
+    for title, check in (("收盤價 UKOIL（get_kline，time = 紐約 16:59 的秒）", _jin10_close_check),
+                         ("分鐘線保存深度 UKOIL（往前試 1、2、3、5、10 個交易日）", _jin10_depth_check)):
+        result = show(title, lambda check=check: check(client))
         if result is not None:
             print("  " + result)
-
-        def depth_check():
-            # 金十的分鐘線保存多久：往前試幾個交易日（共 5 次調用）
-            days = jin10.completed_trade_days(datetime.now(UTC).replace(tzinfo=None), 10)[::-1]
-            marks = []
-            for back in (1, 2, 3, 5, 10):
-                day = days[back - 1]
-                marks.append(f"{back} 天前（{day}）{'有' if jin10.close_on(client, 'UKOIL', day) else '沒有'}")
-            return "、".join(marks)
-        result = show("分鐘線保存深度 UKOIL（往前試 1、2、3、5、10 個交易日）", depth_check)
-        if result is not None:
-            print("  " + result)
-        calendar = show("財經日曆", lambda: client.call("list_calendar"))
-        if calendar is not None:
-            rows = jin10.rows_of(calendar)
-            print(f"  {len(rows)} 項；第一項的字段：{sorted(rows[0]) if rows else '—'}")
-            for r in rows[:6]:
-                print(f"  {r.get('pub_time')}  {r.get('star')}★  {r.get('title')}  "
-                      f"前值 {r.get('previous')}  預期 {r.get('consensus')}  實際 {r.get('actual')}")
-            calendar_matched = [r.get("title") for r in rows if any(rule.match in str(r.get("title")) for rule in cfg.jin10.calendar_rules)]
-            print(f"  能對上 jin10.yaml 換算規則的：{calendar_matched[:6] or '本周沒有（或標題寫法不同，請把上面的標題發給負責平台的人）'}")
-        flash = show("快訊（list_flash）", lambda: client.call("list_flash"))
-        if flash is not None:
-            rows = jin10.rows_of(flash)
-            print(f"  {len(rows)} 條；第一條的字段：{sorted(rows[0]) if rows else '—'}")
-            if rows:
-                print("  第一條：" + _json.dumps(rows[0], ensure_ascii=False)[:300])
-            data = flash.get("data") if isinstance(flash, dict) else None
-            keys = sorted(data) if isinstance(data, dict) else type(data).__name__
-            print(f"  data 的字段（翻頁用）：{keys}；外層字段：{sorted(flash) if isinstance(flash, dict) else '—'}")
-            # 用平台的關鍵詞篩一遍這頁快訊（不再調用金十）
-            hits = [(jin10.flash_hits(cfg, jin10.flash_text(r)), jin10.flash_text(r)) for r in rows]
-            matched = [hit for hit in hits if hit[0]]
-            print(f"  按 config/jin10.yaml 的關鍵詞篩選：{len(rows)} 條裡命中 {len(matched)} 條")
-            for keywords, text in matched[:8]:
-                print(f"    [{'、'.join(keywords)}] {text[:60]}")
-            counts: dict[str, int] = {}
-            for keywords, _ in matched:
-                for k in keywords:
-                    counts[k] = counts.get(k, 0) + 1
-            if counts:
-                print("  各關鍵詞命中次數：" + "、".join(f"{k} {n}" for k, n in sorted(counts.items(), key=lambda x: -x[1])))
-
-        # 簡繁對比：同一個詞用簡體和繁體各搜一次，看金十的搜索認不認繁體（共 2 次調用）
-        from . import zh
-        word_tw = "歐佩克"
-        word_cn = zh.to_simplified(word_tw, cfg.jin10.term_overrides)
-        for word, label in ((word_cn, "簡體"), (word_tw, "繁體")):
-            found = show(f"search_flash（{label}：{word}）", lambda w=word: client.call("search_flash", keyword=w))
-            if found is not None:
-                rows = jin10.rows_of(found)
-                print(f"  {len(rows)} 條" + (f"；第一條：{jin10.flash_text(rows[0])[:60]}" if rows else ""))
-    finally:
-        client.close()
+    calendar = show("財經日曆", lambda: client.call("list_calendar"))
+    if calendar is not None:
+        _jin10_probe_calendar(cfg, calendar)
+    flash = show("快訊（list_flash）", lambda: client.call("list_flash"))
+    if flash is not None:
+        _jin10_probe_flash(cfg, flash)
+    # 簡繁對比：同一個詞用簡體和繁體各搜一次，看金十的搜索認不認繁體（共 2 次調用）
+    from . import zh
+    word_tw = "歐佩克"
+    word_cn = zh.to_simplified(word_tw, cfg.jin10.term_overrides)
+    for word, label in ((word_cn, "簡體"), (word_tw, "繁體")):
+        found = show(f"search_flash（{label}：{word}）", lambda w=word: client.call("search_flash", keyword=w))
+        if found is not None:
+            rows = jin10.rows_of(found)
+            print(f"  {len(rows)} 條" + (f"；第一條：{jin10.flash_text(rows[0])[:60]}" if rows else ""))
     print("\n把上面的輸出發給負責平台的人即可核對（裡面沒有 token）。")
     return 0
+
+
+def _jin10_probe_codes(cfg, codes) -> None:
+    from . import jin10
+    flat = json.dumps(codes, ensure_ascii=False)
+    items = jin10.rows_of(codes) or (codes if isinstance(codes, list) else [])
+    print(f"  共約 {len(items)} 個；前幾個：{flat[:300]}")
+    listed = {str(r.get("code")) for r in items if isinstance(r, dict)}
+    wanted = sorted({s.jin10 for s in cfg.series.values() if s.jin10})
+    missing = [c for c in wanted if c not in listed]
+    print(f"  配置裡登記的 {len(wanted)} 個代碼：{'全部在列表裡' if not missing else '缺 ' + '、'.join(missing)}")
+    extra = [f"{r.get('code')}={r.get('name')}" for r in items if isinstance(r, dict)
+             and any(k in str(r.get("name")) + str(r.get("code")) for k in ("债", "債", "利率", "US10", "US02", "Bond"))]
+    print(f"  利率 / 債券類：{'、'.join(extra) or '沒有'}")
+
+
+def _jin10_close_check(client) -> str:
+    from datetime import UTC, datetime
+
+    from . import jin10
+    day = jin10.completed_trade_days(datetime.now(UTC).replace(tzinfo=None), 1)[0]
+    got = jin10.close_on(client, "UKOIL", day)
+    if got is None:
+        return f"紐約 {day} 沒有取到收盤價（可能休市）"
+    return f"紐約 {day} 16:59 的 K 線：{got[1]:%Y-%m-%d %H:%M}Z，收盤 {got[0]}"
+
+
+def _jin10_depth_check(client) -> str:
+    """金十的分鐘線保存多久：往前試幾個交易日（共 5 次調用）。"""
+    from datetime import UTC, datetime
+
+    from . import jin10
+    days = jin10.completed_trade_days(datetime.now(UTC).replace(tzinfo=None), 10)[::-1]
+    return "、".join(f"{back} 天前（{days[back - 1]}）{'有' if jin10.close_on(client, 'UKOIL', days[back - 1]) else '沒有'}"
+                    for back in (1, 2, 3, 5, 10))
+
+
+def _jin10_probe_calendar(cfg, calendar) -> None:
+    from . import jin10
+    rows = jin10.rows_of(calendar)
+    print(f"  {len(rows)} 項；第一項的字段：{sorted(rows[0]) if rows else '—'}")
+    for r in rows[:6]:
+        print(f"  {r.get('pub_time')}  {r.get('star')}★  {r.get('title')}  "
+              f"前值 {r.get('previous')}  預期 {r.get('consensus')}  實際 {r.get('actual')}")
+    matched = [r.get("title") for r in rows if any(rule.match in str(r.get("title")) for rule in cfg.jin10.calendar_rules)]
+    print(f"  能對上 jin10.yaml 換算規則的：{matched[:6] or '本周沒有（或標題寫法不同，請把上面的標題發給負責平台的人）'}")
+
+
+def _jin10_probe_flash(cfg, flash) -> None:
+    from collections import Counter
+
+    from . import jin10
+    rows = jin10.rows_of(flash)
+    print(f"  {len(rows)} 條；第一條的字段：{sorted(rows[0]) if rows else '—'}")
+    if rows:
+        print("  第一條：" + json.dumps(rows[0], ensure_ascii=False)[:300])
+    data = flash.get("data") if isinstance(flash, dict) else None
+    keys = sorted(data) if isinstance(data, dict) else type(data).__name__
+    print(f"  data 的字段（翻頁用）：{keys}；外層字段：{sorted(flash) if isinstance(flash, dict) else '—'}")
+    # 用平台的關鍵詞篩一遍這頁快訊（不再調用金十）
+    hits = [(jin10.flash_hits(cfg, jin10.flash_text(r)), jin10.flash_text(r)) for r in rows]
+    matched = [hit for hit in hits if hit[0]]
+    print(f"  按 config/jin10.yaml 的關鍵詞篩選：{len(rows)} 條裡命中 {len(matched)} 條")
+    for keywords, text in matched[:8]:
+        print(f"    [{'、'.join(keywords)}] {text[:60]}")
+    counts = Counter(k for keywords, _ in matched for k in keywords)
+    if counts:
+        print("  各關鍵詞命中次數：" + "、".join(f"{k} {n}" for k, n in counts.most_common()))
 
 
 def cmd_lseg_rics(args) -> int:

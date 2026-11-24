@@ -203,6 +203,16 @@ class _Loader:
                 self.errors.append(f"{self.rel(path)} 的 {label}：{where + '：' if where else ''}{err['msg']}")
             return None
 
+    def section(self, model: type[T], name: str) -> T | None:
+        """一個可選的單文件配置（例如 backtest.yaml）：文件不存在、或內容有錯（錯誤已記下）時回傳 None。"""
+        path = self.dir / name
+        return self.build(model, self.read(path) or {}, path) if path.exists() else None
+
+    def optional_items(self, model: type[T], name: str, label: str) -> dict | None:
+        """一個可選的列表文件（例如 geo/analogs.yaml），按 code 建索引；文件不存在時回傳 None。"""
+        path = self.dir / name
+        return self.keyed(self.items(model, path), label) if path.exists() else None
+
     def items(self, model: type[T], path: Path, raw: Any = None) -> list[T]:
         raw = self.read(path) if raw is None else raw
         if raw is None:
@@ -226,11 +236,9 @@ def _optional(directory: Path) -> list[Path]:
     return sorted(directory.glob("*.yaml")) if directory.is_dir() else []
 
 
-def load_config(config_dir: Path) -> Config:
-    ld = _Loader(config_dir)
-    master = config_dir / "master"
-    cfg = Config()
-
+def _load_master(ld: _Loader, cfg: Config) -> None:
+    """字典：單位、地區、品種、數據源。"""
+    master = ld.dir / "master"
     unit_doc = ld.read(master / "units.yaml") or {}
     cfg.atoms = {a.code for a in ld.items(AtomDef, master / "units.yaml", unit_doc.get("atoms", []))}
     cfg.units = ld.keyed(ld.items(UnitDef, master / "units.yaml", unit_doc.get("units", [])), "單位")
@@ -238,6 +246,9 @@ def load_config(config_dir: Path) -> Config:
     cfg.commodities = ld.keyed(ld.items(CommodityDef, master / "commodities.yaml"), "品種")
     cfg.sources = ld.keyed(ld.items(SourceDef, master / "sources.yaml"), "數據源")
 
+
+def _load_series(ld: _Loader, cfg: Config) -> None:
+    """序列、期貨曲線（展開成 Mn）、計價視角。"""
     series: list[SeriesDef] = []
     curves: list[CurveDef] = []
     views: list[PricingView] = []
@@ -251,27 +262,28 @@ def load_config(config_dir: Path) -> Config:
     cfg.views = ld.keyed(views, "計價視角")
     cfg.series = ld.keyed(series, "序列")
 
+
+def _load_models(ld: _Loader, cfg: Config) -> None:
+    """參數、指標，以及會編譯出參數和指標的煉廠模型、平衡表、信號（信號權重是參數）；關係模型。"""
     params = [p for path in ld.files("parameters") for p in ld.items(ParameterDef, path)]
     indicators = [i for path in ld.files("indicators") for i in ld.items(IndicatorDef, path)]
     specs: list[RefinerySpec] = []
-    for path in _optional(config_dir / "refineries"):
-        model = ld.build(RefineryModelDef, ld.read(path) or {}, path)
+    for model in (ld.build(RefineryModelDef, ld.read(p) or {}, p) for p in _optional(ld.dir / "refineries")):
         if model:
             model_params, model_indicators, spec = compile_model(model)
             params += model_params
             indicators += model_indicators
             specs.append(spec)
     balance_specs: list[BalanceSpec] = []
-    for path in _optional(config_dir / "balances"):
-        table = ld.build(BalanceDef, ld.read(path) or {}, path)
+    for table in (ld.build(BalanceDef, ld.read(p) or {}, p) for p in _optional(ld.dir / "balances")):
         if table:
             table_indicators, table_spec = compile_balance(table)
             indicators += table_indicators
             balance_specs.append(table_spec)
     cfg.balances = ld.keyed(balance_specs, "平衡表")
-    cfg.relations = ld.keyed([r for path in _optional(config_dir / "relations")
+    cfg.relations = ld.keyed([r for path in _optional(ld.dir / "relations")
                               for r in ld.items(RelationDef, path)], "關係模型")
-    cfg.signals = ld.keyed([s for path in _optional(config_dir / "signals")
+    cfg.signals = ld.keyed([s for path in _optional(ld.dir / "signals")
                             for s in ld.items(SignalDef, path)], "信號")
     # 每個信號的權重是一個參數 W_{code}：帶生效日期和版本記錄，可以按回測結果採用新版本（backtest.calibrate）；
     # 配置裡的 weight 是它的初始值。回測按每個日期當時生效的權重合成，結果可以重現。
@@ -280,57 +292,46 @@ def load_config(config_dir: Path) -> Config:
                             description="模組內的相對權重；0 = 不參與合成。初始值來自 config/signals/，"
                                         "可在回測頁按校準結果採用新值")
                for sig in cfg.signals.values()]
-    analog_path = config_dir / "geo" / "analogs.yaml"
-    if analog_path.exists():
-        cfg.analogs = ld.keyed(ld.items(AnalogDef, analog_path), "歷史類比")
-    playbook_path = config_dir / "geo" / "playbooks.yaml"
-    if playbook_path.exists():
-        cfg.playbooks = ld.keyed(ld.items(PlaybookDef, playbook_path), "事件預案")
-    projection_path = config_dir / "projection.yaml"
-    if projection_path.exists():
-        cfg.projection = ld.build(ProjectionSettings, ld.read(projection_path) or {}, projection_path)
-    schedule_path = config_dir / "schedule.yaml"
-    if schedule_path.exists():
-        cfg.schedule = ld.build(ScheduleDef, ld.read(schedule_path) or {}, schedule_path) or ScheduleDef()
-    notify_path = config_dir / "notifications.yaml"
-    if notify_path.exists():
-        cfg.notifications = (ld.build(NotificationsDef, ld.read(notify_path) or {}, notify_path)
-                             or NotificationsDef())
-        ld.keyed(cfg.notifications.channels, "通知渠道")
+    cfg.parameters = ld.keyed(params, "參數", key="key")
+    cfg.indicators = ld.keyed(indicators, "指標")
+    cfg.refineries = ld.keyed(specs, "煉廠模型")
+
+
+def _load_sections(ld: _Loader, cfg: Config) -> None:
+    """可選的配置文件：沒有這個文件就用預設值（內容有錯時錯誤已記下，最後統一報）。"""
+    cfg.analogs = ld.optional_items(AnalogDef, "geo/analogs.yaml", "歷史類比") or cfg.analogs
+    cfg.playbooks = ld.optional_items(PlaybookDef, "geo/playbooks.yaml", "事件預案") or cfg.playbooks
+    cfg.fair_values = ld.optional_items(FairValueModel, "fair_value.yaml", "公允價值模型") or cfg.fair_values
+    cfg.projection = ld.section(ProjectionSettings, "projection.yaml")
+    cfg.schedule = ld.section(ScheduleDef, "schedule.yaml") or ScheduleDef()
+    cfg.notifications = ld.section(NotificationsDef, "notifications.yaml") or NotificationsDef()
+    cfg.backtest = ld.section(BacktestSettings, "backtest.yaml") or BacktestSettings()
+    cfg.jin10 = ld.section(Jin10Settings, "jin10.yaml") or Jin10Settings()
+    cfg.llm = ld.section(LLMSettings, "llm.yaml") or LLMSettings()
+    cfg.backup = ld.section(BackupSettings, "backup.yaml") or BackupSettings()
+    cfg.freshness = ld.section(FreshnessDef, "freshness.yaml") or FreshnessDef()
+    ld.keyed(cfg.notifications.channels, "通知渠道")
     channel_codes = {c.code for c in cfg.notifications.channels}
     for job in cfg.schedule.jobs:
         unknown = [c for c in job.notify or [] if c not in channel_codes]
         if unknown:
             ld.errors.append(f"schedule.yaml 的任務 {job.code}：notify 裡有不存在的通知渠道：{'、'.join(unknown)}")
-    fv_path = config_dir / "fair_value.yaml"
-    if fv_path.exists():
-        cfg.fair_values = ld.keyed(ld.items(FairValueModel, fv_path), "公允價值模型")
-    backtest_path = config_dir / "backtest.yaml"
-    if backtest_path.exists():
-        cfg.backtest = ld.build(BacktestSettings, ld.read(backtest_path) or {}, backtest_path) or BacktestSettings()
-    jin10_path = config_dir / "jin10.yaml"
-    if jin10_path.exists():
-        cfg.jin10 = ld.build(Jin10Settings, ld.read(jin10_path) or {}, jin10_path) or Jin10Settings()
-    llm_path = config_dir / "llm.yaml"
-    if llm_path.exists():
-        cfg.llm = ld.build(LLMSettings, ld.read(llm_path) or {}, llm_path) or LLMSettings()
-    backup_path = config_dir / "backup.yaml"
-    if backup_path.exists():
-        cfg.backup = ld.build(BackupSettings, ld.read(backup_path) or {}, backup_path) or BackupSettings()
-    cal_path = config_dir / "calendars.yaml"
-    if cal_path.exists():
-        calendars_doc = ld.build(CalendarsFile, ld.read(cal_path) or {}, cal_path)
-        cfg.calendar_defs = ld.keyed(calendars_doc.calendars, "交易日曆") if calendars_doc else {}
+    calendars_doc = ld.section(CalendarsFile, "calendars.yaml")
+    if calendars_doc:
+        cfg.calendar_defs = ld.keyed(calendars_doc.calendars, "交易日曆")
         cfg.calendars = {code: build_calendar(d) for code, d in cfg.calendar_defs.items()}
     for curve in cfg.curves.values():                 # 換月的工作日按曲線的日曆算
         if curve.roll is not None and curve.calendar in cfg.calendars:
             curve.roll._calendar = cfg.calendars[curve.calendar]
-    fresh_path = config_dir / "freshness.yaml"
-    if fresh_path.exists():
-        cfg.freshness = ld.build(FreshnessDef, ld.read(fresh_path) or {}, fresh_path) or FreshnessDef()
-    cfg.parameters = ld.keyed(params, "參數", key="key")
-    cfg.indicators = ld.keyed(indicators, "指標")
-    cfg.refineries = ld.keyed(specs, "煉廠模型")
+
+
+def load_config(config_dir: Path) -> Config:
+    ld = _Loader(config_dir)
+    cfg = Config()
+    _load_master(ld, cfg)
+    _load_series(ld, cfg)
+    _load_models(ld, cfg)
+    _load_sections(ld, cfg)
 
     errors = ld.errors + _validate(cfg)
     if errors:
@@ -339,6 +340,12 @@ def load_config(config_dir: Path) -> Config:
 
 
 def _validate(cfg: Config) -> list[str]:
+    return (_validate_dictionary(cfg) + _validate_references(cfg) + _validate_projection(cfg)
+            + _validate_schedule(cfg) + _validate_freshness(cfg) + _validate_indicators(cfg))
+
+
+def _validate_dictionary(cfg: Config) -> list[str]:
+    """單位、地區、品種、交易日曆都在字典裡；序列 / 參數 / 指標 / 計價視角不重名；別名不指向兩條序列。"""
     errors: list[str] = []
 
     def check_unit(unit: str, owner: str) -> None:
@@ -382,6 +389,12 @@ def _validate(cfg: Config) -> list[str]:
     for c in cfg.curves.values():
         if c.calendar is not None and c.calendar not in cfg.calendars:
             errors.append(f"曲線 {c.code}：交易日曆 {c.calendar} 不在 calendars.yaml 裡")
+    return errors
+
+
+def _validate_references(cfg: Config) -> list[str]:
+    """模型之間的引用：計價視角、關係模型、信號、事件預案、公允價值、回測錨定引用的東西都存在。"""
+    errors: list[str] = []
     if cfg.projection is not None:
         codes = [m.code for m in cfg.projection.drift_models]
         if len(codes) != len(set(codes)):
@@ -409,8 +422,6 @@ def _validate(cfg: Config) -> list[str]:
             errors.append(f"信號 {sig.code}：{sig.input} 既不是序列也不是指標")
     for pb in cfg.playbooks.values():
         errors += [f"事件預案 {pb.code}：{i.target} 既不是序列也不是指標" for i in pb.impacts if not cfg.has(i.target)]
-    errors += _validate_projection(cfg)
-    errors += _validate_schedule(cfg)
     for m in cfg.fair_values.values():
         if m.target not in cfg.series:
             errors.append(f"公允價值模型 {m.code}：target {m.target} 不是序列")
@@ -418,6 +429,11 @@ def _validate(cfg: Config) -> list[str]:
                    for f in m.factors if not cfg.has(f.input)]
     if cfg.backtest.anchor and cfg.backtest.anchor not in cfg.series:
         errors.append(f"backtest.yaml：anchor {cfg.backtest.anchor} 不是序列")
+    return errors
+
+
+def _validate_freshness(cfg: Config) -> list[str]:
+    errors: list[str] = []
     fr = cfg.freshness
     for label, codes in (("required", fr.required), ("ignore", fr.ignore),
                          ("overrides", [o.series for o in fr.overrides]),
@@ -426,7 +442,6 @@ def _validate(cfg: Config) -> list[str]:
     missing = [f for f in ("daily", "weekly", "monthly", "quarterly") if f not in fr.defaults]
     if missing:
         errors.append(f"freshness.yaml 的 defaults 缺少：{'、'.join(missing)}")
-    errors += _validate_indicators(cfg)
     return errors
 
 

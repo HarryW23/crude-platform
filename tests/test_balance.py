@@ -40,18 +40,18 @@ def test_year_ago_matches_monthly_exactly():
     assert (series - analytics.year_ago(series)).dropna().tolist() == [12.0] * 18
 
 
-def test_linear_fit_recovers_known_relation_and_refuses_small_samples():
+def test_relation_fit_recovers_known_relation_and_refuses_small_samples():
     index = pd.DatetimeIndex(weekly(80))
     x = pd.Series(np.linspace(-50, 50, 80), index=index)
     daily = pd.date_range(index[0] - pd.Timedelta(days=2), index[-1])
     y = (3.0 - 0.04 * x).reindex(daily, method="nearest")
     y = y[y.index.day_of_week < 5]                                        # y 是日度；周五對得上
-    fit = analytics.linear_fit(y, x, lookback_days=2000, min_points=30)
+    fit = analytics.relation_fit(y, x, lookback_days=2000, min_points=30)
     assert fit["status"] == "ok" and fit["n"] == 80
     assert fit["slope"] == pytest.approx(-0.04) and fit["intercept"] == pytest.approx(3.0)
     assert fit["r2"] == pytest.approx(1)
     assert fit["latest"]["residual"] == pytest.approx(0, abs=1e-9)
-    short = analytics.linear_fit(y, x, lookback_days=100, min_points=30)
+    short = analytics.relation_fit(y, x, lookback_days=100, min_points=30)
     assert short["status"] == "insufficient" and short["slope"] is None and 10 < short["n"] < 30
 
 
