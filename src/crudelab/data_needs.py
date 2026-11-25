@@ -62,8 +62,8 @@ PROVIDERS: dict[str, Provider] = {p.code: p for p in (
     Provider("agency", "機構月報（IEA、OPEC）", "從月報的表格整理成 Excel 後導入",
              "IEA 月報需訂閱；OPEC 月報公開", "Excel 導入可用",
              "IEA / OPEC 的供需只用於和 EIA 口徑對照，不影響平衡表本身。OPEC+ 分國產量（CRUDE_PROD_*，千桶/日）取 OPEC 月報的"
-             "二手來源表，每月照 docs/templates/opec_production.csv 填一行導入，或把月報表格原樣貼進 Excel 導入"
-             "（季度匯總列自動跳過）；配額和可持續產能是參數（config/parameters/opec.yaml），需要你按 OPEC+ 的決定錄入。"),
+             "二手來源表：後台導入頁下載模板，把月報 PDF 裡的表複製貼上後導入（數據源選「OPEC 月報（二手來源）」）；"
+             "配額和可持續產能是參數（config/parameters/opec.yaml），需要你按 OPEC+ 的決定錄入。"),
     Provider("consult", "煉廠檢修（諮詢機構）", "從諮詢機構的報告整理成 Excel 後導入",
              "IIR、Platts、Energy Aspects 等任一家的訂閱", "Excel 導入可用",
              "全球煉廠停工量（檢修 + 非計劃）。各家口徑不同，固定用一家。"),

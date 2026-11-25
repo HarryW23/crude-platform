@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -46,6 +46,17 @@ def commit(batch_id: int, body: CommitRequest, session: Session = DB,
         return commit_batch(session, batch_id, body.mapping, body.learn, actor)
     except (ImportFlowError, IngestError) as exc:
         raise HTTPException(400, str(exc)) from exc
+
+
+XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+@admin_router.get("/imports/templates/opec_production.xlsx")
+def opec_template(state: AppState = Depends(get_state)):
+    """OPEC 月報產量的導入模板（從配置生成）。"""
+    from ...templates import opec_production
+    return Response(opec_production(state.cfg), media_type=XLSX,
+                    headers={"Content-Disposition": 'attachment; filename="opec_production.xlsx"'})
 
 
 @admin_router.get("/imports")

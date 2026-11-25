@@ -10,6 +10,7 @@ export async function render(main) {
   main.innerHTML = `
     <div class="panel"><h2>上傳 Excel / CSV</h2>
       <p class="sub">不要求固定模板。系統會自己找日期和表頭，認得出的列自動對應；認不出的由你指定一次，之後同樣的表頭會自動識別。原文件會原樣保存。</p>
+      <p class="sub">模板：<a href="/api/imports/templates/opec_production.xlsx" download>OPEC 月報產量（每月一次，用法見模板裡的說明頁）</a></p>
       <div class="row"><input type="file" id="file" accept=".xlsx,.xlsm,.xls,.csv,.txt">
         <label>數據源 <select id="src">${sources.filter((s) => s.kind === "excel").map((s) => `<option value="${s.code}">${esc(s.name)}</option>`).join("")}</select></label>
         <label title="補錄 EIA 短期能源展望、IEA、OPEC 的歷史報告時，填那一期的發佈日期；回測會按當時發佈的數字算。導入當期報告不用填">報告發佈日期 <input type="date" id="vintage"></label>

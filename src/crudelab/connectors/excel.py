@@ -8,6 +8,7 @@
   wide_transposed  日期橫排在一行，每條序列佔一行
   long             長表：日期、名稱、數值 各一列
 識別不了的工作表會標成 unrecognized 並跳過，不會猜。
+從 PDF 複製、整行擠在一格的表格（「Saudi Arabia 9,950 9,980」）先拆成格子再識別（split_text_table）。
 
 流程分兩步：先 parse 出預覽（每一列對應到哪條序列、有多少個值），人確認後再帶 mapping 重新 parse 出數據點。
 """
@@ -179,6 +180,9 @@ def read_grids(path: Path) -> tuple[dict[str, list[list]], dict[str, str]]:
                 continue
         else:
             raise ValueError("無法識別 CSV 的文字編碼")
+        as_lines = [[line] if line.strip() else [] for line in text.splitlines()[:MAX_ROWS]]
+        if split_text_table(as_lines) is not as_lines:     # 從 PDF 複製的表（數字裡的千分位逗號不是分隔符）
+            return {"CSV": as_lines}, truncated
         try:
             dialect = csv.Sniffer().sniff(text[:4096], delimiters=",;\t") if text.strip() else csv.excel
         except csv.Error:                     # 只有一列、或沒有分隔符：按普通逗號分隔讀
@@ -443,13 +447,64 @@ def _parse_sheet(name: str, grid: list[list], resolver: Resolver,
     return preview, observations
 
 
+_NO_VALUE = {"-", "–", "—", "n.a.", "na", "n/a", "..."}                 # PDF 表格裡「沒有數」的寫法
+_MONTH_TOKEN = re.compile(r"^[A-Za-z]{3}$")
+
+
+def _tokens(text: str) -> list[str]:
+    """按空白切開；「Sep 25」這種被空格拆開的月份接回去。"""
+    out: list[str] = []
+    for tok in text.split():
+        if out and _MONTH_TOKEN.match(out[-1]) and re.fullmatch(r"'?\d{2}(\d{2})?", tok):
+            out[-1] = f"{out[-1]} {tok}"
+        else:
+            out.append(tok)
+    return out
+
+
+def _is_value(tok: str) -> bool:
+    return parse_number(tok) is not None or tok.lower() in _NO_VALUE
+
+
+def split_text_table(grid: list[list]) -> list[list]:
+    """從 PDF 複製的表格，貼進 Excel 或存成文字文件後，常常整行擠在一格：「Saudi Arabia 9,950 9,980 30」。
+    整張表每行都只有一格文字、而且能看出是「名稱 + 一串數字」的表時，拆成格子；否則原樣返回。
+
+    名稱 = 第一個數字之前的部分（可以有空格，例如 Equatorial Guinea）。各數據行的數字個數必須一樣，
+    表頭取數據行之前、最後那幾個詞（個數和數字一樣）裡有能認出的期間（2025、3Q25、Sep25）的那一行。
+    對不齊就不拆，不猜。"""
+    lines = []
+    for row in grid:
+        cells = [c for c in row if c not in (None, "")]
+        if len(cells) > 1 or (cells and not isinstance(cells[0], str)):
+            return grid
+        lines.append(_tokens(cells[0]) if cells else [])
+    data = []
+    for i, toks in enumerate(lines):
+        k = next((n for n, t in enumerate(toks) if _is_value(t)), len(toks))
+        if k > 0 and len(toks) - k >= 2 and all(_is_value(t) for t in toks[k:]):
+            data.append((i, " ".join(toks[:k]), toks[k:]))
+    if len(data) < 3 or len({len(v) for _, _, v in data}) != 1:
+        return grid
+    width = len(data[0][2])
+    header = next((i for i in range(data[0][0] - 1, -1, -1) if len(lines[i]) >= width
+                   and any(parse_period(t) or re.fullmatch(r"\d{4}", t) for t in lines[i][-width:])), None)
+    if header is None:
+        return grid
+    out: list[list] = [[None] * (width + 1) for _ in grid]      # 行號和原文件一致（數據點記的位置對得上）
+    out[header] = [" ".join(lines[header][:-width]) or None, *lines[header][-width:]]   # 表頭前面可以有字
+    for i, label, values in data:
+        out[i] = [label, *[None if v.lower() in _NO_VALUE else v for v in values]]
+    return out
+
+
 def parse_workbook(path: Path, resolver: Resolver,
                    mapping: dict[str, str | None] | None = None) -> tuple[list[SheetPreview], list[Obs]]:
     """mapping 為 None 時只做預覽；給了 mapping 時，回傳按 mapping（缺省用自動識別結果）取出的數據點。"""
     previews, observations = [], []
     grids, truncated = read_grids(path)
     for name, grid in grids.items():
-        preview, obs = _parse_sheet(name, grid, resolver, mapping)
+        preview, obs = _parse_sheet(name, split_text_table(grid), resolver, mapping)
         if name in truncated:
             preview.note = "；".join(filter(None, [preview.note, truncated[name]]))
         previews.append(preview)

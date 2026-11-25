@@ -2,6 +2,8 @@
 # status: active = 已可用；reserved = 僅預留接口，尚未接通。
 - {code: manual,       name: 後台手動錄入,       kind: manual, status: active,   priority: 10}
 - {code: reuters_xls,  name: 路透（Excel 整理）, kind: excel,  status: active,   priority: 20}
+- {code: opec_momr,    name: OPEC 月報（二手來源）, kind: excel, status: active,   priority: 30,
+   notes: OPEC+ 分國原油產量，用後台導入頁的模板每月導入一次}
 - {code: excel_other,  name: 其他 Excel 導入,    kind: excel,  status: active,   priority: 50}
 - {code: eia,          name: EIA 公開數據,       kind: api,    status: active,   priority: 30,
    notes: 需要免費的 EIA_API_KEY 環境變量}

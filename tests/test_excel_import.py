@@ -282,20 +282,102 @@ def test_bad_days_are_skipped_on_import_and_removed_on_config_sync(session, sett
     assert sync_to_db(session, cfg)["removed_points"] == 0
 
 
-def test_opec_template_and_report_table_layouts(session, settings):
-    """OPEC 月報的產量：照模板填（月份在行）或把月報的表原樣貼進來（國家在行、月份在列，夾著年度、季度、變化列）。"""
-    from pathlib import Path
-    template = (Path(__file__).parents[1] / "docs" / "templates" / "opec_production.csv").read_text(encoding="utf-8")
-    header = template.splitlines()[0]
-    filled = f"{header}\n2026-10,9980,4320,3400,2550,3290,9320,28500\n2026-09,9950,4310,3390,2540,3300,9300,28400"
-    preview = preview_file(session, settings, filled.encode(), "opec.csv", "reuters_xls")
-    codes = {c["series_code"] for s in preview["sheets"] for c in s["columns"] if c["n_values"] == 2}
-    assert codes == {f"CRUDE_PROD_{k}" for k in ("SAUDI", "IRAQ", "UAE", "KUWAIT", "IRAN", "RUSSIA", "OPEC")}
+MOMR_TEXT = """Table 5 - 7: DoC crude oil production based on secondary sources, tb/d
+Secondary sources 2024 2025 2Q26 3Q26 Aug 26 Sep 26 Oct 26 Oct/Sep
+Algeria 905 940 934 958 961 965 970 5
+Equatorial Guinea 54 52 52 51 – 51 52 1
+IR Iran 3,252 3,280 3,290 3,270 3,281 3,265 3,240 −25
+Saudi Arabia 8,980 9,450 9,300 9,700 9,650 9,950 9,980 30
+Total OPEC 26,598 27,900 27,700 28,300 28,250 28,400 28,500 100
+Russia 9,000 9,100 9,050 9,200 9,180 9,250 9,300 50
+Total DoC 40,498 42,000 41,750 42,500 42,430 42,650 42,800 150
+Notes: Totals may not add up due to independent rounding."""
 
-    report = (",2024,2025,3Q25,Sep25,Oct25,Oct/Sep\nSaudi Arabia,8980,9500,9700,9950,9980,30\n"
-              "IR Iran,3250,3280,3290,3300,3290,-10\nTotal OPEC,26600,27900,28300,28400,28500,100")
-    preview = preview_file(session, settings, report.encode(), "momr.csv", "reuters_xls")
-    assert "CSV：3Q25 是季度匯總，和月度數據混在一起，沒有讀入" in preview["warnings"]
+
+def _template_with(cfg, paste: str | None = None, typed: dict | None = None) -> bytes:
+    """下載的模板，照說明填好：把月報的文字貼進「貼上」的 A 列，或在「手填」裡填數。"""
+    import io
+
+    from openpyxl import load_workbook
+
+    from crudelab.templates import opec_production
+    wb = load_workbook(io.BytesIO(opec_production(cfg)))
+    if paste:
+        for i, line in enumerate(paste.splitlines(), 1):
+            wb["貼上"].cell(i, 1, line)
+    sheet = wb["手填"]
+    rows = {sheet.cell(r, 1).value: r for r in range(2, sheet.max_row + 1)}
+    for label, values in (typed or {}).items():
+        for j, v in enumerate(values, 2):
+            sheet.cell(rows[label], j, v)
+    out = io.BytesIO()
+    wb.save(out)
+    return out.getvalue()
+
+
+def _saudi(session):
+    points = to_series(load_points(session, ["CRUDE_PROD_SAUDI"]), "CRUDE_PROD_SAUDI")
+    return {str(d.date()): v for d, v in points.items()}
+
+
+def test_opec_template_rows_match_config(cfg, admin):
+    """模板的每一行都認得出對應的序列，配置裡所有 OPEC+ 產量序列都在模板裡；後台可以下載。"""
+    from crudelab.templates import MOMR_ROWS, unresolved_rows
+    assert unresolved_rows(cfg) == []
+    assert {code for _, code in MOMR_ROWS} == {c for c in cfg.series if c.startswith("CRUDE_PROD_")}
+    response = admin.get("/api/imports/templates/opec_production.xlsx")
+    assert response.status_code == 200 and response.content[:2] == b"PK"
+    assert "opec_production.xlsx" in response.headers["content-disposition"]
+
+
+def test_opec_report_pasted_from_pdf(session, settings, cfg):
+    """月報 PDF 的表複製到模板（整行擠在一格）：拆開、只導月度列；年度、季度、變化列不導；「–」是沒有數。"""
+    preview = preview_file(session, settings, _template_with(cfg, paste=MOMR_TEXT), "opec.xlsx", "opec_momr")
+    sheet = next(s for s in preview["sheets"] if s["name"] == "貼上")
+    found = {c["series_code"]: c["n_values"] for c in sheet["columns"] if c["series_code"]}
+    assert found == {"CRUDE_PROD_ALGERIA": 3, "CRUDE_PROD_EQ_GUINEA": 2, "CRUDE_PROD_IRAN": 3, "CRUDE_PROD_SAUDI": 3,
+                     "CRUDE_PROD_OPEC": 3, "CRUDE_PROD_RUSSIA": 3, "CRUDE_PROD_DOC": 3}
+    assert not [c for c in sheet["columns"] if not c["series_code"] and c["n_values"]]   # 沒有認不出的行
     commit_batch(session, preview["batch_id"])
-    saudi = to_series(load_points(session, ["CRUDE_PROD_SAUDI"]), "CRUDE_PROD_SAUDI")
-    assert {str(d.date()): v for d, v in saudi.items()} == {"2025-09-01": 9950.0, "2025-10-01": 9980.0}
+    assert _saudi(session) == {"2026-08-01": 9650.0, "2026-09-01": 9950.0, "2026-10-01": 9980.0}
+    iran = to_series(load_points(session, ["CRUDE_PROD_IRAN"]), "CRUDE_PROD_IRAN")
+    assert iran.iloc[-1] == 3240.0
+
+    # 同樣的文字存成 .txt 上傳也行：千分位逗號不會被當成分隔符
+    again = preview_file(session, settings, MOMR_TEXT.encode(), "momr.txt", "opec_momr")
+    assert {c["series_code"] for s in again["sheets"] for c in s["columns"] if c["n_values"] == 3} >= {
+        "CRUDE_PROD_SAUDI", "CRUDE_PROD_DOC"}
+
+
+def test_opec_template_typed_and_revised_next_month(session, settings, cfg):
+    """手填；下個月的月報修訂了上個月：每一期都留著（按報告期保存），主表取最新一期。"""
+    from crudelab.models import ObservationVintage
+    first = _template_with(cfg, typed={"Saudi Arabia": [9650, 9950, 9980], "Total DoC": [42430, 42650, 42800]})
+    preview = preview_file(session, settings, first, "opec_oct.xlsx", "opec_momr", vintage=date(2026, 11, 12))
+    commit_batch(session, preview["batch_id"])
+    revised = MOMR_TEXT.replace("Aug 26 Sep 26 Oct 26 Oct/Sep", "Sep 26 Oct 26 Nov 26 Nov/Oct").replace(
+        "8,980 9,450 9,300 9,700 9,650 9,950 9,980 30", "8,980 9,450 9,300 9,700 9,950 9,940 10,010 70")
+    preview = preview_file(session, settings, _template_with(cfg, paste=revised), "opec_nov.xlsx", "opec_momr",
+                           vintage=date(2026, 11, 24))          # 下一期（日期只要晚於上一期、不晚於今天）
+    commit_batch(session, preview["batch_id"])
+    assert _saudi(session) == {"2026-08-01": 9650.0, "2026-09-01": 9950.0, "2026-10-01": 9940.0,
+                               "2026-11-01": 10010.0}
+    issues = session.scalars(select(ObservationVintage).where(
+        ObservationVintage.series_code == "CRUDE_PROD_SAUDI", ObservationVintage.obs_date == date(2026, 10, 1))).all()
+    assert sorted((v.vintage, v.value) for v in issues) == [(date(2026, 11, 12), 9980.0), (date(2026, 11, 24), 9940.0)]
+
+
+def test_text_table_is_split_only_when_it_lines_up():
+    """整行擠在一格的表：數字個數對不齊、找不到期間表頭、或本來就是多列的表，都原樣返回，不猜。"""
+    from crudelab.connectors.excel import split_text_table
+    good = [[line] for line in MOMR_TEXT.splitlines()]
+    split = split_text_table(good)
+    assert split[3] == ["Equatorial Guinea", "54", "52", "52", "51", None, "51", "52", "1"]
+    assert split[1][0] == "Secondary sources" and split[1][5:7] == ["Aug 26", "Sep 26"]
+    assert len(split) == len(good)                                            # 行號和原文件一致
+    ragged = [*good[:3], ["Libya 1,200 1,250"], *good[3:]]
+    assert split_text_table(ragged) is ragged
+    no_periods = [["Name A B C"], ["Alpha 1 2 3"], ["Beta 4 5 6"], ["Gamma 7 8 9"]]
+    assert split_text_table(no_periods) is no_periods
+    columns = [["Date", "BRENT_M1"], ["2026-01-02", 80]]
+    assert split_text_table(columns) is columns

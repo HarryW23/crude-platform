@@ -28,4 +28,22 @@
 - {code: NON_OECD,  name_zh: 非經合組織, region: 全球}
 - {code: OPEC,      name_zh: 歐佩克, region: 全球}
 - {code: NON_OPEC,  name_zh: 非歐佩克, region: 全球}
+- {code: ALGERIA,     name_zh: 阿爾及利亞, region: 非洲}
+- {code: CONGO,       name_zh: 剛果（布）, region: 非洲}
+- {code: EQ_GUINEA,   name_zh: 赤道幾內亞, region: 非洲}
+- {code: GABON,       name_zh: 加蓬, region: 非洲}
+- {code: LIBYA,       name_zh: 利比亞, region: 非洲}
+- {code: NIGERIA,     name_zh: 尼日利亞, region: 非洲}
+- {code: VENEZUELA,   name_zh: 委內瑞拉, region: 美洲}
+- {code: AZERBAIJAN,  name_zh: 阿塞拜疆, region: 歐洲}
+- {code: BAHRAIN,     name_zh: 巴林, region: 中東}
+- {code: BRUNEI,      name_zh: 文萊, region: 亞洲}
+- {code: KAZAKHSTAN,  name_zh: 哈薩克斯坦, region: 亞洲}
+- {code: MALAYSIA,    name_zh: 馬來西亞, region: 亞洲}
+- {code: MEXICO,      name_zh: 墨西哥, region: 美洲}
+- {code: OMAN,        name_zh: 阿曼, region: 中東}
+- {code: SUDAN,       name_zh: 蘇丹, region: 非洲}
+- {code: SOUTH_SUDAN, name_zh: 南蘇丹, region: 非洲}
+- {code: DOC,        name_zh: OPEC+ 非歐佩克國家, region: 全球}
+- {code: OPEC_PLUS,  name_zh: OPEC+（歐佩克 + 合作國家）, region: 全球}
 - {code: GLOBAL,    name_zh: 全球 / 不適用, region: 全球}

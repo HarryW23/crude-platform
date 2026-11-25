@@ -3,6 +3,7 @@ import math
 from datetime import date, timedelta
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from crudelab import events, projection, reports, scenarios, signals
@@ -170,7 +171,11 @@ def test_projection_matches_hand_calculation(session, cfg, market):
         assert t["balance_effect"] == pytest.approx(8.0 * days)
         assert t["central"] == pytest.approx(price + 8.0 * days + 2.0)
         assert result["expected"][code] == pytest.approx(0.6 * price + 0.4 * (price + 8.0 * days + 2.0))
-    assert tight["horizons"]["W1"]["periods"] == 1 and tight["horizons"]["M3"]["periods"] >= 3
+    # 用到的期數 = 和 [今天, 今天 + 期限) 有重疊的月份數：一周的期限在月底會跨到下個月，是兩期
+    today = pd.Timestamp(date.today())
+    for code, days in (("W1", 7), ("M3", 91)):
+        months = pd.period_range(today, today + pd.Timedelta(days=days - 1), freq="M")
+        assert tight["horizons"][code]["periods"] == len(months)
     assert result["problems"] == []
 
 

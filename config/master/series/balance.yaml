@@ -79,23 +79,63 @@ series:
   # ---------- OPEC+ 分國原油產量（OPEC 月報「二手來源」表，#14） ----------
   # 月度，記在當月第一天。路透上找不到產量調查的 RIC（2026-11-24 find：Platts 的 OPEC+ 調查沒權限，
   # 只有沙特央行的年度數據），改用 OPEC 月報（MOMR）的二手來源表：公開、每月一次，也是 OPEC 考核配額的口徑；
-  # 俄羅斯在 OPEC+（DoC）國家的二手來源表裡。單位千桶/日，和月報、配額決定一致。
-  # 每月照 docs/templates/opec_production.csv 填一行（或把月報表格原樣貼進 Excel，表頭用月報的國家名），
-  # 在後台導入；之後的月報會修訂前幾個月，修訂的數一起填上、重新導入即可（會留下修訂記錄）。
+  # 表裡是全部 OPEC+（DoC）國家：12 個 OPEC 成員、10 個合作國家和三個合計，這裡每一行都有對應的序列，
+  # 整張表貼進來不會有認不出的行。單位千桶/日，和月報、配額決定一致。
+  # 用法見 docs/templates/opec_production.xlsx 的「說明」頁：把月報 PDF 裡的表複製、貼進模板（或任何空白表），在後台導入。
+  # 按報告期保存（vintaged）：每期月報都會修訂前兩三個月，每一期的數字都留著，回測按當時已發佈的那一期取。
+  # 補錄舊月報時，導入頁的「報告發佈日期」填那一期的發佈日；導入當期的不用填。
   - {code: CRUDE_PROD_SAUDI, name_zh: 沙特原油產量, commodity: CRUDE_SUPPLY, location: SAUDI, kind: flow, unit: kb/d,
-     frequency: monthly, module: balance, provider: agency, aliases: [Saudi crude production, 沙特產量, 沙特（千桶/日）, "Saudi Arabia"]}
+     frequency: monthly, module: balance, provider: agency, vintaged: true, aliases: [Saudi crude production, 沙特產量, 沙特（千桶/日）, "Saudi Arabia"]}
   - {code: CRUDE_PROD_IRAQ, name_zh: 伊拉克原油產量, commodity: CRUDE_SUPPLY, location: IRAQ, kind: flow, unit: kb/d,
-     frequency: monthly, module: balance, provider: agency, aliases: [Iraq crude production, 伊拉克產量, 伊拉克（千桶/日）, "Iraq"]}
+     frequency: monthly, module: balance, provider: agency, vintaged: true, aliases: [Iraq crude production, 伊拉克產量, 伊拉克（千桶/日）, "Iraq"]}
   - {code: CRUDE_PROD_UAE, name_zh: 阿聯酋原油產量, commodity: CRUDE_SUPPLY, location: UAE, kind: flow, unit: kb/d,
-     frequency: monthly, module: balance, provider: agency, aliases: [UAE crude production, 阿聯酋產量, 阿聯酋（千桶/日）, "UAE"]}
+     frequency: monthly, module: balance, provider: agency, vintaged: true, aliases: [UAE crude production, 阿聯酋產量, 阿聯酋（千桶/日）, "UAE"]}
   - {code: CRUDE_PROD_KUWAIT, name_zh: 科威特原油產量, commodity: CRUDE_SUPPLY, location: KUWAIT, kind: flow, unit: kb/d,
-     frequency: monthly, module: balance, provider: agency, aliases: [Kuwait crude production, 科威特產量, 科威特（千桶/日）, "Kuwait"]}
+     frequency: monthly, module: balance, provider: agency, vintaged: true, aliases: [Kuwait crude production, 科威特產量, 科威特（千桶/日）, "Kuwait"]}
   - {code: CRUDE_PROD_IRAN, name_zh: 伊朗原油產量, commodity: CRUDE_SUPPLY, location: IRAN, kind: flow, unit: kb/d,
-     frequency: monthly, module: balance, provider: agency, aliases: [Iran crude production, 伊朗產量, 伊朗（千桶/日）, "IR Iran"]}
+     frequency: monthly, module: balance, provider: agency, vintaged: true, aliases: [Iran crude production, 伊朗產量, 伊朗（千桶/日）, "IR Iran"]}
   - {code: CRUDE_PROD_RUSSIA, name_zh: 俄羅斯原油產量, commodity: CRUDE_SUPPLY, location: RUSSIA, kind: flow, unit: kb/d,
-     frequency: monthly, module: balance, provider: agency, aliases: [Russia crude production, 俄羅斯產量, 俄羅斯（千桶/日）, "Russia"]}
+     frequency: monthly, module: balance, provider: agency, vintaged: true, aliases: [Russia crude production, 俄羅斯產量, 俄羅斯（千桶/日）, "Russia"]}
   - {code: CRUDE_PROD_OPEC, name_zh: OPEC 原油產量合計（二手來源）, commodity: CRUDE_SUPPLY, location: OPEC, kind: flow,
-     unit: kb/d, frequency: monthly, module: balance, provider: agency, aliases: [OPEC crude production survey, OPEC產量, OPEC 合計（千桶/日）, "Total OPEC"]}
+     unit: kb/d, frequency: monthly, module: balance, provider: agency, vintaged: true, aliases: [OPEC crude production survey, OPEC產量, OPEC 合計（千桶/日）, "Total OPEC"]}
+  - {code: CRUDE_PROD_ALGERIA, name_zh: 阿爾及利亞原油產量, commodity: CRUDE_SUPPLY, location: ALGERIA, kind: flow, unit: kb/d,
+     frequency: monthly, module: balance, provider: agency, vintaged: true, aliases: ["Algeria", "阿爾及利亞（千桶/日）"]}
+  - {code: CRUDE_PROD_CONGO, name_zh: 剛果（布）原油產量, commodity: CRUDE_SUPPLY, location: CONGO, kind: flow, unit: kb/d,
+     frequency: monthly, module: balance, provider: agency, vintaged: true, aliases: ["Congo", "剛果（布）（千桶/日）"]}
+  - {code: CRUDE_PROD_EQ_GUINEA, name_zh: 赤道幾內亞原油產量, commodity: CRUDE_SUPPLY, location: EQ_GUINEA, kind: flow, unit: kb/d,
+     frequency: monthly, module: balance, provider: agency, vintaged: true, aliases: ["Equatorial Guinea", "赤道幾內亞（千桶/日）"]}
+  - {code: CRUDE_PROD_GABON, name_zh: 加蓬原油產量, commodity: CRUDE_SUPPLY, location: GABON, kind: flow, unit: kb/d,
+     frequency: monthly, module: balance, provider: agency, vintaged: true, aliases: ["Gabon", "加蓬（千桶/日）"]}
+  - {code: CRUDE_PROD_LIBYA, name_zh: 利比亞原油產量, commodity: CRUDE_SUPPLY, location: LIBYA, kind: flow, unit: kb/d,
+     frequency: monthly, module: balance, provider: agency, vintaged: true, aliases: ["Libya", "利比亞（千桶/日）"]}
+  - {code: CRUDE_PROD_NIGERIA, name_zh: 尼日利亞原油產量, commodity: CRUDE_SUPPLY, location: NIGERIA, kind: flow, unit: kb/d,
+     frequency: monthly, module: balance, provider: agency, vintaged: true, aliases: ["Nigeria", "尼日利亞（千桶/日）"]}
+  - {code: CRUDE_PROD_VENEZUELA, name_zh: 委內瑞拉原油產量, commodity: CRUDE_SUPPLY, location: VENEZUELA, kind: flow, unit: kb/d,
+     frequency: monthly, module: balance, provider: agency, vintaged: true, aliases: ["Venezuela", "委內瑞拉（千桶/日）"]}
+  - {code: CRUDE_PROD_AZERBAIJAN, name_zh: 阿塞拜疆原油產量, commodity: CRUDE_SUPPLY, location: AZERBAIJAN, kind: flow, unit: kb/d,
+     frequency: monthly, module: balance, provider: agency, vintaged: true, aliases: ["Azerbaijan", "阿塞拜疆（千桶/日）"]}
+  - {code: CRUDE_PROD_BAHRAIN, name_zh: 巴林原油產量, commodity: CRUDE_SUPPLY, location: BAHRAIN, kind: flow, unit: kb/d,
+     frequency: monthly, module: balance, provider: agency, vintaged: true, aliases: ["Bahrain", "巴林（千桶/日）"]}
+  - {code: CRUDE_PROD_BRUNEI, name_zh: 文萊原油產量, commodity: CRUDE_SUPPLY, location: BRUNEI, kind: flow, unit: kb/d,
+     frequency: monthly, module: balance, provider: agency, vintaged: true, aliases: ["Brunei", "文萊（千桶/日）"]}
+  - {code: CRUDE_PROD_KAZAKHSTAN, name_zh: 哈薩克斯坦原油產量, commodity: CRUDE_SUPPLY, location: KAZAKHSTAN, kind: flow, unit: kb/d,
+     frequency: monthly, module: balance, provider: agency, vintaged: true, aliases: ["Kazakhstan", "哈薩克斯坦（千桶/日）"]}
+  - {code: CRUDE_PROD_MALAYSIA, name_zh: 馬來西亞原油產量, commodity: CRUDE_SUPPLY, location: MALAYSIA, kind: flow, unit: kb/d,
+     frequency: monthly, module: balance, provider: agency, vintaged: true, aliases: ["Malaysia", "馬來西亞（千桶/日）"]}
+  - {code: CRUDE_PROD_MEXICO, name_zh: 墨西哥原油產量, commodity: CRUDE_SUPPLY, location: MEXICO, kind: flow, unit: kb/d,
+     frequency: monthly, module: balance, provider: agency, vintaged: true, aliases: ["Mexico", "墨西哥（千桶/日）"]}
+  - {code: CRUDE_PROD_OMAN, name_zh: 阿曼原油產量, commodity: CRUDE_SUPPLY, location: OMAN, kind: flow, unit: kb/d,
+     frequency: monthly, module: balance, provider: agency, vintaged: true, aliases: ["Oman", "阿曼（千桶/日）"]}
+  - {code: CRUDE_PROD_SUDAN, name_zh: 蘇丹原油產量, commodity: CRUDE_SUPPLY, location: SUDAN, kind: flow, unit: kb/d,
+     frequency: monthly, module: balance, provider: agency, vintaged: true, aliases: ["Sudan", "蘇丹（千桶/日）"]}
+  - {code: CRUDE_PROD_SOUTH_SUDAN, name_zh: 南蘇丹原油產量, commodity: CRUDE_SUPPLY, location: SOUTH_SUDAN, kind: flow, unit: kb/d,
+     frequency: monthly, module: balance, provider: agency, vintaged: true, aliases: ["South Sudan", "南蘇丹（千桶/日）"]}
+  - {code: CRUDE_PROD_NON_OPEC_DOC, name_zh: OPEC+ 非歐佩克國家原油產量合計, commodity: CRUDE_SUPPLY, location: DOC, kind: flow,
+     unit: kb/d, frequency: monthly, module: balance, provider: agency, vintaged: true,
+     aliases: ["Total Non-OPEC DoC", "Non-OPEC DoC", "非歐佩克合作國家合計（千桶/日）"]}
+  - {code: CRUDE_PROD_DOC, name_zh: OPEC+ 原油產量合計, commodity: CRUDE_SUPPLY, location: OPEC_PLUS, kind: flow,
+     unit: kb/d, frequency: monthly, module: balance, provider: agency, vintaged: true,
+     aliases: ["Total DoC", "OPEC+ 合計（千桶/日）"]}
 
   # ---------- 超預期（來自金十財經日曆，實際 − 公佈時的市場預期） ----------
   # 由 config/jin10.yaml 的 calendar_rules 換算寫入。只有從接入那天起才有數據（日曆接口不給歷史），要積累一段時間。
