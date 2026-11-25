@@ -29,7 +29,8 @@ from .schema import JobDef
 from .settings import Settings
 
 ACTOR = "scheduler"
-IMPORTABLE = (".xlsx", ".xlsm", ".xls", ".csv")
+IMPORTABLE = (".xlsx", ".xlsm", ".xls", ".csv", ".pdf")
+PDF_SOURCE = "opec_momr"      # 收件夾裡的 PDF 只可能是 OPEC 月報（connectors/momr.py），按它的數據源記
 SETTLE_SECONDS = 30           # 文件最後一次修改後過這麼久才導入，避免讀到還沒複製完的文件
 log = logging.getLogger("crudelab.jobs")
 
@@ -88,7 +89,8 @@ def _import_folder(session: Session, cfg: Config, settings: Settings, job: JobDe
         entry: dict = {"file": path.name}
         try:
             with session.begin_nested():
-                preview = preview_file(session, settings, path.read_bytes(), path.name, _source(job), ACTOR)
+                source = PDF_SOURCE if path.suffix.lower() == ".pdf" else _source(job)
+                preview = preview_file(session, settings, path.read_bytes(), path.name, source, ACTOR)
                 if (reason := nothing_importable(preview)) is not None:
                     raise ImportFlowError(reason)
                 result = commit_batch(session, preview["batch_id"], actor=ACTOR)

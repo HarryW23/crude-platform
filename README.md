@@ -408,9 +408,16 @@ crudelab verify-rolls reuters_20261124_contracts.csv
 會列出每條曲線規則換月和實際換月對不上的日子、建議寫進 `roll.overrides` 的實際最後交易日；完全一致的提示可以把
 `roll.verified` 改成 true。取數遇到網絡、超時這類臨時錯誤會自動重試一次。
 
-導入預覽會提醒兩種數據質量問題（不擋導入）：很長一段同一個數（數據商沿用舊值，規則在 `config/freshness.yaml`
-的 `repeats`），和單日錯價（某天跳上去第二天又回來、同一天其他序列沒有一起跳）。確實是錯價的，在序列頁手動改正，
-舊值會留在修訂記錄裡。
+導入時會自動跳過明顯不能用的點，預覽裡寫明跳過了什麼：
+- 絕對價格（期貨、掉期、現貨、運費、匯率）正好是 0：路透沒報價的日子填的 0。升貼水、官價是 0 是正常的，不跳過。
+- 序列配置裡 `data_from` 之前的數據：合約改過規格、之前的報價不可比（例如上期所燃料油 2018-07-16 重新上市）。
+- 序列配置裡 `bad_days` 列出的日子：核對過是錯價的（例如路透把盤中最高價當成了收盤價）。
+
+另外提醒兩種數據質量問題（不擋導入）：很長一段同一個數（數據商沿用舊值，規則在 `config/freshness.yaml`
+的 `repeats`），和單日錯價（某天跳上去第二天又回來、同一天其他序列沒有一起跳）。單日錯價核對之後：
+- 確實錯了：日期寫進序列的 `bad_days`，運行 `crudelab init` 同步配置，已經入庫的那個點會被移除（舊值進修訂記錄），
+  以後導入也會跳過；知道正確的數，也可以在序列頁手動錄入（手動錄入的優先，不會被移除）。
+- 確實是行情：日期寫進 `config/freshness.yaml` 的 `spikes.confirmed`，之後不再提醒。依據寫在旁邊的註釋裡。
 
 連不上時腳本會直接說明：多半是 Workspace 的數據通道沒開（`netstat -ano | findstr LISTENING | findstr ":90"`
 看不到 9000 或 9060），把 Workspace 從托盤完全退出再重開即可。
@@ -419,6 +426,35 @@ crudelab verify-rolls reuters_20261124_contracts.csv
 腳本導出的 CSV 是純數值，帶到哪台電腦都一樣。如果改用路透 Excel 插件手工導出：插件的公式（`TR(`、`RDP.`、`RHistory(` 等）
 一離開那台電腦就會變成 `#NAME?` 或空白，所以要**在那台電腦上先「選擇性貼上 → 值」再存檔**。平台導入時發現文件裡
 還有路透公式、或已經出現 `#NAME?`，會整個拒收並給出第一處的位置，不會悄悄少導一部分。
+
+## OPEC 月報（OPEC+ 分國產量）
+
+OPEC+ 各國的原油產量取 OPEC 月報（MOMR）第 5 章的「DoC crude oil production based on secondary sources」表，
+也就是 OPEC 考核配額用的口徑。OPEC 官網有防爬蟲，平台不自己下載：每月月報發佈後（通常在月中），
+
+1. 在瀏覽器裡下載月報 PDF；
+2. 在後台「數據導入」頁原樣上傳，數據源選「OPEC 月報（二手來源）」（或者直接放進 `data/inbox/`，收件夾裡的 PDF
+   自動按 OPEC 月報導入）；
+3. 看一眼預覽，確認。
+
+平台只讀二手來源那張表（不讀各國自報的 direct communication），核對各國之和等於 Total OPEC、Total Non-OPEC DoC、
+Total DoC，對不上就整個文件不導入；年度、季度、變化列跳過。報告期取封面上的發佈日期，每一期的數字都留著
+（月報每期會修訂前兩三個月），回測按當時已發佈的那一期算。補錄舊月報同樣直接上傳。
+PDF 讀不出時（例如月報改了格式），在導入頁下載「導入模板」，把表複製貼進去再導入。
+
+配額和可持續產能是參數（`config/parameters/opec.yaml`）：OPEC+ 每次調整配額，在後台參數頁按生效日期加一個版本。
+
+## 日常操作
+
+| 多久一次 | 做什麼 |
+|---|---|
+| 每個交易日 | 路透那台電腦上 `python lseg_export.py export --days 10`，把 CSV 放進 `data/inbox/` 或在導入頁上傳 |
+| 每周 | EIA、CFTC 由定時任務自動取（需要 `EIA_API_KEY`）；看一眼前台總覽有沒有斷更提示 |
+| 每月中 | OPEC 月報 PDF 上傳（見上一節） |
+| OPEC+ 開會後 | 後台參數頁給配額加一個新版本（生效日期） |
+| 導入預覽有「可能有錯價」 | 核對後寫進 `bad_days`（錯）或 `spikes.confirmed`（真行情），見「從路透取數」 |
+| 每季度 | `python lseg_export.py export --days 120` 順便寫出的 `_contracts.csv`，用 `crudelab verify-rolls` 核對換月規則 |
+| 改了配置之後 | `crudelab check`，然後 `crudelab init`（升級表結構、同步配置） |
 
 ## 密鑰
 

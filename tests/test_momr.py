@@ -118,3 +118,22 @@ def test_real_report_text_november_2026():
     assert rows["Saudi Arabia"][5:8] == ["7,257", "8,012", "9,194"]             # 不是自報表的 9,203*
     assert rows["Algeria"][5] == "1,000" and rows["Bahrain"][7] == "135"        # 「1, 000」「Bah / rain」
     assert rows["Total DoC"][5:8] == ["38,171", "39,195", "41,230"]
+
+
+def test_report_dropped_into_inbox_is_imported_as_opec_report(session, settings, cfg):
+    """收件夾裡的 PDF 按 OPEC 月報的數據源導入（不是收件夾預設的路透）。"""
+    import os
+    import time
+
+    from crudelab import jobs
+    from crudelab.models import Observation
+    inbox = settings.data_dir / "inbox"
+    inbox.mkdir(parents=True)
+    path = inbox / "OPEC_MOMR_November_2026.pdf"
+    path.write_bytes(REPORT)
+    old = time.time() - 120
+    os.utime(path, (old, old))
+    assert jobs.run_now(cfg, settings, "IMPORT_INBOX")["status"] == "ok"
+    sources = set(session.scalars(select(Observation.source_code).where(
+        Observation.series_code == "CRUDE_PROD_SAUDI")))
+    assert sources == {"opec_momr"}
