@@ -30,9 +30,11 @@ MOMR_ROWS: tuple[tuple[str, str], ...] = (
 GUIDE = (
     "OPEC 月報產量導入模板（OPEC+ 分國原油產量，千桶/日）",
     "",
-    "每月 OPEC 月報（MOMR）發佈後做一次，兩種做法任選一種：",
+    "最簡單的做法：在後台導入頁直接上傳月報 PDF，平台自己讀表。這個模板是 PDF 讀不出時（例如月報改了格式）的後備。",
     "",
-    "做法一（推薦）：複製貼上",
+    "用模板的兩種做法：",
+    "",
+    "做法一：複製貼上",
     "  1. 打開月報 PDF，找到第 5 章的表「DoC crude oil production based on secondary sources, tb/d」。",
     "     注意是 secondary sources（二手來源），不是後面那張 direct communication（各國自報）。",
     "  2. 從表頭那一行（2024、2025、季度、月份）選到最後一行 Total DoC，複製。",

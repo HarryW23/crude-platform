@@ -16,6 +16,7 @@ dependencies = [
   "pydantic>=2.6",
   "opencc-python-reimplemented>=0.1.7",   # 繁→簡（金十用簡體），見 src/crudelab/zh.py
   "xlrd>=2.0.1",                          # 舊版 .xls（xlrd 2.x 只讀 .xls），見 connectors/excel.py
+  "pypdf>=6.0",                           # OPEC 月報 PDF 裡的產量表，見 connectors/momr.py（純 Python，不用裝別的）
   "python-docx>=1.1",                     # 報告導出 Word，見 report_docx.py
 ]
 

@@ -230,7 +230,7 @@ WS 點折成 美元/桶 還需要 Worldscale 每年的基準費率，見下面�
 
 ### 機構月報（IEA、OPEC）
 
-IEA / OPEC 的供需只用於和 EIA 口徑對照，不影響平衡表本身。OPEC+ 分國產量（CRUDE_PROD_*，千桶/日）取 OPEC 月報的二手來源表：後台導入頁下載模板，把月報 PDF 裡的表複製貼上後導入（數據源選「OPEC 月報（二手來源）」）；配額和可持續產能是參數（config/parameters/opec.yaml），需要你按 OPEC+ 的決定錄入。
+IEA / OPEC 的供需只用於和 EIA 口徑對照，不影響平衡表本身。OPEC+ 分國產量（CRUDE_PROD_*，千桶/日）取 OPEC 月報的二手來源表：在後台導入頁直接上傳月報 PDF（數據源選「OPEC 月報（二手來源）」），讀不出時用導入模板貼上；配額和可持續產能是參數（config/parameters/opec.yaml），需要你按 OPEC+ 的決定錄入。
 
 | 代碼 | 名稱 | 單位 | 頻率 | 用到它的指標 |
 |---|---|---|---|---|

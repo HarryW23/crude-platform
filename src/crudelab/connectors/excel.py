@@ -1,6 +1,6 @@
 """Excel / CSV 導入：自動識別版式，不要求固定模板。
 
-文件類型：.xlsx / .xlsm（openpyxl）、舊版 .xls（xlrd）、.csv / .txt。
+文件類型：.xlsx / .xlsm（openpyxl）、舊版 .xls（xlrd）、.csv / .txt，以及 OPEC 月報的 PDF（momr.py）。
 合併儲存格按 Excel 顯示的樣子展開：合併區域裡每一格都當作有左上角那個值（例如「Brent」橫跨 M1–M12 的表頭）。
 
 能識別三種常見版式：
@@ -199,6 +199,9 @@ def read_grids(path: Path) -> tuple[dict[str, list[list]], dict[str, str]]:
         return {"CSV": rows[:MAX_ROWS]}, truncated
     if suffix == ".xls":
         return _read_xls(path)
+    if suffix == ".pdf":                         # 只支援 OPEC 月報的產量表（connectors/momr.py）
+        from .momr import read_momr
+        return read_momr(path), truncated
     raise ValueError(f"不支援的文件類型：{suffix or '（無副檔名）'}")
 
 

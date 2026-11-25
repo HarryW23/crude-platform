@@ -81,7 +81,7 @@ series:
   # 只有沙特央行的年度數據），改用 OPEC 月報（MOMR）的二手來源表：公開、每月一次，也是 OPEC 考核配額的口徑；
   # 表裡是全部 OPEC+（DoC）國家：12 個 OPEC 成員、10 個合作國家和三個合計，這裡每一行都有對應的序列，
   # 整張表貼進來不會有認不出的行。單位千桶/日，和月報、配額決定一致。
-  # 用法見 docs/templates/opec_production.xlsx 的「說明」頁：把月報 PDF 裡的表複製、貼進模板（或任何空白表），在後台導入。
+  # 在後台導入頁直接上傳月報 PDF（connectors/momr.py 讀表並核對合計）；PDF 讀不出時，下載導入模板把表貼進去再導入。
   # 按報告期保存（vintaged）：每期月報都會修訂前兩三個月，每一期的數字都留著，回測按當時已發佈的那一期取。
   # 補錄舊月報時，導入頁的「報告發佈日期」填那一期的發佈日；導入當期的不用填。
   - {code: CRUDE_PROD_SAUDI, name_zh: 沙特原油產量, commodity: CRUDE_SUPPLY, location: SAUDI, kind: flow, unit: kb/d,

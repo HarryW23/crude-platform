@@ -48,6 +48,7 @@ psycopg-binary==3.3.9 ; implementation_name != 'pypy'
 pydantic==2.14.4
 pydantic-core==2.50.5
 pygments==2.21.0
+pypdf==7.1.1
 pytest==9.2.0
 pytest-xdist==3.8.0
 python-dateutil==4.0.0
