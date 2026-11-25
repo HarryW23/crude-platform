@@ -57,3 +57,15 @@ def test_files_still_holding_kpler_formulas_are_rejected(session, settings, cfg)
         content = filled(cfg, {"Kpler Saudi Arabia crude exports": [6800, 6900, 7100]}, {}, formula)
         with pytest.raises(ImportFlowError, match=r"Kpler公式.*「月度流量」B5.*貼上「值」"):
             preview_file(session, settings, content, "kpler.xlsx", "kpler_xls")
+
+
+def test_wrong_units_are_flagged_against_existing_data(session, settings, cfg):
+    """單位錯了（插件給的是桶/日而不是千桶/日）：和庫裡已有的數據差 1000 倍，預覽提醒；升貼水這類不查。"""
+    first = filled(cfg, {"Kpler Saudi Arabia crude exports": [6800, 6900, 7100]}, {})
+    commit_batch(session, preview_file(session, settings, first, "k1.xlsx", "kpler_xls")["batch_id"])
+    wrong = filled(cfg, {"Kpler Saudi Arabia crude exports": [6_810_000, 6_905_000, 7_120_000]}, {})
+    warnings = preview_file(session, settings, wrong, "k2.xlsx", "kpler_xls")["warnings"]
+    assert any(w.startswith("KPLER_EXP_SAUDI（沙特原油出口（Kpler））這批數據的中位數是 6,905,000") and "1,001 倍" in w
+               and "單位是 kb/d" in w for w in warnings)
+    right = filled(cfg, {"Kpler Saudi Arabia crude exports": [6810, 6905, 7120]}, {})
+    assert not [w for w in preview_file(session, settings, right, "k3.xlsx", "kpler_xls")["warnings"] if "單位" in w]

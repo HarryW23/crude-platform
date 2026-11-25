@@ -76,6 +76,46 @@ def screen(session: Session, observations: list[Obs]) -> tuple[list[Obs], list[s
     return kept, notes
 
 
+LEVEL_KINDS = ("futures", "swap", "spot", "freight", "fx", "stock", "flow", "position")   # 數值本身是量級的類型
+SCALE_FACTOR = 20             # 新數據的中位數和庫裡已有數據差這麼多倍以上，多半是單位錯了
+
+
+def _amount(x: float) -> str:
+    return f"{x:,.0f}" if x >= 100 else f"{x:.4g}"
+
+
+def scale_warnings(session: Session, observations: list[Obs]) -> list[str]:
+    """單位核對：新數據和庫裡這條序列已有的數據（其他來源的也算）差了幾十倍以上時提醒。
+    典型是單位錯了：Kpler 插件給的是桶而不是千桶、噸而不是千噸，差 1000 倍；美分和美元差 100 倍。
+    升貼水、官價、比率會在 0 附近正負來回，不查。"""
+    from collections import defaultdict
+    from statistics import median
+
+    from .models import Observation
+    new: dict[str, list[float]] = defaultdict(list)
+    for o in observations:
+        new[o.series_code].append(abs(o.value))
+    rows = {r.code: r for r in session.scalars(select(Series).where(Series.code.in_(list(new))))} if new else {}
+    out = []
+    for code, values in sorted(new.items()):
+        row = rows.get(code)
+        if row is None or row.kind not in LEVEL_KINDS or len(values) < 3:
+            continue
+        old = [abs(v) for v in session.scalars(select(Observation.value).where(Observation.series_code == code)
+                                               .order_by(Observation.obs_date.desc()).limit(60))]
+        if len(old) < 3:
+            continue
+        a, b = median(values), median(old)
+        if a <= 0 or b <= 0:
+            continue
+        ratio = a / b
+        if ratio >= SCALE_FACTOR or ratio <= 1 / SCALE_FACTOR:
+            times = f"{ratio:,.0f} 倍" if ratio >= 1 else f"1/{1 / ratio:,.0f}"
+            out.append(f"{code}（{row.name_zh}）這批數據的中位數是 {_amount(a)}，庫裡已有的是 {_amount(b)}，"
+                       f"差了約 {times}：單位多半不對（這條序列的單位是 {row.unit_code}）。確認之前不要導入")
+    return out
+
+
 def _quality_warnings(settings: Settings, observations: list[Obs]) -> list[str]:
     """文件裡的數據質量提醒（不擋導入）：
     - 很長一段相同的值：數據商在沿用舊值（repeats.py，規則見 config/freshness.yaml 的 repeats）
@@ -146,7 +186,7 @@ def preview_file(session: Session, settings: Settings, content: bytes, filename:
     warnings += [f"{p.name}：{p.note}" for p in previews
                  if p.note and "沒有讀入" in p.note and not (pdf and "季度匯總" in p.note)]
     observations, screened = screen(session, observations)
-    warnings += screened + _quality_warnings(settings, observations)
+    warnings += screened + scale_warnings(session, observations) + _quality_warnings(settings, observations)
     if cover_note:
         warnings.append(cover_note)
     if earlier:

@@ -9,7 +9,7 @@
 | 來源 | 序列數 | 現在怎麼取得 | 需要的憑證 | 狀態 |
 |---|---|---|---|---|
 | EIA（美國能源信息署）公開數據 | 27 | 接口自動取數：後台「數據源」頁點「立即取數」，或 `crudelab pull eia` | `EIA_API_KEY`，在 eia.gov/opendata 免費申請 | 已接通（2026-11-25 用真實密鑰核對過全部序列號） |
-| 國際交易所期貨結算價（ICE、NYMEX、DME / IFAD） | 33 | 路透終端導出 Excel 後在後台導入 | 路透 / LSEG 訂閱；之後可接 LSEG API（`LSEG_*`） | Excel 導入可用；API 預留 |
+| 國際交易所期貨結算價（ICE、NYMEX、DME / IFAD） | 36 | 路透終端導出 Excel 後在後台導入 | 路透 / LSEG 訂閱；之後可接 LSEG API（`LSEG_*`） | Excel 導入可用；API 預留 |
 | 國內交易所期貨結算價（INE、上期所、大商所、鄭商所） | 19 | 路透或 Wind 導出 Excel 後導入 | 路透 / Wind 等任一行情訂閱 | Excel 導入可用 |
 | 報價機構的現貨評估價（Platts、Argus 等） | 44 | 路透終端導出 Excel 後導入 | 路透訂閱 **加** 對應報價機構的授權 | Excel 導入可用 |
 | 產油國官方售價（沙特、伊拉克等） | 5 | 每月公佈一次，手動錄入或隨 Excel 導入 | 公開信息，路透有轉載 | 手動 / Excel |
@@ -20,7 +20,7 @@
 | 機構月報（IEA、OPEC） | 29 | 從月報的表格整理成 Excel 後導入 | IEA 月報需訂閱；OPEC 月報公開 | Excel 導入可用 |
 | 煉廠檢修（諮詢機構） | 1 | 從諮詢機構的報告整理成 Excel 後導入 | IIR、Platts、Energy Aspects 等任一家的訂閱 | Excel 導入可用 |
 | Kpler 船舶跟蹤（原油出口、進口、浮倉） | 17 | Kpler 的 Excel 插件按「Kpler 取數模板」取數，轉成數值存檔後導入（數據源選「Kpler（Excel 插件）」） | Kpler 訂閱（Excel 插件 V2）；開通 API 後改為接口自動取（`KPLER_API_TOKEN`，接口已預留） | Excel 導入可用 |
-| CFTC / ICE 持倉報告 | 6 | 定時任務自動取（CFTC 公開接口；ICE 由路透導出） | CFTC 不需要；ICE 見路透 | CFTC 接口已接通 |
+| CFTC / ICE 持倉報告 | 3 | 定時任務自動取（CFTC 公開接口；ICE 由路透導出） | CFTC 不需要；ICE 見路透 | CFTC 接口已接通 |
 | 金十數據 | 10 | 定時任務自動取（財經日曆、報價） | `JIN10_TOKEN`（`crudelab secret set JIN10_TOKEN`） | 已接通 |
 
 序列有沒有數據、最新到哪一天，在後台的「序列」頁看。
@@ -91,6 +91,9 @@
 | `WTI_M12` | WTI 期貨 M12 | USD/bbl | 日 | 地域價差 3 |
 | `OMAN_M1` | 阿曼期貨 M1 | USD/bbl | 日 | 煉廠 1、地域價差 8 |
 | `MURBAN_M1` | 穆爾班期貨 M1 | USD/bbl | 日 | 地域價差 1 |
+| `ICE_BRENT_MM_LONG` | Brent 管理基金多頭 | lots | 周 | 資金持倉 5 |
+| `ICE_BRENT_MM_SHORT` | Brent 管理基金空頭 | lots | 周 | 資金持倉 5 |
+| `ICE_BRENT_OI` | Brent 總持倉量 | lots | 周 | 資金持倉 1 |
 | `GASOIL_ICE_M1` | ICE 柴油期貨 M1 | USD/t | 日 | 煉廠 1 |
 | `GASOIL_ICE_M2` | ICE 柴油期貨 M2 | USD/t | 日 | （目前沒有指標用到） |
 | `GASOIL_ICE_M3` | ICE 柴油期貨 M3 | USD/t | 日 | （目前沒有指標用到） |
@@ -304,9 +307,6 @@ IEA / OPEC 的供需只用於和 EIA 口徑對照，不影響平衡表本身。O
 | `CFTC_WTI_MM_LONG` | WTI 管理基金多頭 | lots | 周 | 資金持倉 5 |
 | `CFTC_WTI_MM_SHORT` | WTI 管理基金空頭 | lots | 周 | 資金持倉 5 |
 | `CFTC_WTI_OI` | WTI 總持倉量 | lots | 周 | 資金持倉 1 |
-| `ICE_BRENT_MM_LONG` | Brent 管理基金多頭 | lots | 周 | 資金持倉 5 |
-| `ICE_BRENT_MM_SHORT` | Brent 管理基金空頭 | lots | 周 | 資金持倉 5 |
-| `ICE_BRENT_OI` | Brent 總持倉量 | lots | 周 | 資金持倉 1 |
 
 ### 金十數據
 

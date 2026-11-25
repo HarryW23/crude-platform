@@ -12,6 +12,12 @@
 # 替代品（配置裡帶 proxy 說明，後台序列頁標「替代」）：阿曼、烏拉爾、WTI 米德蘭、Mars、鹿特丹 3.5% 燃料油。
 # 這台機器上鏈（0#…）一個都展不開，不影響：需要的合約都有連續合約 RIC 可以直接取。
 
+# ---- ICE Brent 持倉（ICE 自己的持倉報告，周度；Brent 資金擁擠度信號缺它）----
+# 要的是管理基金（Managed Money）多頭、空頭和總持倉量，單位手；不知道 RIC，靠搜索
+ICE_BRENT_MM_LONG    | ICE Brent Commitments of Traders managed money long; ICE Futures Europe COT Brent managed money long |
+ICE_BRENT_MM_SHORT   | ICE Brent Commitments of Traders managed money short; ICE Futures Europe COT Brent managed money short |
+ICE_BRENT_OI         | ICE Brent Commitments of Traders open interest; ICE Futures Europe COT Brent open interest |
+
 # ---- 量級可疑，先不用：在 Workspace 裡人工確認含義後再決定（升貼水一般在 ±3 美元，這條是 20 多）----
 EKOFISK_DIFF         | | BFO-EKO
 
