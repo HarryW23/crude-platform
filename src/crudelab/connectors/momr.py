@@ -89,11 +89,16 @@ def read_momr(path: Path) -> dict[str, list[list]]:
     from pypdf import PdfReader
     from pypdf.errors import PdfReadError
 
-    from .excel import join_broken_lines, split_text_table
     try:
         pages = [page.extract_text() or "" for page in PdfReader(path).pages]
     except (PdfReadError, OSError, ValueError) as exc:
         raise MomrError(f"PDF 打不開：{exc}") from None
+    return read_pages(pages)
+
+
+def read_pages(pages: list[str]) -> dict[str, list[list]]:
+    """每頁抽出的文字 → {工作表名: 格子}（read_momr 的後半；測試直接用真實月報抽出的文字）。"""
+    from .excel import join_broken_lines, split_text_table
     out: dict[str, list[list]] = {}
     rows: list[tuple[str, list]] = []                  # (在哪張表, 數據行)：舊版分兩張表，Total DoC 在第二張
     missed: list[str] = []

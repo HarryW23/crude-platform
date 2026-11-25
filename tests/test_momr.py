@@ -101,3 +101,19 @@ def test_old_reports_with_two_tables_and_rounding():
     check_totals(rows)
     with pytest.raises(MomrError, match="Total DoC"):
         check_totals([*rows[:-1], ("表二", ["Total DoC", "16"])])
+
+
+def test_real_report_text_november_2026():
+    """真實月報（2026 年 11 月號第 65 頁）抽出的文字，原樣保存在 tests/data：25 行全部讀出，數字和 PDF 一致。"""
+    from pathlib import Path
+
+    from crudelab.connectors.momr import read_pages
+    text = (Path(__file__).parent / "data" / "momr_2026_11_p65.txt").read_text(encoding="utf-8")
+    sheets = read_pages(["Organization of the Petroleum Exporting Countries\n11 November 2026", text])
+    grid = sheets["第2頁"]
+    rows = {r[0]: r[1:] for r in grid if r and r[0] and r[1] is not None}
+    assert rows["sources"][5:8] == ["Aug 26", "Sep 26", "Oct 26"]              # 表頭（Secondary so/urces 接回）
+    assert len(rows) == 26                                                      # 表頭 + 25 行
+    assert rows["Saudi Arabia"][5:8] == ["7,257", "8,012", "9,194"]             # 不是自報表的 9,203*
+    assert rows["Algeria"][5] == "1,000" and rows["Bahrain"][7] == "135"        # 「1, 000」「Bah / rain」
+    assert rows["Total DoC"][5:8] == ["38,171", "39,195", "41,230"]
