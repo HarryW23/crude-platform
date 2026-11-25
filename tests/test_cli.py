@@ -27,6 +27,12 @@ def test_admin_workflow_end_to_end(tmp_path, capsys):
     code, out, _ = run(capsys, "import", str(sample), "--source", "demo")
     assert code == 0
 
+    code, out, _ = run(capsys, "coverage", "demo")                                 # 每條序列的點數、起止、最新值
+    assert code == 0 and out.startswith("序列\t外部代碼") and "BRENT_M1\t" in out and "有數據" in out
+    code, out, _ = run(capsys, "coverage", "eia")                                  # 配了序列號但沒取到的也列出來
+    assert code == 0 and "EIA_CRUDE_STOCKS\tPET." in out and "沒取到：" in out
+    assert run(capsys, "coverage", "nope")[0] == 1
+
     code, out, _ = run(capsys, "run-job")                                          # 列出任務
     assert code == 0 and "REPORT_DAILY" in out
     code, out, _ = run(capsys, "run-job", "REPORT_DAILY")

@@ -15,6 +15,7 @@
   crudelab data-model --output docs/data-model.md   重新生成數據字典
   crudelab watchdog 平台地址           從另一台機器檢查平台是否在運行，掛了發群通知（見 watchdog.py）
   crudelab purge-source demo          刪除某個數據源的全部數據點
+  crudelab coverage eia               某個數據源下每條序列的點數、起止日期、最新值
 """
 from __future__ import annotations
 
@@ -204,6 +205,39 @@ def cmd_pull(args) -> int:
             return 1
         stats = write_observations(session, observations, args.source)
     print(f"{args.source}：新增 {stats['inserted']}，更新 {stats['updated']}，未變 {stats['unchanged']}")
+    return 0
+
+
+def cmd_coverage(args) -> int:
+    """每條序列在某個數據源下有多少數據：點數、起止日期、最新值。用來核對接口取到的東西對不對
+    （例如 EIA 的序列號是不是都取到了、數量級合不合理）。只打印數字，不含任何密鑰，可以直接發給別人看。"""
+    from sqlalchemy import func
+
+    from .config import load_config
+    from .models import Observation
+    _init()
+    cfg = load_config(get_settings().config_dir)
+    wanted = {"eia": lambda s: s.eia_id, "cftc": lambda s: s.cftc}.get(args.source, lambda s: None)
+    with db.session_scope() as session:
+        stats = {code: (n, first, last) for code, n, first, last in session.execute(
+            select(Observation.series_code, func.count(), func.min(Observation.obs_date), func.max(Observation.obs_date))
+            .where(Observation.source_code == args.source).group_by(Observation.series_code))}
+        latest = {code: session.scalar(select(Observation.value).where(
+            Observation.series_code == code, Observation.source_code == args.source, Observation.obs_date == last))
+            for code, (_, _, last) in stats.items()}
+    codes = sorted({c for c, s in cfg.series.items() if wanted(s)} | set(stats))
+    if not codes:
+        print(f"數據源 {args.source} 下沒有任何序列的數據")
+        return 1
+    print("序列\t外部代碼\t單位\t頻率\t點數\t最早\t最新\t最新值")
+    for code in codes:
+        s = cfg.series.get(code)
+        ref = (s.eia_id or "") if s else ""
+        n, first, last = stats.get(code, (0, None, None))
+        print("\t".join(str(x) for x in (code, ref, s.unit if s else "?", s.frequency if s else "?", n,
+                                          first or "—", last or "—", "—" if code not in latest else f"{latest[code]:g}")))
+    missing = [c for c in codes if c not in stats]
+    print(f"\n共 {len(codes)} 條，有數據 {len(stats)} 條" + (f"，沒取到：{'、'.join(missing)}" if missing else ""))
     return 0
 
 
@@ -901,6 +935,9 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("pull", help="從拉取型數據源取數")
     p.add_argument("source")
     p.set_defaults(func=cmd_pull)
+    p = sub.add_parser("coverage", help="某個數據源下每條序列的點數、起止日期、最新值（核對接口取數用）")
+    p.add_argument("source")
+    p.set_defaults(func=cmd_coverage)
     p = sub.add_parser("make-sample", help="生成演示用假數據 Excel")
     p.add_argument("output")
     p.set_defaults(func=cmd_make_sample)
