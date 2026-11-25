@@ -1,0 +1,64 @@
+# Kpler：船舶跟蹤的原油海運流量和浮倉（#25）。目前用 Kpler 的 Excel 插件取數：在後台導入頁下載
+# 「Kpler 取數模板」，在裝了插件的電腦上按模板取數、轉成數值存檔後導入（數據源選「Kpler（Excel 插件）」）。
+# 表頭用模板裡的名字（別名），不要用 Kpler 原表的國家名：「Saudi Arabia」這種名字已經是 OPEC 月報產量的別名。
+# 流量是月度（記在當月 1 日，千桶/日），當月的數會隨貨物卸完不斷修訂，所以按報告期保存（每次導入記一期）；
+# 浮倉、在途是周度（千桶），同樣按期保存。以後開通 Kpler API，換成接口取數，序列代碼不變。
+
+series:
+  # ---------- 原油出口（按裝貨國，月度） ----------
+  - {code: KPLER_EXP_SAUDI, name_zh: 沙特原油出口（Kpler）, commodity: CRUDE_FLOWS, location: SAUDI, kind: flow,
+     unit: kb/d, frequency: monthly, module: balance, provider: kpler, vintaged: true,
+     aliases: ["Kpler Saudi Arabia crude exports", "沙特原油出口（千桶/日）"]}
+  - {code: KPLER_EXP_IRAQ, name_zh: 伊拉克原油出口（Kpler）, commodity: CRUDE_FLOWS, location: IRAQ, kind: flow,
+     unit: kb/d, frequency: monthly, module: balance, provider: kpler, vintaged: true,
+     aliases: ["Kpler Iraq crude exports", "伊拉克原油出口（千桶/日）"]}
+  - {code: KPLER_EXP_UAE, name_zh: 阿聯酋原油出口（Kpler）, commodity: CRUDE_FLOWS, location: UAE, kind: flow,
+     unit: kb/d, frequency: monthly, module: balance, provider: kpler, vintaged: true,
+     aliases: ["Kpler UAE crude exports", "阿聯酋原油出口（千桶/日）"]}
+  - {code: KPLER_EXP_KUWAIT, name_zh: 科威特原油出口（Kpler）, commodity: CRUDE_FLOWS, location: KUWAIT, kind: flow,
+     unit: kb/d, frequency: monthly, module: balance, provider: kpler, vintaged: true,
+     aliases: ["Kpler Kuwait crude exports", "科威特原油出口（千桶/日）"]}
+  - {code: KPLER_EXP_IRAN, name_zh: 伊朗原油出口（Kpler）, commodity: CRUDE_FLOWS, location: IRAN, kind: flow,
+     unit: kb/d, frequency: monthly, module: balance, provider: kpler, vintaged: true,
+     aliases: ["Kpler Iran crude exports", "伊朗原油出口（千桶/日）"]}
+  - {code: KPLER_EXP_RUSSIA, name_zh: 俄羅斯原油出口（Kpler）, commodity: CRUDE_FLOWS, location: RUSSIA, kind: flow,
+     unit: kb/d, frequency: monthly, module: balance, provider: kpler, vintaged: true,
+     aliases: ["Kpler Russia crude exports", "俄羅斯原油出口（千桶/日）"]}
+  - {code: KPLER_EXP_KAZAKHSTAN, name_zh: 哈薩克斯坦原油出口（Kpler）, commodity: CRUDE_FLOWS, location: KAZAKHSTAN, kind: flow,
+     unit: kb/d, frequency: monthly, module: balance, provider: kpler, vintaged: true,
+     aliases: ["Kpler Kazakhstan crude exports", "哈薩克斯坦原油出口（千桶/日）"]}
+  - {code: KPLER_EXP_US, name_zh: 美國原油出口（Kpler）, commodity: CRUDE_FLOWS, location: US, kind: flow,
+     unit: kb/d, frequency: monthly, module: balance, provider: kpler, vintaged: true,
+     aliases: ["Kpler United States crude exports", "美國原油出口（千桶/日）"]}
+  - {code: KPLER_EXP_BRAZIL, name_zh: 巴西原油出口（Kpler）, commodity: CRUDE_FLOWS, location: BRAZIL, kind: flow,
+     unit: kb/d, frequency: monthly, module: balance, provider: kpler, vintaged: true,
+     aliases: ["Kpler Brazil crude exports", "巴西原油出口（千桶/日）"]}
+
+  # ---------- 原油進口（按卸貨國 / 地區，月度） ----------
+  - {code: KPLER_IMP_CHINA, name_zh: 中國原油進口（Kpler）, commodity: CRUDE_FLOWS, location: CHINA, kind: flow,
+     unit: kb/d, frequency: monthly, module: balance, provider: kpler, vintaged: true,
+     aliases: ["Kpler China crude imports", "中國原油進口（千桶/日）"]}
+  - {code: KPLER_IMP_INDIA, name_zh: 印度原油進口（Kpler）, commodity: CRUDE_FLOWS, location: INDIA, kind: flow,
+     unit: kb/d, frequency: monthly, module: balance, provider: kpler, vintaged: true,
+     aliases: ["Kpler India crude imports", "印度原油進口（千桶/日）"]}
+  - {code: KPLER_IMP_EUROPE, name_zh: 歐洲原油進口（Kpler）, commodity: CRUDE_FLOWS, location: EUROPE, kind: flow,
+     unit: kb/d, frequency: monthly, module: balance, provider: kpler, vintaged: true,
+     aliases: ["Kpler Europe crude imports", "歐洲原油進口（千桶/日）"]}
+  - {code: KPLER_IMP_US, name_zh: 美國原油進口（Kpler）, commodity: CRUDE_FLOWS, location: US, kind: flow,
+     unit: kb/d, frequency: monthly, module: balance, provider: kpler, vintaged: true,
+     aliases: ["Kpler United States crude imports", "美國原油進口（千桶/日）"]}
+  - {code: KPLER_IMP_JAPAN, name_zh: 日本原油進口（Kpler）, commodity: CRUDE_FLOWS, location: JAPAN, kind: flow,
+     unit: kb/d, frequency: monthly, module: balance, provider: kpler, vintaged: true,
+     aliases: ["Kpler Japan crude imports", "日本原油進口（千桶/日）"]}
+  - {code: KPLER_IMP_KOREA, name_zh: 韓國原油進口（Kpler）, commodity: CRUDE_FLOWS, location: KOREA, kind: flow,
+     unit: kb/d, frequency: monthly, module: balance, provider: kpler, vintaged: true,
+     aliases: ["Kpler South Korea crude imports", "韓國原油進口（千桶/日）"]}
+
+  # ---------- 浮倉和在途（全球，周度） ----------
+  # 浮倉：裝著貨、停留超過一段時間不動的船（Kpler 預設 7 天以上）；在途：正在航行的貨（oil on water）
+  - {code: KPLER_FLOATING_WORLD, name_zh: 全球原油浮倉（Kpler）, commodity: CRUDE_FLOATING, location: GLOBAL, kind: stock,
+     unit: kb, frequency: weekly, module: balance, provider: kpler, vintaged: true,
+     aliases: ["Kpler crude floating storage", "全球原油浮倉（千桶）"]}
+  - {code: KPLER_ON_WATER_WORLD, name_zh: 全球原油在途（Kpler）, commodity: CRUDE_FLOATING, location: GLOBAL, kind: stock,
+     unit: kb, frequency: weekly, module: balance, provider: kpler, vintaged: true,
+     aliases: ["Kpler crude oil on water", "全球原油在途（千桶）"]}

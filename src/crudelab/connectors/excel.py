@@ -108,36 +108,43 @@ def parse_number(value) -> float | None:
     return None
 
 
-# 路透 Workspace / Eikon 的 Excel 插件函數。存檔時可能帶 _xll. 前綴。
-REUTERS_FORMULA = re.compile(r"(?<![\w.])(?:_xll\.)?(?:TR|RDP\.\w+|RHistory|RtGet|RData|RSearch)\s*\(", re.IGNORECASE)
+# 數據商 Excel 插件的函數：存檔後離開裝了插件的電腦就算不出來。
+# 路透 Workspace / Eikon 的函數存檔時可能帶 _xll. 前綴；Kpler 插件 V2（Office 加載項）寫成 =Kpler.getTrades(…)，
+# 存進文件時可能是 _xldudf_KPLER_GETTRADES(…) 的形式。
+ADDIN_FORMULAS = {
+    "路透": re.compile(r"(?<![\w.])(?:_xll\.)?(?:TR|RDP\.\w+|RHistory|RtGet|RData|RSearch)\s*\(", re.IGNORECASE),
+    "Kpler": re.compile(r"(?<![\w.])(?:_xldudf_)?kpler[._]\w+\s*\(", re.IGNORECASE),
+}
 BROKEN_ADDIN = "#NAME?"          # 插件函數在沒裝插件的電腦上重算後的錯誤值
 
 
 class LiveCells:
-    """記錄還依賴路透插件的格子。這種文件一離開那台電腦，數字就會變成 #NAME? 或空白，
+    """記錄還依賴數據商插件（路透、Kpler）的格子。這種文件一離開那台電腦，數字就會變成 #NAME? 或空白，
     導入時只會悄悄少掉一部分數據，所以整個文件拒收，並告訴用戶先貼上為數值。"""
 
     def __init__(self) -> None:
-        self.formulas: list[tuple[str, str, str]] = []     # (工作表, 格子, 公式)
-        self.broken: list[tuple[str, str]] = []             # (工作表, 格子)
+        self.formulas: list[tuple[str, str, str, str]] = []     # (插件, 工作表, 格子, 公式)
+        self.broken: list[tuple[str, str]] = []                  # (工作表, 格子)
 
     def cell(self, sheet: str, ref: str | None, formula: str | None, error: str | None) -> None:
-        if formula and REUTERS_FORMULA.search(formula):
-            self.formulas.append((sheet, ref or "?", formula))
+        addin = next((name for name, pattern in ADDIN_FORMULAS.items() if formula and pattern.search(formula)), None)
+        if addin:
+            self.formulas.append((addin, sheet, ref or "?", formula or ""))
         elif error == BROKEN_ADDIN:
             self.broken.append((sheet, ref or "?"))
 
     def check(self) -> None:
-        fix = "請在裝了路透的那台電腦上打開原文件：全選 → 複製 → 選擇性貼上「值」，存檔後再導入。"
         if self.formulas:
-            sheet, ref, formula = self.formulas[0]
+            addin, sheet, ref, formula = self.formulas[0]
             shown = formula if len(formula) <= 60 else formula[:57] + "…"
-            raise ValueError(f"文件裡還有路透公式（例：工作表「{sheet}」{ref}：={shown}），"
-                             f"離開裝了路透的電腦就會變成 #NAME? 或空白。{fix}")
+            raise ValueError(f"文件裡還有{addin}公式（例：工作表「{sheet}」{ref}：={shown}），"
+                             f"離開裝了{addin}插件的電腦就會變成 #NAME? 或空白。請在那台電腦上打開原文件："
+                             "全選 → 複製 → 選擇性貼上「值」，存檔後再導入。")
         if self.broken:
             sheet, ref = self.broken[0]
             raise ValueError(f"文件裡有 {len(self.broken)} 個 {BROKEN_ADDIN} 錯誤（例：工作表「{sheet}」{ref}），"
-                             f"通常是路透公式在沒裝插件的電腦上重算過，這些數據已經丟了。{fix}")
+                             "通常是路透或 Kpler 的公式在沒裝插件的電腦上重算過，這些數據已經丟了。"
+                             "請在裝了插件的電腦上打開原文件：全選 → 複製 → 選擇性貼上「值」，存檔後再導入。")
 
 
 def read_grids(path: Path) -> tuple[dict[str, list[list]], dict[str, str]]:

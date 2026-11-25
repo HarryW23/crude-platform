@@ -444,13 +444,22 @@ PDF 讀不出時（例如月報改了格式），在導入頁下載「導入模�
 
 配額和可持續產能是參數（`config/parameters/opec.yaml`）：OPEC+ 每次調整配額，在後台參數頁按生效日期加一個版本。
 
+## Kpler（原油出口、進口、浮倉）
+
+目前用 Kpler 的 Excel 插件（V2）取數：在後台「數據導入」頁下載「Kpler 取數模板」（從配置生成，序列加了模板自動多一列），
+在裝了插件的電腦上按模板說明頁取數，**全選 → 複製 → 選擇性貼上「值」** 後存檔，上傳時數據源選「Kpler（Excel 插件）」。
+還帶著 Kpler 公式的文件會被拒收。表頭用模板裡的名字，不要換成 Kpler 原表的國家名（「Saudi Arabia」是 OPEC 月報產量的名字）。
+流量月度、浮倉周度，都按報告期保存：當月的流量會隨貨物卸完不斷修訂，盡量每天導入。
+以後開通 Kpler API，換成接口自動取，序列代碼不變（序列定義在 `config/master/series/kpler.yaml`）。
+
 ## 日常操作
 
 | 多久一次 | 做什麼 |
 |---|---|
 | 每個交易日 | 路透那台電腦上 `python lseg_export.py export --days 10`，把 CSV 放進 `data/inbox/` 或在導入頁上傳 |
 | 每周 | EIA、CFTC 由定時任務自動取（需要 `EIA_API_KEY`）；看一眼前台總覽有沒有斷更提示 |
-| 每月中 | OPEC 月報 PDF 上傳（見上一節） |
+| 每月中 | OPEC 月報 PDF 上傳（見「OPEC 月報」一節） |
+| 每天（至少每周） | Kpler 取數模板刷新、貼上為數值、上傳 |
 | OPEC+ 開會後 | 後台參數頁給配額加一個新版本（生效日期） |
 | 導入預覽有「可能有錯價」 | 核對後寫進 `bad_days`（錯）或 `spikes.confirmed`（真行情），見「從路透取數」 |
 | 每季度 | `python lseg_export.py export --days 120` 順便寫出的 `_contracts.csv`，用 `crudelab verify-rolls` 核對換月規則 |

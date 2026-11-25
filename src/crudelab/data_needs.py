@@ -67,14 +67,19 @@ PROVIDERS: dict[str, Provider] = {p.code: p for p in (
     Provider("consult", "煉廠檢修（諮詢機構）", "從諮詢機構的報告整理成 Excel 後導入",
              "IIR、Platts、Energy Aspects 等任一家的訂閱", "Excel 導入可用",
              "全球煉廠停工量（檢修 + 非計劃）。各家口徑不同，固定用一家。"),
+    Provider("kpler", "Kpler 船舶跟蹤（原油出口、進口、浮倉）",
+             "Kpler 的 Excel 插件按「Kpler 取數模板」取數，轉成數值存檔後導入（數據源選「Kpler（Excel 插件）」）",
+             "Kpler 訂閱（Excel 插件 V2）；開通 API 後改為接口自動取（`KPLER_API_TOKEN`，接口已預留）",
+             "Excel 導入可用",
+             "流量月度、浮倉周度，都按報告期保存：當月的流量會隨貨物卸完不斷修訂，盡量每天導入，回測才能按當時看到的數算。"),
     Provider("cftc", "CFTC / ICE 持倉報告", "定時任務自動取（CFTC 公開接口；ICE 由路透導出）", "CFTC 不需要；ICE 見路透",
              "CFTC 接口已接通"),
     Provider("jin10", "金十數據", "定時任務自動取（財經日曆、報價）", "`JIN10_TOKEN`（`crudelab secret set JIN10_TOKEN`）",
              "已接通", "報價只保存最近 1 個交易日，歷史補不了，從接上那天起積累。"),
 )}
 RESERVED_APIS = (
-    ("Kpler", "`KPLER_API_TOKEN`", "船期、到港量、浮倉、分國別進出口流量",
-     "目前沒有任何序列依賴它。接通後可以把全球平衡表從「機構口徑」細化到分國別自下而上。"),
+    ("Kpler API", "`KPLER_API_TOKEN`", "同上一節的 Kpler 序列，改為每天自動取",
+     "現在用 Excel 插件導入；開通 API 後換成接口，序列代碼不變。"),
 )
 
 

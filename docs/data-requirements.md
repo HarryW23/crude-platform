@@ -2,7 +2,7 @@
 
 > 這份文檔由 `crudelab data-needs --output docs/data-requirements.md` 從 `config/` 生成。不要手改；改了配置後重新生成。
 
-系統目前定義了 **193 條序列**，供 161 個指標、5 個煉廠模型、2 張平衡表使用。下面按「從哪裡取得」分組。任何序列都可以用 Excel 導入或在後台手動錄入，接口只是省去人工。
+系統目前定義了 **210 條序列**，供 161 個指標、5 個煉廠模型、2 張平衡表使用。下面按「從哪裡取得」分組。任何序列都可以用 Excel 導入或在後台手動錄入，接口只是省去人工。
 
 ## 一覽
 
@@ -19,6 +19,7 @@
 | 國內現貨價（隆眾、卓創、金聯創等） | 10 | 資訊商網站或終端導出 Excel 後導入 | 國內資訊商訂閱；之後可接其 API（`CN_VENDOR_API_KEY`） | Excel 導入可用；API 預留 |
 | 機構月報（IEA、OPEC） | 29 | 從月報的表格整理成 Excel 後導入 | IEA 月報需訂閱；OPEC 月報公開 | Excel 導入可用 |
 | 煉廠檢修（諮詢機構） | 1 | 從諮詢機構的報告整理成 Excel 後導入 | IIR、Platts、Energy Aspects 等任一家的訂閱 | Excel 導入可用 |
+| Kpler 船舶跟蹤（原油出口、進口、浮倉） | 17 | Kpler 的 Excel 插件按「Kpler 取數模板」取數，轉成數值存檔後導入（數據源選「Kpler（Excel 插件）」） | Kpler 訂閱（Excel 插件 V2）；開通 API 後改為接口自動取（`KPLER_API_TOKEN`，接口已預留） | Excel 導入可用 |
 | CFTC / ICE 持倉報告 | 6 | 定時任務自動取（CFTC 公開接口；ICE 由路透導出） | CFTC 不需要；ICE 見路透 | CFTC 接口已接通 |
 | 金十數據 | 10 | 定時任務自動取（財經日曆、報價） | `JIN10_TOKEN`（`crudelab secret set JIN10_TOKEN`） | 已接通 |
 
@@ -272,6 +273,30 @@ IEA / OPEC 的供需只用於和 EIA 口徑對照，不影響平衡表本身。O
 |---|---|---|---|---|
 | `GLOBAL_REFINERY_OUTAGES` | 全球煉廠停工量（檢修 + 非計劃） | kb/d | 月 | 煉廠 2 |
 
+### Kpler 船舶跟蹤（原油出口、進口、浮倉）
+
+流量月度、浮倉周度，都按報告期保存：當月的流量會隨貨物卸完不斷修訂，盡量每天導入，回測才能按當時看到的數算。
+
+| 代碼 | 名稱 | 單位 | 頻率 | 用到它的指標 |
+|---|---|---|---|---|
+| `KPLER_EXP_SAUDI` | 沙特原油出口（Kpler） | kb/d | 月（按報告期保存：補錄歷史報告時填發佈日期） | （目前沒有指標用到） |
+| `KPLER_EXP_IRAQ` | 伊拉克原油出口（Kpler） | kb/d | 月（按報告期保存：補錄歷史報告時填發佈日期） | （目前沒有指標用到） |
+| `KPLER_EXP_UAE` | 阿聯酋原油出口（Kpler） | kb/d | 月（按報告期保存：補錄歷史報告時填發佈日期） | （目前沒有指標用到） |
+| `KPLER_EXP_KUWAIT` | 科威特原油出口（Kpler） | kb/d | 月（按報告期保存：補錄歷史報告時填發佈日期） | （目前沒有指標用到） |
+| `KPLER_EXP_IRAN` | 伊朗原油出口（Kpler） | kb/d | 月（按報告期保存：補錄歷史報告時填發佈日期） | （目前沒有指標用到） |
+| `KPLER_EXP_RUSSIA` | 俄羅斯原油出口（Kpler） | kb/d | 月（按報告期保存：補錄歷史報告時填發佈日期） | （目前沒有指標用到） |
+| `KPLER_EXP_KAZAKHSTAN` | 哈薩克斯坦原油出口（Kpler） | kb/d | 月（按報告期保存：補錄歷史報告時填發佈日期） | （目前沒有指標用到） |
+| `KPLER_EXP_US` | 美國原油出口（Kpler） | kb/d | 月（按報告期保存：補錄歷史報告時填發佈日期） | （目前沒有指標用到） |
+| `KPLER_EXP_BRAZIL` | 巴西原油出口（Kpler） | kb/d | 月（按報告期保存：補錄歷史報告時填發佈日期） | （目前沒有指標用到） |
+| `KPLER_IMP_CHINA` | 中國原油進口（Kpler） | kb/d | 月（按報告期保存：補錄歷史報告時填發佈日期） | （目前沒有指標用到） |
+| `KPLER_IMP_INDIA` | 印度原油進口（Kpler） | kb/d | 月（按報告期保存：補錄歷史報告時填發佈日期） | （目前沒有指標用到） |
+| `KPLER_IMP_EUROPE` | 歐洲原油進口（Kpler） | kb/d | 月（按報告期保存：補錄歷史報告時填發佈日期） | （目前沒有指標用到） |
+| `KPLER_IMP_US` | 美國原油進口（Kpler） | kb/d | 月（按報告期保存：補錄歷史報告時填發佈日期） | （目前沒有指標用到） |
+| `KPLER_IMP_JAPAN` | 日本原油進口（Kpler） | kb/d | 月（按報告期保存：補錄歷史報告時填發佈日期） | （目前沒有指標用到） |
+| `KPLER_IMP_KOREA` | 韓國原油進口（Kpler） | kb/d | 月（按報告期保存：補錄歷史報告時填發佈日期） | （目前沒有指標用到） |
+| `KPLER_FLOATING_WORLD` | 全球原油浮倉（Kpler） | kb | 周（按報告期保存：補錄歷史報告時填發佈日期） | （目前沒有指標用到） |
+| `KPLER_ON_WATER_WORLD` | 全球原油在途（Kpler） | kb | 周（按報告期保存：補錄歷史報告時填發佈日期） | （目前沒有指標用到） |
+
 ### CFTC / ICE 持倉報告
 
 | 代碼 | 名稱 | 單位 | 頻率 | 用到它的指標 |
@@ -331,7 +356,7 @@ IEA / OPEC 的供需只用於和 EIA 口徑對照，不影響平衡表本身。O
 
 | 接口 | 憑證 | 能提供什麼 | 現狀 |
 |---|---|---|---|
-| Kpler | `KPLER_API_TOKEN` | 船期、到港量、浮倉、分國別進出口流量 | 目前沒有任何序列依賴它。接通後可以把全球平衡表從「機構口徑」細化到分國別自下而上。 |
+| Kpler API | `KPLER_API_TOKEN` | 同上一節的 Kpler 序列，改為每天自動取 | 現在用 Excel 插件導入；開通 API 後換成接口，序列代碼不變。 |
 | 路透 / LSEG Workspace | App Key（在 Workspace 裡生成，只在那台電腦上用） | 以 RIC 直接取行情，取代人工導出 Excel | `scripts/lseg_export.py` 在裝了 Workspace 的電腦上導出 CSV，再導入；RIC 清單見 `scripts/lseg_rics.txt` |
 | 國內資訊商 API | `CN_VENDOR_API_KEY` | 國內現貨價、開工率、庫存 | 預留 |
 

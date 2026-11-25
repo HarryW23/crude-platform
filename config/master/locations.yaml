@@ -44,6 +44,9 @@
 - {code: OMAN,        name_zh: 阿曼, region: 中東}
 - {code: SUDAN,       name_zh: 蘇丹, region: 非洲}
 - {code: SOUTH_SUDAN, name_zh: 南蘇丹, region: 非洲}
+- {code: INDIA,      name_zh: 印度, region: 亞洲}
+- {code: BRAZIL,     name_zh: 巴西, region: 美洲}
+- {code: EUROPE,     name_zh: 歐洲（含英國、挪威、土耳其）, region: 歐洲}
 - {code: DOC,        name_zh: OPEC+ 非歐佩克國家, region: 全球}
 - {code: OPEC_PLUS,  name_zh: OPEC+（歐佩克 + 合作國家）, region: 全球}
 - {code: GLOBAL,    name_zh: 全球 / 不適用, region: 全球}
