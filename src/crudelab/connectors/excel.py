@@ -450,18 +450,30 @@ def _parse_sheet(name: str, grid: list[list], resolver: Resolver,
     return preview, observations
 
 
-_NO_VALUE = {"-", "–", "—", "n.a.", "na", "n/a", "..."}                 # PDF 表格裡「沒有數」的寫法
+_NO_VALUE = {"-", "–", "—", "n.a.", "na", "n/a", "...", ".."}           # PDF 表格裡「沒有數」的寫法
 _MONTH_TOKEN = re.compile(r"^[A-Za-z]{3}$")
 
 
 def _tokens(text: str) -> list[str]:
-    """按空白切開；「Sep 25」這種被空格拆開的月份接回去。"""
+    """按空白切開。PDF 抽出的文字常把一個詞拆開，接回去：「Sep 25」→ 月份，「1, 000」→ 1,000。"""
     out: list[str] = []
     for tok in text.split():
         if out and _MONTH_TOKEN.match(out[-1]) and re.fullmatch(r"'?\d{2}(\d{2})?", tok):
             out[-1] = f"{out[-1]} {tok}"
+        elif out and re.fullmatch(r"-?\d{1,3}(,\d{3})*,", out[-1]) and re.fullmatch(r"\d{3}(,\d{3})*", tok):
+            out[-1] += tok
         else:
             out.append(tok)
+    return out
+
+
+def join_broken_lines(lines: list[str]) -> list[str]:
+    """PDF 抽出的文字會把一個詞斷在兩行：「Bah」+「rain 176 179 …」、「so」+「urces 2024 …」。
+    一行只有一個字母組成的詞、下一行以小寫字母開頭時接起來（接到下一行，這一行留空，行數不變）。"""
+    out = list(lines)
+    for i in range(len(out) - 1):
+        if re.fullmatch(r"[A-Za-z]{1,12}", out[i].strip()) and re.match(r"[a-z]", out[i + 1].strip()):
+            out[i + 1], out[i] = out[i].strip() + out[i + 1].strip(), ""
     return out
 
 
@@ -476,12 +488,13 @@ def split_text_table(grid: list[list]) -> list[list]:
     名稱 = 第一個數字之前的部分（可以有空格，例如 Equatorial Guinea）。各數據行的數字個數必須一樣，
     表頭取數據行之前、最後那幾個詞（個數和數字一樣）裡有能認出的期間（2025、3Q25、Sep25）的那一行。
     對不齊就不拆，不猜。"""
-    lines = []
+    texts = []
     for row in grid:
         cells = [c for c in row if c not in (None, "")]
         if len(cells) > 1 or (cells and not isinstance(cells[0], str)):
             return grid
-        lines.append(_tokens(cells[0]) if cells else [])
+        texts.append(cells[0] if cells else "")
+    lines = [_tokens(t) for t in join_broken_lines(texts)]
     data = []
     for i, toks in enumerate(lines):
         k = next((n for n, t in enumerate(toks) if _is_value(t)), len(toks))

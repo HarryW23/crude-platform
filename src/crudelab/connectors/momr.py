@@ -12,10 +12,11 @@ PDF 抽出的文字是一行一行的（「Saudi Arabia 8,980 9,450 … 30」）
 from __future__ import annotations
 
 import re
+from datetime import date
 from pathlib import Path
 
 CAPTION = re.compile(r"crude\s+oil\s+production\s+based\s+on\s+secondary\s+sources", re.I)
-END = re.compile(r"^(notes?|sources?)\b|^table\s+\d", re.I)       # 表後面的註釋、下一張表
+END = re.compile(r"^(notes?|sources?)\s*:|^table\s+\d", re.I)    # 表後面的註釋（Notes: / Source:）、表的標題
 GRAND_TOTAL = "total doc"
 
 
@@ -52,39 +53,95 @@ def check_totals(rows: list[tuple[str, list]]) -> None:
         group = []
 
 
+def _tables(lines: list[str]) -> list[list[str]]:
+    """一頁文字裡的二手來源產量表：每張表回傳「表頭區 + 數據行」那幾行，交給 split_text_table 拆。
+
+    新版月報兩張表的標題在前、表身在後（PDF 的文字順序），不能按標題找表身；按表身找：
+    連續的「名稱 + 一串數字」行是一張表，往上到前一個註釋（Notes / Source）或標題為止是它的表頭區。
+    表頭區裡要有 secondary（表頭格寫著 Secondary sources），有 direct communication 的不要。"""
+    from .excel import _is_value, _tokens
+
+    def is_row(text: str) -> bool:
+        toks = _tokens(text)
+        k = next((n for n, t in enumerate(toks) if _is_value(t)), len(toks))
+        return k > 0 and len(toks) - k >= 2 and all(_is_value(t) for t in toks[k:])
+
+    found, i = [], 0
+    while i < len(lines):
+        if not is_row(lines[i]):
+            i += 1
+            continue
+        end = i
+        while end + 1 < len(lines) and (is_row(lines[end + 1]) or not lines[end + 1].strip()):
+            end += 1
+        start = i
+        while start > 0 and not END.match(lines[start - 1]) and not CAPTION.search(lines[start - 1]):
+            start -= 1
+        zone = " ".join(lines[start:i]).lower()
+        if "secondary" in zone and "direct" not in zone:
+            found.append(lines[start:end + 1])
+        i = end + 1
+    return found
+
+
 def read_momr(path: Path) -> dict[str, list[list]]:
     """{工作表名: 格子}：每張二手來源產量表一個。找不到、拆不開、合計對不上都報錯。"""
     from pypdf import PdfReader
     from pypdf.errors import PdfReadError
 
-    from .excel import split_text_table
+    from .excel import join_broken_lines, split_text_table
     try:
         pages = [page.extract_text() or "" for page in PdfReader(path).pages]
     except (PdfReadError, OSError, ValueError) as exc:
         raise MomrError(f"PDF 打不開：{exc}") from None
     out: dict[str, list[list]] = {}
     rows: list[tuple[str, list]] = []                  # (在哪張表, 數據行)：舊版分兩張表，Total DoC 在第二張
+    missed: list[str] = []
     for p, text in enumerate(pages, 1):
-        lines = [line.strip() for line in text.splitlines()]
-        for i, line in enumerate(lines):
-            if not CAPTION.search(line) or re.search(r"direct\s+communication", line, re.I):
-                continue
-            block = [line]
-            for later in lines[i + 1:]:
-                if END.match(later):
-                    break
-                block.append(later)
+        captions = [line.strip() for line in text.splitlines() if CAPTION.search(line)]
+        if not captions:
+            continue
+        where = f"第 {p} 頁的表「{captions[0][:80]}」"
+        tables = _tables(join_broken_lines([line.strip() for line in text.splitlines()]))
+        if not tables:                  # 只提到標題的頁（例如表目錄），表不在這頁
+            missed.append(where)
+            continue
+        for n, block in enumerate(tables, 1):
             grid = [[x] if x else [] for x in block]
             split = split_text_table(grid)
-            where = f"第 {p} 頁的表「{line[:80]}」"
             if split is grid:
                 raise MomrError(f"{where} 讀不出：各行的數字個數對不齊，或找不到月份表頭。"
                                 "這個文件沒有導入，請改用導入模板貼上")
             filled = [row for row in split if any(v is not None for v in row)]
             rows += [(where, row) for row in filled[1:]]           # 第一行是表頭
-            out[f"第{p}頁"] = split
+            out[f"第{p}頁" + (f"（{n}）" if len(tables) > 1 else "")] = split
     check_totals(rows)
+    if not out and missed:
+        raise MomrError(f"{missed[0]} 讀不出：找不到表頭寫著 Secondary sources 的表身。"
+                        "這個文件沒有導入，請改用導入模板貼上")
     if not out:
         raise MomrError("這個 PDF 裡沒有找到 OPEC 月報的二手來源產量表"
                         "（標題含 crude oil production based on secondary sources）。目前 PDF 只支援 OPEC 月報")
     return out
+
+
+_MONTH_NAMES = ("january", "february", "march", "april", "may", "june", "july", "august", "september", "october",
+                "november", "december")
+_COVER_DATE = re.compile(r"\b(\d{1,2})\s+(" + "|".join(_MONTH_NAMES) + r")\s+(\d{4})\b", re.I)
+
+
+def publication_date(path: Path) -> date | None:
+    """封面上的發佈日期（第一頁「11 November 2026」），作為報告期。讀不到回 None。"""
+    from pypdf import PdfReader
+    from pypdf.errors import PdfReadError
+    try:
+        text = PdfReader(path).pages[0].extract_text() or ""
+    except (PdfReadError, OSError, ValueError, IndexError):
+        return None
+    m = _COVER_DATE.search(text)
+    if not m:
+        return None
+    try:
+        return date(int(m.group(3)), _MONTH_NAMES.index(m.group(2).lower()) + 1, int(m.group(1)))
+    except ValueError:
+        return None

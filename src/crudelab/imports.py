@@ -126,6 +126,12 @@ def preview_file(session: Session, settings: Settings, content: bytes, filename:
         previews, observations = parse_workbook(stored, make_resolver(session), {})   # {}：按自動識別取出數據點
     except ValueError as exc:
         raise ImportFlowError(str(exc)) from exc
+    cover_note = None
+    if vintage is None and stored.suffix.lower() == ".pdf":          # OPEC 月報：報告期取封面上的發佈日期
+        from .connectors.momr import publication_date
+        vintage = publication_date(stored)
+        if vintage is not None:
+            cover_note = f"報告期按月報封面上的發佈日期記為 {vintage}（補錄舊月報也不用另填）"
     if vintage is not None and vintage > date.today():
         raise ImportFlowError(f"報告期 {vintage} 晚於今天：期號是報告的發佈日期")
     batch = ImportBatch(source_code=source_code, filename=filename, sha256=digest,
@@ -138,6 +144,8 @@ def preview_file(session: Session, settings: Settings, content: bytes, filename:
     warnings += [f"{p.name}：{p.note}" for p in previews if p.note and "沒有讀入" in p.note]
     observations, screened = screen(session, observations)
     warnings += screened + _quality_warnings(settings, observations)
+    if cover_note:
+        warnings.append(cover_note)
     if earlier:
         warnings.append(f"同一個文件之前已導入過（批次 {', '.join(map(str, earlier))}），重複導入不會產生重複數據")
     if vintage is not None:

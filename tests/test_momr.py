@@ -2,16 +2,18 @@
 from datetime import date
 
 import pytest
+from sqlalchemy import select
 
 from crudelab.connectors.momr import MomrError, check_totals
 from crudelab.imports import ImportFlowError, commit_batch, preview_file
 from crudelab.ingest import load_points, to_series
+from crudelab.models import ObservationVintage
 
 HEADER = "Secondary sources 2024 2025 3Q26 Aug 26 Sep 26 Oct 26 Oct/Sep"
 OPEC = ["Algeria 905 940 958 961 965 970 5", "IR Iran 3,252 3,280 3,270 3,281 3,265 3,240 -25",
         "Saudi Arabia 8,980 9,450 9,700 9,650 9,950 9,980 30",
         "Total OPEC 13,137 13,670 13,928 13,892 14,180 14,190 10"]
-DOC = ["Kazakhstan 1,600 1,750 1,800 1,790 1,810 1,820 10", "Russia 9,000 9,100 9,200 9,180 9,250 9,300 50",
+DOC = ["Bahrain 1,600 1,750 1,800 1,790 1,810 1,820 10", "Russia 9,000 9,100 9,200 9,180 9,250 9,300 50",
        "Total Non-OPEC DoC 10,600 10,850 11,000 10,970 11,060 11,120 60",
        "Total DoC 23,737 24,520 24,928 24,862 25,240 25,310 70"]
 
@@ -39,12 +41,23 @@ def pdf(pages: list[list[str]]) -> bytes:
     return out
 
 
+# 照真實月報（2026 年 11 月）抽出來的文字排列，數字是編的：兩張表的標題在前、表身在後；
+# 表頭格「Secondary sources」斷成「Secondary」「so」「urces」，「Bahrain」斷成「Bah」「rain」，
+# 千分位裡多了空格「1, 000」；
+# 自報表在後面，表頭在 Source 之後，缺數寫「..」
 REPORT = pdf([
-    ["Monthly Oil Market Report", "Supply"],
-    ["Table 5 - 7: DoC crude oil production based on secondary sources, tb/d", HEADER, *OPEC, *DOC,
-     "Notes: Totals may not add up due to independent rounding.",
-     "Table 5 - 8: DoC crude oil production based on direct communication, tb/d", HEADER,
-     "Saudi Arabia 8,990 9,460 9,710 9,660 9,960 9,990 30"],
+    ["Organization of the Petroleum Exporting Countries", "11 November 2026", "Monthly Oil Market Report"],
+    ["List of tables: Table 5 - 7: DoC crude oil production based on secondary sources, tb/d ... 55"],
+    ["World Oil Supply", "Table 5 - 7: DoC crude oil production based on secondary sources, tb/d", "",
+     "OPEC crude oil production", "Table 5 - 8: OPEC crude oil production based on direct communication, tb/d", "",
+     "Secondary Change", "so", "urces 2024 2025 3Q26 Aug 26 Sep 26 Oct 26  Oct/Sep",
+     *OPEC,
+     "Bah", "rain 1, 600 1,750 1,800 1,790 1,810 1,820 10", *DOC[1:],
+     "Notes: Totals may not add up due to independent rounding, given available secondary sources to date.",
+     "Source: OPEC.", "Change", "2024 2025 3Q26 Aug 26 Sep 26 Oct 26  Oct/Sep",
+     "Saudi Arabia 8,990 9,460 9,710 9,660 9,960 9,990 30", "Gabon .. .. .. .. .. .. ..",
+     "Iraq 4,100 4,000 3,400 3,500 3,900 4,400 500", "Notes: .. Not available.", "Source: OPEC.",
+     "Direct communication"],
 ])
 
 
@@ -54,13 +67,19 @@ def saudi(session):
 
 
 def test_secondary_sources_table_is_read_and_direct_communication_is_not(session, settings):
-    preview = preview_file(session, settings, REPORT, "momr-november-2026.pdf", "opec_momr", vintage=date(2026, 11, 12))
+    preview = preview_file(session, settings, REPORT, "momr-november-2026.pdf", "opec_momr")
+    assert preview["vintage"] == "2026-11-11"                                  # 報告期取封面日期
+    assert "報告期按月報封面上的發佈日期記為 2026-11-11（補錄舊月報也不用另填）" in preview["warnings"]
     found = {c["series_code"]: c["n_values"] for s in preview["sheets"] for c in s["columns"] if c["series_code"]}
-    countries = ("ALGERIA", "IRAN", "SAUDI", "OPEC", "KAZAKHSTAN", "RUSSIA", "NON_OPEC_DOC", "DOC")
+    countries = ("ALGERIA", "IRAN", "SAUDI", "OPEC", "BAHRAIN", "RUSSIA", "NON_OPEC_DOC", "DOC")
     assert found == {f"CRUDE_PROD_{c}": 3 for c in countries}
-    assert [s["name"] for s in preview["sheets"]] == ["第2頁"]
+    assert [s["name"] for s in preview["sheets"]] == ["第3頁"]                  # 表目錄那頁只有標題，跳過
     commit_batch(session, preview["batch_id"])
     assert saudi(session) == {"2026-08-01": 9650.0, "2026-09-01": 9950.0, "2026-10-01": 9980.0}   # 不是自報的 9,990
+    bahrain = to_series(load_points(session, ["CRUDE_PROD_BAHRAIN"]), "CRUDE_PROD_BAHRAIN")
+    assert list(bahrain) == [1790.0, 1810.0, 1820.0]
+    vintages = session.scalars(select(ObservationVintage.vintage).distinct()).all()
+    assert vintages == [date(2026, 11, 11)]
 
 
 def test_totals_that_do_not_add_up_block_the_import(session, settings):
