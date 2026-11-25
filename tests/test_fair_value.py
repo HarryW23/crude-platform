@@ -128,9 +128,12 @@ def test_backtest_shows_no_benefit_on_noise(session, cfg, monkeypatch):
     assert not any(d["significant"] for d in fv["drift"].values())
 
 
-def test_projection_uses_drift_only_when_chosen_and_available(session, cfg, monkeypatch):
+def test_projection_uses_drift_only_when_chosen_and_available(session, cfg, monkeypatch, pass_drift_gate):
     synthetic(session)
     monkeypatch.setitem(cfg.fair_values, "BRENT_FV", one_factor(code="BRENT_FV"))
+    with pytest.raises(projection.ProjectionError, match="還沒有包含 BRENT_FV 的回測結果"):   # 公允價值也要先過回測
+        projection.create(session, "加", drift_model="BRENT_FV", cfg=cfg)
+    pass_drift_gate("BRENT_FV")
     set_value(session, "PROJ_PRICE_PER_STOCK", 5.0)
     plain = projection.create(session, "不加", cfg=cfg)
     with_drift = projection.create(session, "加", drift_model="BRENT_FV", cfg=cfg)
@@ -155,6 +158,12 @@ def test_projection_uses_drift_only_when_chosen_and_available(session, cfg, monk
     assert unavailable["cases"][0]["horizons"]["M1"]["drift_effect"] == 0
     assert any("不給漂移" in p for p in unavailable["problems"])
 
+    monkeypatch.setitem(cfg.fair_values, "BRENT_FV", one_factor(code="BRENT_FV"))
+    pass_drift_gate("BRENT_FV", passed=False)            # 之後重新回測沒通過：已經選了的推演也不再加漂移
+    failed = projection.compute(session, cfg, with_drift.id)
+    assert failed["cases"][0]["horizons"]["M1"]["drift_effect"] == 0 and failed["drift"] is None
+    assert any("沒有讓 1 個月的推演誤差顯著變小" in p and "這次沒有加漂移" in p for p in failed["problems"])
+
 
 def test_vintage_and_observation_agree_on_fits(session, cfg, monkeypatch):
     from datetime import datetime, time
@@ -174,8 +183,9 @@ def test_vintage_and_observation_agree_on_fits(session, cfg, monkeypatch):
     assert obs["by_horizon"]["W1"]["ic"] == pytest.approx(vin["by_horizon"]["W1"]["ic"])
 
 
-def test_api_report_and_chat(sites, session, cfg, monkeypatch):
+def test_api_report_and_chat(sites, session, cfg, monkeypatch, pass_drift_gate):
     synthetic(session)
+    pass_drift_gate("BRENT_FV")
     monkeypatch.setitem(cfg.fair_values, "BRENT_FV", one_factor(code="BRENT_FV"))
     front = sites["front"]
     front.app.state.crudelab._cfg = cfg

@@ -90,12 +90,13 @@ def fair_value_detail(code: str, days: int = 500, state: AppState = Depends(get_
 
 @router.get("/projection/drift-sources")
 def drift_sources(session: Session = DB, state: AppState = Depends(get_state)):
-    """推演可以選的漂移來源：公允價值模型，以及統計漂移模型（通過回測才能選，否則 why 說明原因）。"""
-    out = [{"code": code, "name_zh": m.name_zh, "kind": "fair_value", "available": True, "why": None}
-           for code, m in state.cfg.fair_values.items()]
-    for code, m in service.stat_models(state.cfg).items():
-        ok, why = service.stat_model_verdict(session, code)
-        out.append({"code": code, "name_zh": m.name_zh, "kind": m.kind, "available": ok, "why": why})
+    """推演可以選的漂移來源：公允價值模型和統計漂移模型，都要通過回測才能選，否則 why 說明原因。"""
+    sources = [(code, m.name_zh, "fair_value") for code, m in state.cfg.fair_values.items()]
+    sources += [(code, m.name_zh, m.kind) for code, m in service.stat_models(state.cfg).items()]
+    out = []
+    for code, name, kind in sources:
+        ok, why = service.drift_verdict(session, code)
+        out.append({"code": code, "name_zh": name, "kind": kind, "available": ok, "why": why})
     return out
 
 

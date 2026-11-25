@@ -177,3 +177,17 @@ def client(sites):
 @pytest.fixture()
 def admin(sites):
     return sites["admin"]
+
+
+@pytest.fixture()
+def pass_drift_gate(session):
+    """記一次「這個漂移來源讓 1 個月的推演誤差顯著變小」的回測結果，讓推演可以選它（門檻本身另有測試）。"""
+    from crudelab.models import BacktestRun
+
+    def apply(*codes: str, passed: bool = True) -> None:
+        gate = {"M1": {"significant": passed, "improvement": 0.05 if passed else -0.2, "t": 2.5 if passed else -3}}
+        session.add(BacktestRun(created_by="t", status="done", mode="observation", step=1, results={
+            "drift_models": {c: {"by_horizon": gate} for c in codes},
+            "fair_values": [{"code": c, "drift": gate} for c in codes]}))
+        session.commit()                    # 接口測試用另一個會話，要能看到
+    return apply

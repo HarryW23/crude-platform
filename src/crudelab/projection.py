@@ -54,15 +54,15 @@ def stat_models(cfg: Config | None) -> dict:
 
 
 def _check_drift_model(cfg: Config | None, drift_model: str | None, session: Session | None = None) -> None:
-    """漂移來源：公允價值模型，或統計漂移模型。統計模型要先通過回測（見 stat_model_verdict）。"""
+    """漂移來源：公允價值模型，或統計漂移模型。兩種都要先通過回測（見 drift_verdict）：
+    公允價值模型擬合得好（R² 夠）不代表它給的漂移能讓推演更準，2026-11 用十年真實數據回測，
+    Brent 公允價值的漂移讓 1 個月的推演誤差反而大了 20%。"""
     if not drift_model:
         return
-    if cfg is not None and drift_model in cfg.fair_values:
-        return
-    if drift_model not in stat_models(cfg):
+    if (cfg is None or drift_model not in cfg.fair_values) and drift_model not in stat_models(cfg):
         raise ProjectionError(f"沒有名為 {drift_model} 的公允價值模型或統計漂移模型")
     if session is not None:
-        ok, why = stat_model_verdict(session, drift_model)
+        ok, why = drift_verdict(session, drift_model)
         if not ok:
             raise ProjectionError(why)
 
@@ -70,16 +70,25 @@ def _check_drift_model(cfg: Config | None, drift_model: str | None, session: Ses
 GATE_HORIZON = "M1"
 
 
-def stat_model_verdict(session: Session, code: str) -> tuple[bool, str]:
-    """統計漂移模型能不能用：最近一次完成的回測裡，它讓 1 個月的推演誤差顯著變小（t > 2）。"""
+def _drift_result(results: dict, code: str) -> dict | None:
+    """回測結果裡某個漂移來源在各期限的誤差比較：{期限: {improvement, t, significant, …}}。"""
+    stat = (results.get("drift_models") or {}).get(code)
+    if stat is not None:
+        return stat.get("by_horizon") or {}
+    fair = next((f for f in results.get("fair_values") or [] if f.get("code") == code), None)
+    return None if fair is None else fair.get("drift") or {}
+
+
+def drift_verdict(session: Session, code: str) -> tuple[bool, str]:
+    """漂移來源能不能用：最近一次包含它的回測裡，它讓 1 個月的推演誤差顯著變小（t > 2）。"""
     from .models import BacktestRun
     run = session.scalars(select(BacktestRun).where(BacktestRun.status == "done").order_by(BacktestRun.id.desc())
                           .limit(20))
     for r in run:
-        result = ((r.results or {}).get("drift_models") or {}).get(code)
-        if result is None:
+        by_horizon = _drift_result(r.results or {}, code)
+        if by_horizon is None:
             continue
-        m = result["by_horizon"].get(GATE_HORIZON) or {}
+        m = by_horizon.get(GATE_HORIZON) or {}
         if m.get("significant") and (m.get("improvement") or 0) > 0:
             return True, f"回測 #{r.id}：1 個月的誤差減少 {m['improvement']:.1%}（t = {m['t']:.1f}）"
         return False, (f"最近一次回測（#{r.id}）裡 {code} 沒有讓 1 個月的推演誤差顯著變小，不能用作漂移。"
@@ -430,7 +439,13 @@ def compute(session: Session, cfg: Config, projection_id: int, as_of: datetime |
             problems.append(f"事件「{event.title}」的機率改成了 {event.probability or 0:.0%}"
                             f"（同步時是 {c.event_probability or 0:.0%}），請重新同步地緣事件")
 
-    drift, drift_info = _drift(cfg, base, row.drift_model, ctx, problems)
+    drift_model = row.drift_model
+    if drift_model:
+        ok, why = drift_verdict(session, drift_model)
+        if not ok:          # 選的時候通過了，之後重新回測沒通過：不加漂移，說明原因
+            problems.append(f"{why}；這次沒有加漂移")
+            drift_model = None
+    drift, drift_info = _drift(cfg, base, drift_model, ctx, problems)
     out_cases: list[dict[str, Any]] = []
     for c in case_rows:
         scenario_balance = (IndicatorEngine(session, cfg, as_of=as_of,

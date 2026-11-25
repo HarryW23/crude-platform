@@ -70,12 +70,13 @@ def test_stat_drift_needs_a_passing_backtest(session, cfg):
         code: {"by_horizon": {"M1": {"significant": True, "improvement": 0.04, "t": 2.6}}}}}))
     session.flush()
     assert projection.set_drift_model(session, cfg, row.id, code).drift_model == code
-    assert projection.set_drift_model(session, cfg, row.id, "BRENT_FV").drift_model == "BRENT_FV"   # 基本面不受限
+    with pytest.raises(projection.ProjectionError, match="還沒有包含 BRENT_FV"):    # 公允價值同樣要過回測
+        projection.set_drift_model(session, cfg, row.id, "BRENT_FV")
     with pytest.raises(projection.ProjectionError, match="沒有名為"):
         projection.set_drift_model(session, cfg, row.id, "NOPE")
 
 
-def test_projection_uses_stat_drift_and_backtest_reports_it(session, cfg, monkeypatch):
+def test_projection_uses_stat_drift_and_backtest_reports_it(session, cfg, monkeypatch, pass_drift_gate):
     from crudelab.ingest import Obs, write_observations
     rng = np.random.default_rng(5)
     regime = np.repeat(rng.choice([-1, 1], size=12), 125)[:1500]
@@ -84,7 +85,8 @@ def test_projection_uses_stat_drift_and_backtest_reports_it(session, cfg, monkey
     write_observations(session, [Obs("BRENT_M1", d.date(), float(p[d])) for d in days], "manual")
     session.commit()
     row = projection.create(session, "t", cfg=cfg)
-    row.drift_model = cfg.projection.drift_models[0].code                           # 直接設，繞過門檻（門檻另有測試）
+    pass_drift_gate(cfg.projection.drift_models[0].code)
+    row.drift_model = cfg.projection.drift_models[0].code
     session.flush()
     out = projection.compute(session, cfg, row.id)
     assert out["drift"]["kind"] == "momentum" and set(out["drift"]["estimates"]) == {"W1", "M1", "M3"}
