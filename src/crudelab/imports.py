@@ -141,7 +141,10 @@ def preview_file(session: Session, settings: Settings, content: bytes, filename:
     earlier = session.scalars(select(ImportBatch.id).where(
         ImportBatch.sha256 == digest, ImportBatch.status == "committed")).all()
     warnings = _duplicates(previews, None)
-    warnings += [f"{p.name}：{p.note}" for p in previews if p.note and "沒有讀入" in p.note]
+    # OPEC 月報 PDF 的表裡每期都有年度、季度匯總列，跳過是正常的，不提醒
+    pdf = stored.suffix.lower() == ".pdf"
+    warnings += [f"{p.name}：{p.note}" for p in previews
+                 if p.note and "沒有讀入" in p.note and not (pdf and "季度匯總" in p.note)]
     observations, screened = screen(session, observations)
     warnings += screened + _quality_warnings(settings, observations)
     if cover_note:

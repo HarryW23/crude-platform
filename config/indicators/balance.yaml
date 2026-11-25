@@ -67,9 +67,15 @@
    formula: "CRUDE_PROD_KUWAIT - OPEC_QUOTA_KUWAIT"}
 - {code: OPEC_OVER_RUSSIA, name_zh: 俄羅斯超產, module: balance, group: OPEC+ 產量, unit: kb/d,
    formula: "CRUDE_PROD_RUSSIA - OPEC_QUOTA_RUSSIA"}
-- {code: OPEC_OVER_TOTAL, name_zh: 五國超產合計, module: balance, group: OPEC+ 產量, unit: kb/d,
-   formula: "OPEC_OVER_SAUDI + OPEC_OVER_IRAQ + OPEC_OVER_UAE + OPEC_OVER_KUWAIT + OPEC_OVER_RUSSIA",
-   notes: 為正 = 整體在超產，實際供應比配額多}
+- {code: OPEC_OVER_KAZAKHSTAN, name_zh: 哈薩克斯坦超產, module: balance, group: OPEC+ 產量, unit: kb/d,
+   formula: "CRUDE_PROD_KAZAKHSTAN - OPEC_QUOTA_KAZAKHSTAN", notes: 長期超產；補償減產計劃要求的額外減產不在配額裡}
+- {code: OPEC_OVER_ALGERIA, name_zh: 阿爾及利亞超產, module: balance, group: OPEC+ 產量, unit: kb/d,
+   formula: "CRUDE_PROD_ALGERIA - OPEC_QUOTA_ALGERIA"}
+- {code: OPEC_OVER_OMAN, name_zh: 阿曼超產, module: balance, group: OPEC+ 產量, unit: kb/d,
+   formula: "CRUDE_PROD_OMAN - OPEC_QUOTA_OMAN"}
+- {code: OPEC_OVER_TOTAL, name_zh: 八國超產合計, module: balance, group: OPEC+ 產量, unit: kb/d,
+   formula: "OPEC_OVER_SAUDI + OPEC_OVER_IRAQ + OPEC_OVER_UAE + OPEC_OVER_KUWAIT + OPEC_OVER_RUSSIA + OPEC_OVER_KAZAKHSTAN + OPEC_OVER_ALGERIA + OPEC_OVER_OMAN",
+   notes: 有配額的八國（V8）合計；為正 = 整體在超產，實際供應比配額多}
 - {code: OPEC_SPARE_SAUDI, name_zh: 沙特閒置產能, module: balance, group: OPEC+ 產量, unit: kb/d,
    formula: "OPEC_CAPACITY_SAUDI - CRUDE_PROD_SAUDI"}
 - {code: OPEC_SPARE_IRAQ, name_zh: 伊拉克閒置產能, module: balance, group: OPEC+ 產量, unit: kb/d,

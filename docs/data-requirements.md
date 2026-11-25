@@ -2,7 +2,7 @@
 
 > 這份文檔由 `crudelab data-needs --output docs/data-requirements.md` 從 `config/` 生成。不要手改；改了配置後重新生成。
 
-系統目前定義了 **193 條序列**，供 158 個指標、5 個煉廠模型、2 張平衡表使用。下面按「從哪裡取得」分組。任何序列都可以用 Excel 導入或在後台手動錄入，接口只是省去人工。
+系統目前定義了 **193 條序列**，供 161 個指標、5 個煉廠模型、2 張平衡表使用。下面按「從哪裡取得」分組。任何序列都可以用 Excel 導入或在後台手動錄入，接口只是省去人工。
 
 ## 一覽
 
@@ -245,7 +245,7 @@ IEA / OPEC 的供需只用於和 EIA 口徑對照，不影響平衡表本身。O
 | `CRUDE_PROD_IRAN` | 伊朗原油產量 | kb/d | 月（按報告期保存：補錄歷史報告時填發佈日期） | （目前沒有指標用到） |
 | `CRUDE_PROD_RUSSIA` | 俄羅斯原油產量 | kb/d | 月（按報告期保存：補錄歷史報告時填發佈日期） | 供需 2 |
 | `CRUDE_PROD_OPEC` | OPEC 原油產量合計（二手來源） | kb/d | 月（按報告期保存：補錄歷史報告時填發佈日期） | （目前沒有指標用到） |
-| `CRUDE_PROD_ALGERIA` | 阿爾及利亞原油產量 | kb/d | 月（按報告期保存：補錄歷史報告時填發佈日期） | （目前沒有指標用到） |
+| `CRUDE_PROD_ALGERIA` | 阿爾及利亞原油產量 | kb/d | 月（按報告期保存：補錄歷史報告時填發佈日期） | 供需 2 |
 | `CRUDE_PROD_CONGO` | 剛果（布）原油產量 | kb/d | 月（按報告期保存：補錄歷史報告時填發佈日期） | （目前沒有指標用到） |
 | `CRUDE_PROD_EQ_GUINEA` | 赤道幾內亞原油產量 | kb/d | 月（按報告期保存：補錄歷史報告時填發佈日期） | （目前沒有指標用到） |
 | `CRUDE_PROD_GABON` | 加蓬原油產量 | kb/d | 月（按報告期保存：補錄歷史報告時填發佈日期） | （目前沒有指標用到） |
@@ -255,10 +255,10 @@ IEA / OPEC 的供需只用於和 EIA 口徑對照，不影響平衡表本身。O
 | `CRUDE_PROD_AZERBAIJAN` | 阿塞拜疆原油產量 | kb/d | 月（按報告期保存：補錄歷史報告時填發佈日期） | （目前沒有指標用到） |
 | `CRUDE_PROD_BAHRAIN` | 巴林原油產量 | kb/d | 月（按報告期保存：補錄歷史報告時填發佈日期） | （目前沒有指標用到） |
 | `CRUDE_PROD_BRUNEI` | 文萊原油產量 | kb/d | 月（按報告期保存：補錄歷史報告時填發佈日期） | （目前沒有指標用到） |
-| `CRUDE_PROD_KAZAKHSTAN` | 哈薩克斯坦原油產量 | kb/d | 月（按報告期保存：補錄歷史報告時填發佈日期） | （目前沒有指標用到） |
+| `CRUDE_PROD_KAZAKHSTAN` | 哈薩克斯坦原油產量 | kb/d | 月（按報告期保存：補錄歷史報告時填發佈日期） | 供需 2 |
 | `CRUDE_PROD_MALAYSIA` | 馬來西亞原油產量 | kb/d | 月（按報告期保存：補錄歷史報告時填發佈日期） | （目前沒有指標用到） |
 | `CRUDE_PROD_MEXICO` | 墨西哥原油產量 | kb/d | 月（按報告期保存：補錄歷史報告時填發佈日期） | （目前沒有指標用到） |
-| `CRUDE_PROD_OMAN` | 阿曼原油產量 | kb/d | 月（按報告期保存：補錄歷史報告時填發佈日期） | （目前沒有指標用到） |
+| `CRUDE_PROD_OMAN` | 阿曼原油產量 | kb/d | 月（按報告期保存：補錄歷史報告時填發佈日期） | 供需 2 |
 | `CRUDE_PROD_SUDAN` | 蘇丹原油產量 | kb/d | 月（按報告期保存：補錄歷史報告時填發佈日期） | （目前沒有指標用到） |
 | `CRUDE_PROD_SOUTH_SUDAN` | 南蘇丹原油產量 | kb/d | 月（按報告期保存：補錄歷史報告時填發佈日期） | （目前沒有指標用到） |
 | `CRUDE_PROD_NON_OPEC_DOC` | OPEC+ 非歐佩克國家原油產量合計 | kb/d | 月（按報告期保存：補錄歷史報告時填發佈日期） | （目前沒有指標用到） |
@@ -316,6 +316,9 @@ IEA / OPEC 的供需只用於和 EIA 口徑對照，不影響平衡表本身。O
 | `OPEC_QUOTA_UAE` | 阿聯酋配額 | kb/d |  |
 | `OPEC_QUOTA_KUWAIT` | 科威特配額 | kb/d |  |
 | `OPEC_QUOTA_RUSSIA` | 俄羅斯配額 | kb/d |  |
+| `OPEC_QUOTA_KAZAKHSTAN` | 哈薩克斯坦配額 | kb/d |  |
+| `OPEC_QUOTA_ALGERIA` | 阿爾及利亞配額 | kb/d |  |
+| `OPEC_QUOTA_OMAN` | 阿曼配額 | kb/d |  |
 | `OPEC_CAPACITY_SAUDI` | 沙特可持續產能 | kb/d |  |
 | `OPEC_CAPACITY_IRAQ` | 伊拉克可持續產能 | kb/d |  |
 | `OPEC_CAPACITY_UAE` | 阿聯酋可持續產能 | kb/d |  |

@@ -69,7 +69,8 @@ def saudi(session):
 def test_secondary_sources_table_is_read_and_direct_communication_is_not(session, settings):
     preview = preview_file(session, settings, REPORT, "momr-november-2026.pdf", "opec_momr")
     assert preview["vintage"] == "2026-11-11"                                  # 報告期取封面日期
-    assert "報告期按月報封面上的發佈日期記為 2026-11-11（補錄舊月報也不用另填）" in preview["warnings"]
+    # 季度匯總列跳過是正常的，不提醒
+    assert preview["warnings"] == ["報告期按月報封面上的發佈日期記為 2026-11-11（補錄舊月報也不用另填）"]
     found = {c["series_code"]: c["n_values"] for s in preview["sheets"] for c in s["columns"] if c["series_code"]}
     countries = ("ALGERIA", "IRAN", "SAUDI", "OPEC", "BAHRAIN", "RUSSIA", "NON_OPEC_DOC", "DOC")
     assert found == {f"CRUDE_PROD_{c}": 3 for c in countries}
