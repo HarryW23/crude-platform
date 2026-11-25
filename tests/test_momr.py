@@ -104,11 +104,11 @@ def test_old_reports_with_two_tables_and_rounding():
 
 
 def test_real_report_text_november_2026():
-    """真實月報（2026 年 11 月號第 65 頁）抽出的文字，原樣保存在 tests/data：25 行全部讀出，數字和 PDF 一致。"""
+    """真實月報（2026 年 11 月號第 65 頁）抽出的文字，原樣保存在 tests/fixtures：25 行全部讀出，數字和 PDF 一致。"""
     from pathlib import Path
 
     from crudelab.connectors.momr import read_pages
-    text = (Path(__file__).parent / "data" / "momr_2026_11_p65.txt").read_text(encoding="utf-8")
+    text = (Path(__file__).parent / "fixtures" / "momr_2026_11_p65.txt").read_text(encoding="utf-8")
     sheets = read_pages(["Organization of the Petroleum Exporting Countries\n11 November 2026", text])
     grid = sheets["第2頁"]
     rows = {r[0]: r[1:] for r in grid if r and r[0] and r[1] is not None}
