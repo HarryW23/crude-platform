@@ -454,7 +454,7 @@ _NO_VALUE = {"-", "–", "—", "n.a.", "na", "n/a", "...", ".."}           # PD
 _MONTH_TOKEN = re.compile(r"^[A-Za-z]{3}$")
 
 
-def _tokens(text: str) -> list[str]:
+def tokens(text: str) -> list[str]:
     """按空白切開。PDF 抽出的文字常把一個詞拆開，接回去：「Sep 25」→ 月份，「1, 000」→ 1,000。"""
     out: list[str] = []
     for tok in text.split():
@@ -481,6 +481,14 @@ def _is_value(tok: str) -> bool:
     return parse_number(tok) is not None or tok.lower() in _NO_VALUE
 
 
+def text_row(tokens: list[str]) -> tuple[str, list[str]] | None:
+    """「名稱 + 至少兩個數」的一行 → (名稱, 數)；名稱是第一個數之前的部分（可以有空格）。不是就回 None。"""
+    k = next((n for n, t in enumerate(tokens) if _is_value(t)), len(tokens))
+    if k > 0 and len(tokens) - k >= 2 and all(_is_value(t) for t in tokens[k:]):
+        return " ".join(tokens[:k]), tokens[k:]
+    return None
+
+
 def split_text_table(grid: list[list]) -> list[list]:
     """從 PDF 複製的表格，貼進 Excel 或存成文字文件後，常常整行擠在一格：「Saudi Arabia 9,950 9,980 30」。
     整張表每行都只有一格文字、而且能看出是「名稱 + 一串數字」的表時，拆成格子；否則原樣返回。
@@ -494,12 +502,8 @@ def split_text_table(grid: list[list]) -> list[list]:
         if len(cells) > 1 or (cells and not isinstance(cells[0], str)):
             return grid
         texts.append(cells[0] if cells else "")
-    lines = [_tokens(t) for t in join_broken_lines(texts)]
-    data = []
-    for i, toks in enumerate(lines):
-        k = next((n for n, t in enumerate(toks) if _is_value(t)), len(toks))
-        if k > 0 and len(toks) - k >= 2 and all(_is_value(t) for t in toks[k:]):
-            data.append((i, " ".join(toks[:k]), toks[k:]))
+    lines = [tokens(t) for t in join_broken_lines(texts)]
+    data = [(i, *parsed) for i, toks in enumerate(lines) if (parsed := text_row(toks))]
     if len(data) < 3 or len({len(v) for _, _, v in data}) != 1:
         return grid
     width = len(data[0][2])

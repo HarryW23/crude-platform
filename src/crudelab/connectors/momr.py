@@ -15,6 +15,8 @@ import re
 from datetime import date
 from pathlib import Path
 
+from .excel import join_broken_lines, parse_number, split_text_table, text_row, tokens
+
 CAPTION = re.compile(r"crude\s+oil\s+production\s+based\s+on\s+secondary\s+sources", re.I)
 END = re.compile(r"^(notes?|sources?)\s*:|^table\s+\d", re.I)    # 表後面的註釋（Notes: / Source:）、表的標題
 GRAND_TOTAL = "total doc"
@@ -22,11 +24,6 @@ GRAND_TOTAL = "total doc"
 
 class MomrError(ValueError):
     pass
-
-
-def _number(text) -> float | None:
-    from .excel import parse_number
-    return parse_number(text)
 
 
 def check_totals(rows: list[tuple[str, list]]) -> None:
@@ -40,8 +37,8 @@ def check_totals(rows: list[tuple[str, list]]) -> None:
             continue
         parts = totals if label == GRAND_TOTAL and totals else group
         for j in range(1, len(row)):
-            values = [_number(r[j]) for r in parts]
-            stated = _number(row[j])
+            values = [parse_number(r[j]) for r in parts]
+            stated = parse_number(row[j])
             if stated is None or not values or any(v is None for v in values):
                 continue
             expected = sum(v for v in values if v is not None)
@@ -59,12 +56,8 @@ def _tables(lines: list[str]) -> list[list[str]]:
     新版月報兩張表的標題在前、表身在後（PDF 的文字順序），不能按標題找表身；按表身找：
     連續的「名稱 + 一串數字」行是一張表，往上到前一個註釋（Notes / Source）或標題為止是它的表頭區。
     表頭區裡要有 secondary（表頭格寫著 Secondary sources），有 direct communication 的不要。"""
-    from .excel import _is_value, _tokens
-
     def is_row(text: str) -> bool:
-        toks = _tokens(text)
-        k = next((n for n, t in enumerate(toks) if _is_value(t)), len(toks))
-        return k > 0 and len(toks) - k >= 2 and all(_is_value(t) for t in toks[k:])
+        return text_row(tokens(text)) is not None
 
     found, i = [], 0
     while i < len(lines):
@@ -98,7 +91,6 @@ def read_momr(path: Path) -> dict[str, list[list]]:
 
 def read_pages(pages: list[str]) -> dict[str, list[list]]:
     """每頁抽出的文字 → {工作表名: 格子}（read_momr 的後半；測試直接用真實月報抽出的文字）。"""
-    from .excel import join_broken_lines, split_text_table
     out: dict[str, list[list]] = {}
     rows: list[tuple[str, list]] = []                  # (在哪張表, 數據行)：舊版分兩張表，Total DoC 在第二張
     missed: list[str] = []
