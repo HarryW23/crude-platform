@@ -8,6 +8,9 @@
 
 series:
   # ---------- 原油出口（按裝貨國，月度；Flows → Exports，按 Origin country 拆分） ----------
+  # Kpler 按裝貨港所在的國家算：哈薩克斯坦的原油大多經 CPC 管道從俄羅斯的新羅西斯克裝船，算在俄羅斯名下
+  # （Kpler 的「Kazakhstan」一列只有幾萬桶/日），所以不設哈薩克斯坦出口；俄羅斯這條含 CPC。
+  # 沙特、科威特不含中立區（Kpler 單列「Saudi-Kuwaiti Neutral Zone」）。
   - {code: KPLER_EXP_SAUDI, name_zh: 沙特原油出口（Kpler）, commodity: CRUDE_FLOWS, location: SAUDI, kind: flow,
      unit: kb/d, frequency: monthly, module: balance, provider: kpler, vintaged: true,
      aliases: ["kpler:exports:Saudi Arabia"]}
@@ -26,9 +29,6 @@ series:
   - {code: KPLER_EXP_RUSSIA, name_zh: 俄羅斯原油出口（Kpler）, commodity: CRUDE_FLOWS, location: RUSSIA, kind: flow,
      unit: kb/d, frequency: monthly, module: balance, provider: kpler, vintaged: true,
      aliases: ["kpler:exports:Russian Federation"]}
-  - {code: KPLER_EXP_KAZAKHSTAN, name_zh: 哈薩克斯坦原油出口（Kpler）, commodity: CRUDE_FLOWS, location: KAZAKHSTAN, kind: flow,
-     unit: kb/d, frequency: monthly, module: balance, provider: kpler, vintaged: true,
-     aliases: ["kpler:exports:Kazakhstan"]}
   - {code: KPLER_EXP_US, name_zh: 美國原油出口（Kpler）, commodity: CRUDE_FLOWS, location: US, kind: flow,
      unit: kb/d, frequency: monthly, module: balance, provider: kpler, vintaged: true,
      aliases: ["kpler:exports:United States"]}

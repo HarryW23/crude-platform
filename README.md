@@ -451,7 +451,7 @@ PDF 讀不出時（例如月報改了格式），在導入頁下載「導入模�
 
 | 下載 | 怎麼選 | 對應的序列 |
 |---|---|---|
-| 出口 | Flows → 商品 Crude → Exports → Monthly → 單位 kbd → 按 Origin 的 Country 拆分 | 9 國原油出口 |
+| 出口 | Flows → 商品 Crude → Exports → Monthly → 單位 kbd → 按 Origin 的 Country 拆分 | 8 國原油出口（俄羅斯含哈薩克斯坦經 CPC 的量） |
 | 進口 | Flows → 商品 Crude → Imports → Monthly → 單位 kbd → 按 **Destination** 的 Country 拆分（歐洲用 Continent 再下一份） | 6 國 / 地區原油進口 |
 | 庫存 | Inventories → 商品 Crude → 勾選含海上（commodities on water）→ Weekly → 按 onshore/offshore status 拆分 | 全球庫存、陸上、在途、浮倉 |
 
