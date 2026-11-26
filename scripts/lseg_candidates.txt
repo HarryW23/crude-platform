@@ -8,17 +8,9 @@
 # WTI MEH、CPC、新加坡 92 汽油 / 10ppm 柴油 / 航煤 / 石腦油 / 380、Eurobob、PX、純苯、乙烯、
 # 運費 TD3C / TD15 / TD20 / TD25（Baltic 指數 .BMEG / .BAWC / .BAWU / .BAUM）、
 # 國內期貨主力 FU（SFUoi1）、LU（ILUcv1）、BU（SBUoi1）、PP（DCCPv1）、PTA（CTAoi1）、LLDPE（DLLoi1）、MEG（DEGoi1）、迪拜現貨（DUB-1M）、
-# 日本石腦油（路透前半月評估 NAF-1H-TYO）、美元指數（.DXY）、美債 2 年 / 10 年和 10 年 TIPS（收益率字段 MID_YLD_1）；
+# 日本石腦油（路透前半月評估 NAF-1H-TYO）、ICE Brent 持倉（1ICELCOMLNG / 1ICELCOMSHT / 1ICELCOOI）、美元指數（.DXY）、美債 2 年 / 10 年和 10 年 TIPS（收益率字段 MID_YLD_1）；
 # 替代品（配置裡帶 proxy 說明，後台序列頁標「替代」）：阿曼、烏拉爾、WTI 米德蘭、Mars、鹿特丹 3.5% 燃料油。
 # 這台機器上鏈（0#…）一個都展不開，不影響：需要的合約都有連續合約 RIC 可以直接取。
-
-# ---- ICE Brent 持倉（ICE 自己的持倉報告，周度；Brent 資金擁擠度信號缺它）----
-# 第一輪（2026-11-26）：總持倉找到了 1ICELCOOI（只含期貨，已寫進配置；3ICELCOOI 是期貨加期權）。
-# 管理基金多空兩輪都沒找到（按 managed money / Money Manager 搜不到，照總持倉寫法猜的 10 個 RIC 都不存在）。
-# 下一步用 search 列出這一類的全部 RIC 和標題，看路透到底有沒有管理基金這個分類：
-#   python lseg_export.py search "ICE Europe Crude Oil Brent Futures Commitments of Traders" "ICE Brent Crude Futures Commitments of Traders"
-ICE_BRENT_MM_LONG    | ICE Europe Crude Oil Brent Futures Commitments of Traders Money Manager Long |
-ICE_BRENT_MM_SHORT   | ICE Europe Crude Oil Brent Futures Commitments of Traders Money Manager Short |
 
 # ---- 量級可疑，先不用：在 Workspace 裡人工確認含義後再決定（升貼水一般在 ±3 美元，這條是 20 多）----
 EKOFISK_DIFF         | | BFO-EKO
