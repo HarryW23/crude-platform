@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ...imports import ImportFlowError, commit_batch, preview_file
+from ...imports import ImportFlowError, commit_batch, preview_file, revert_batch
 from ...ingest import IngestError
 from ...models import ImportBatch
 from ..deps import DB, AppState, get_actor, get_state
@@ -59,9 +59,19 @@ def opec_template(state: AppState = Depends(get_state)):
                     headers={"Content-Disposition": 'attachment; filename="opec_production.xlsx"'})
 
 
+@admin_router.post("/imports/{batch_id}/revert")
+def revert(batch_id: int, dry_run: bool = False, session: Session = DB, actor: str = Depends(get_actor)):
+    """撤銷一次導入。dry_run=true 只回傳會改動多少（給確認框用）。"""
+    try:
+        return revert_batch(session, batch_id, actor, dry_run=dry_run)
+    except ImportFlowError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
 @admin_router.get("/imports")
 def list_imports(session: Session = DB):
-    rows = session.scalars(select(ImportBatch).where(ImportBatch.status == "committed")
+    rows = session.scalars(select(ImportBatch).where(ImportBatch.status.in_(("committed", "reverted")))
                            .order_by(ImportBatch.id.desc()).limit(100))
     return [{"id": b.id, "filename": b.filename, "source_code": b.source_code, "created_at": b.created_at,
-             "created_by": b.created_by, "stats": b.stats} for b in rows]
+             "created_by": b.created_by, "stats": b.stats, "status": b.status, "reverted_at": b.reverted_at,
+             "reverted_by": b.reverted_by} for b in rows]

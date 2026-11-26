@@ -23,7 +23,7 @@ MODULES = ("spread", "balance", "geo", "refinery", "positioning", "common")
 ALIAS_ORIGINS = ("config", "learned")
 
 # 導入
-IMPORT_STATUSES = ("previewed", "committed")
+IMPORT_STATUSES = ("previewed", "committed", "reverted")
 
 # 判斷與產出
 EVENT_CATEGORIES = ("conflict", "chokepoint", "sanction", "opec_policy", "outage", "policy", "demand", "other")

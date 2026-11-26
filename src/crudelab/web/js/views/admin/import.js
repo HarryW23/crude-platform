@@ -22,11 +22,31 @@ export async function render(main) {
 
   const history = async () => {
     const rows = await api("/imports");
-    main.querySelector("#hist").innerHTML = rows.length
-      ? `<table><tr><th>批次</th><th>文件</th><th>數據源</th><th>時間（${zoneLabel()}）</th><th class="n">新增</th><th class="n">更新</th><th class="n">未對應的列</th></tr>
-        ${rows.map((b) => `<tr><td>${b.id}</td><td>${esc(b.filename)}</td><td>${esc(b.source_code)}</td><td class="nw">${time(b.created_at)}</td>
-          <td class="n">${b.stats.inserted}</td><td class="n">${b.stats.updated}</td><td class="n">${b.stats.unmapped_columns}</td></tr>`).join("")}</table>`
+    const hist = main.querySelector("#hist");
+    hist.innerHTML = rows.length
+      ? `<table><tr><th>批次</th><th>文件</th><th>數據源</th><th>時間（${zoneLabel()}）</th><th class="n">新增</th><th class="n">更新</th><th class="n">未對應的列</th><th></th></tr>
+        ${rows.map((b) => `<tr${b.status === "reverted" ? ' class="muted"' : ""}><td>${b.id}</td><td>${esc(b.filename)}</td><td>${esc(b.source_code)}</td><td class="nw">${time(b.created_at)}</td>
+          <td class="n">${b.stats.inserted}</td><td class="n">${b.stats.updated}</td><td class="n">${b.stats.unmapped_columns}</td>
+          <td class="nw">${b.status === "reverted" ? `已撤銷（${time(b.reverted_at)}，${esc(b.reverted_by || "")}）` : `<button class="btn" data-revert="${b.id}">撤銷</button>`}</td></tr>`).join("")}</table>
+        <div id="revert-msg"></div>`
       : '<p class="muted">還沒有導入過文件。</p>';
+    hist.querySelectorAll("[data-revert]").forEach((btn) => btn.addEventListener("click", async () => {
+      const id = btn.dataset.revert;
+      const msg = hist.querySelector("#revert-msg");
+      try {
+        const plan = await api(`/imports/${id}/revert?dry_run=true`, { method: "POST" });
+        const ok = window.confirm(`撤銷批次 ${id}（${plan.filename}）：\n`
+          + `刪掉這一批新加的 ${plan.removed} 個數據點，恢復被它覆蓋的 ${plan.restored} 個舊值`
+          + (plan.vintage_removed || plan.vintage_restored ? `，按期保存的記錄刪 ${plan.vintage_removed} 行、還原 ${plan.vintage_restored} 行` : "")
+          + `。\n涉及 ${plan.series.length} 條序列。撤銷後留有記錄，按時點查詢仍能看到撤銷前的數。確定撤銷？`);
+        if (!ok) return;
+        const done = await api(`/imports/${id}/revert`, { method: "POST" });
+        msg.innerHTML = `<div class="msg ok">已撤銷批次 ${done.batch_id}：刪掉 ${done.removed} 個點，恢復 ${done.restored} 個舊值。</div>`;
+        history();
+      } catch (err) {
+        msg.innerHTML = errorBox(err);
+      }
+    }));
   };
   history();
 

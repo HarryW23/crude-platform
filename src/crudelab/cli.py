@@ -16,6 +16,7 @@
   crudelab watchdog 平台地址           從另一台機器檢查平台是否在運行，掛了發群通知（見 watchdog.py）
   crudelab purge-source demo          刪除某個數據源的全部數據點
   crudelab coverage eia               某個數據源下每條序列的點數、起止日期、最新值
+  crudelab revert-import [批次號]      撤銷一次導入（不給批次號：列出最近的導入）
 """
 from __future__ import annotations
 
@@ -219,6 +220,39 @@ def cmd_import(args) -> int:
             return 1
     print(f"入庫完成：新增 {result['inserted']}，更新 {result['updated']}，未變 {result['unchanged']}，"
           f"未識別的列 {result['unmapped_columns']} 個（可在後台手動指定）")
+    return 0
+
+
+def cmd_revert_import(args) -> int:
+    """撤銷一次導入。不給批次號：列出最近的導入。先列出會改動什麼，確認後才撤銷（--yes 跳過確認）。"""
+    from .imports import ImportFlowError, revert_batch
+    from .models import ImportBatch
+    _init()
+    with db.session_scope() as session:
+        if args.batch is None:
+            rows = session.scalars(select(ImportBatch).where(ImportBatch.status.in_(("committed", "reverted")))
+                                   .order_by(ImportBatch.id.desc()).limit(20))
+            for b in rows:
+                state = f"已撤銷 {b.reverted_at:%Y-%m-%d %H:%M}" if b.status == "reverted" else \
+                    f"新增 {(b.stats or {}).get('inserted', 0)}，更新 {(b.stats or {}).get('updated', 0)}"
+                print(f"#{b.id:<5} {b.created_at:%Y-%m-%d %H:%M}  {b.source_code:<12} {b.filename}  （{state}）")
+            return 0
+        try:
+            plan = revert_batch(session, args.batch, dry_run=True)
+            print(f"批次 #{args.batch}（{plan['filename']}）：刪掉這一批新加的 {plan['removed']} 個數據點，"
+                  f"恢復被它覆蓋的 {plan['restored']} 個舊值；按期保存的記錄刪 {plan['vintage_removed']} 行、"
+                  f"還原 {plan['vintage_restored']} 行。涉及 {len(plan['series'])} 條序列："
+                  + "、".join(plan["series"][:10]) + (" 等" if len(plan["series"]) > 10 else ""))
+            if not args.yes and input("確定撤銷？輸入 yes 繼續：").strip().lower() != "yes":
+                print("沒有撤銷")
+                return 1
+            done = revert_batch(session, args.batch)
+        except ImportFlowError as exc:
+            print(f"沒有撤銷：{exc}", file=sys.stderr)
+            session.rollback()
+            return 1
+    print(f"已撤銷批次 #{done['batch_id']}：刪掉 {done['removed']} 個點，恢復 {done['restored']} 個舊值"
+          "（撤銷前的數留在修訂記錄裡，按時點查詢仍然看得到）")
     return 0
 
 
@@ -972,6 +1006,10 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("pull", help="從拉取型數據源取數")
     p.add_argument("source")
     p.set_defaults(func=cmd_pull)
+    p = sub.add_parser("revert-import", help="撤銷一次導入（不給批次號：列出最近的導入）")
+    p.add_argument("batch", nargs="?", type=int, help="批次號（後台導入記錄裡的「批次」）")
+    p.add_argument("--yes", action="store_true", help="不再問確認")
+    p.set_defaults(func=cmd_revert_import)
     p = sub.add_parser("coverage", help="某個數據源下每條序列的點數、起止日期、最新值（核對接口取數用）")
     p.add_argument("source")
     p.set_defaults(func=cmd_coverage)

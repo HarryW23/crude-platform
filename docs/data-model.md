@@ -190,12 +190,15 @@
 | `filename` | VARCHAR(256) | 否 |  | 上傳時的文件名 |
 | `sha256` | VARCHAR(64) | 否 | IX | 文件內容的 SHA-256 |
 | `stored_path` | VARCHAR(512) | 否 |  | 原文件保存位置 |
-| `status` | VARCHAR(16) | 否 |  | 狀態；取值：previewed / committed |
+| `status` | VARCHAR(16) | 否 |  | 狀態；取值：previewed / committed / reverted |
 | `mapping` | JSON | 是 |  | 當時用的列對應 |
 | `stats` | JSON | 是 |  | 導入結果統計 |
 | `created_at` | DATETIME | 否 |  | 記錄建立時間（UTC） |
 | `created_by` | VARCHAR(64) | 否 |  | 建立者（登錄用戶名；未開登錄時為 local） |
 | `vintage` | DATE | 是 |  | 機構報告的發佈日期（補錄歷史報告時填） |
+| `undo` | JSON | 是 |  | 撤銷用：這批對按期保存表的改動（見 imports.revert_batch） |
+| `reverted_at` | DATETIME | 是 |  | 撤銷時間（UTC；空 = 沒撤銷） |
+| `reverted_by` | VARCHAR(64) | 是 |  | 誰撤銷的 |
 
 ## job_run
 

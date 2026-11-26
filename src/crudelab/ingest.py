@@ -48,8 +48,10 @@ def _period_start(day: date, frequency: str) -> bool:
 
 def write_observations(session: Session, observations: list[Obs], source_code: str, *,
                        batch_id: int | None = None, actor: str = "local",
-                       now: datetime | None = None) -> dict[str, int]:
-    """寫入一批數據點，回傳 {inserted, updated, unchanged}。now 只在測試時傳入。"""
+                       now: datetime | None = None, undo: dict | None = None) -> dict[str, int]:
+    """寫入一批數據點，回傳 {inserted, updated, unchanged}。now 只在測試時傳入。
+    undo：給了就記下這批對按期保存表（observation_vintage）的改動，撤銷導入時用（見 imports.revert_batch）；
+    主表的改動不用另記，被覆蓋的舊值都在 observation_revision 裡。"""
     now = now or utcnow()
     if session.get(DataSource, source_code) is None:
         raise IngestError(f"未知的數據源：{source_code}")
@@ -84,7 +86,7 @@ def write_observations(session: Session, observations: list[Obs], source_code: s
         ordered = sorted(by_issue.values(), key=lambda o: o.vintage or today)
         for o in ordered:                                      # 主表的候選：這一批裡最新的一期
             latest[(o.series_code, o.obs_date)] = o
-        stats.update(_write_vintages(session, ordered, source_code, batch_id, now, latest))
+        stats.update(_write_vintages(session, ordered, source_code, batch_id, now, latest, undo))
 
     existing = {(obs.series_code, obs.obs_date): obs for obs in session.scalars(
         select(Observation).where(Observation.source_code == source_code, Observation.series_code.in_(codes)))}
@@ -111,7 +113,7 @@ def write_observations(session: Session, observations: list[Obs], source_code: s
 
 
 def _write_vintages(session: Session, observations: list[Obs], source_code: str, batch_id: int | None,
-                    now: datetime, latest: dict) -> dict[str, int]:
+                    now: datetime, latest: dict, undo: dict | None = None) -> dict[str, int]:
     """把按期保存的序列寫進 observation_vintage，並決定主表取哪個數（整批處理完後，取每個點最新一期的值）。
 
     兩種來源分開處理（見 models.ObservationVintage）：
@@ -136,6 +138,14 @@ def _write_vintages(session: Session, observations: list[Obs], source_code: str,
             ObservationVintage.source_code == source_code, ObservationVintage.series_code.in_(codes))):
         history.setdefault((existing.series_code, existing.obs_date), []).append(existing)
     one_day = timedelta(days=1)
+    added: list[ObservationVintage] = []
+    before_change: dict[int, tuple[ObservationVintage, dict]] = {}      # 改動前的值（每行只記第一次）
+
+    def keep(row: ObservationVintage) -> None:
+        """記下這一行改動前的值，撤銷時還原。這一批自己新加的行不用記（撤銷時整行刪掉）。"""
+        if undo is not None and row not in added and id(row) not in before_change:
+            before_change[id(row)] = (row, {"value": row.value, "batch_id": row.batch_id, "source_ref": row.source_ref,
+                                            "confirmed_at": row.confirmed_at.isoformat() if row.confirmed_at else None})
 
     def add(o: Obs, vintage: date, value: float, *, ref: str | None, batch: int | None,
             confirmed: date | None = None) -> ObservationVintage:
@@ -143,6 +153,7 @@ def _write_vintages(session: Session, observations: list[Obs], source_code: str,
                                  vintage=vintage, value=value, batch_id=batch, source_ref=ref, created_at=now,
                                  confirmed_at=confirmed)
         session.add(row)
+        added.append(row)
         history.setdefault((o.series_code, o.obs_date), []).append(row)
         out["vintages"] += 1
         return row
@@ -156,6 +167,7 @@ def _write_vintages(session: Session, observations: list[Obs], source_code: str,
         after = [r for r in rows if r.vintage > v]
         if same is not None:
             if not _close(same.value, o.value):
+                keep(same)
                 rest, old_value, old_ref, old_batch = same.confirmed_at, same.value, same.source_ref, same.batch_id
                 same.value, same.batch_id, same.source_ref = float(o.value), batch_id, o.source_ref
                 out["vintages"] += 1
@@ -168,10 +180,12 @@ def _write_vintages(session: Session, observations: list[Obs], source_code: str,
         before = [r for r in rows if r.vintage < v]
         prev = before[-1] if before else None
         if implicit and prev is not None and not after and _close(prev.value, o.value):
+            keep(prev)
             prev.confirmed_at = max(prev.confirmed_at or prev.vintage, v)      # 每天取數，數字沒變：延長確認期
             continue
         row = add(o, v, float(o.value), ref=o.source_ref, batch=batch_id)
         if prev is not None and prev.confirmed_at is not None and prev.confirmed_at > v:
+            keep(prev)
             rest = prev.confirmed_at                                          # 補錄落在一段確認期間的中間
             prev.confirmed_at = v - one_day if v - one_day > prev.vintage else None
             if _close(prev.value, o.value):
@@ -180,6 +194,11 @@ def _write_vintages(session: Session, observations: list[Obs], source_code: str,
                 add(o, v + one_day, prev.value, ref=prev.source_ref, batch=prev.batch_id,
                     confirmed=rest if rest > v + one_day else None)           # 第二天起恢復原來確認的數
 
+    if undo is not None:
+        session.flush()                                   # 拿到新行的編號
+        undo.setdefault("vintage_added", []).extend(r.id for r in added)
+        undo.setdefault("vintage_modified", []).extend(
+            {"id": row.id, **old} for row, old in before_change.values() if row not in added)
     for key, vintages in touched.items():                 # 整批處理完再定主表：取這個點最新的一期
         newest = max(history[key], key=lambda r: r.vintage)
         latest[key] = Obs(key[0], key[1], newest.value, newest.source_ref)
