@@ -87,13 +87,14 @@ def _amount(x: float) -> str:
 def scale_warnings(session: Session, observations: list[Obs]) -> list[str]:
     """單位核對：新數據和庫裡這條序列已有的數據（其他來源的也算）差了幾十倍以上時提醒。
     典型是單位錯了：Kpler 插件給的是桶而不是千桶、噸而不是千噸，差 1000 倍；美分和美元差 100 倍。
+    比的是平台實際採用的值（同一天有幾個來源時取優先級最高的，和查價一致）：低優先級的演示數據等不能當比較基準。
     比的是同一批日子：兩邊都有的日期上逐日相比取中位數；沒有重疊（例如只導新的一段）時，
     比兩邊各自最近 60 個點。不能拿一大段歷史去比最近的水平：運費這種一年裡能漲十幾倍的，會誤報。
     升貼水、官價、比率會在 0 附近正負來回，不查。"""
     from collections import defaultdict
     from statistics import median
 
-    from .models import Observation
+    from .ingest import load_points
     new: dict[str, dict] = defaultdict(dict)
     for o in observations:
         new[o.series_code][o.obs_date] = abs(o.value)
@@ -103,16 +104,14 @@ def scale_warnings(session: Session, observations: list[Obs]) -> list[str]:
         row = rows.get(code)
         if row is None or row.kind not in LEVEL_KINDS or len(points) < 3:
             continue
-        old = {d: abs(v) for d, v in session.execute(
-            select(Observation.obs_date, Observation.value).where(
-                Observation.series_code == code, Observation.obs_date.between(min(points), max(points))))}
+        effective = load_points(session, [code])               # 每天一個值：優先級最高的來源
+        old = {d: abs(v) for d, v in zip(effective["obs_date"], effective["value"], strict=True)}
         common = [d for d in points if d in old and old[d] > 0 and points[d] > 0]
         if len(common) >= 3:
             ratio = median(points[d] / old[d] for d in common)
             a, b = median(points[d] for d in common), median(old[d] for d in common)
         else:
-            recent = [abs(v) for v in session.scalars(select(Observation.value).where(
-                Observation.series_code == code).order_by(Observation.obs_date.desc()).limit(60))]
+            recent = [old[d] for d in sorted(old)[-60:]]
             if len(recent) < 3:
                 continue
             a, b = median(points[d] for d in sorted(points)[-60:]), median(recent)
@@ -146,10 +145,16 @@ def _quality_warnings(settings: Settings, observations: list[Obs]) -> list[str]:
         kinds, names, daily, commodity, cfg.freshness.spikes.confirmed)
 
 
+ALL_SCREENED = "文件裡認出的 {n} 個數據點全部被排除（價格為 0、data_from 之前或 bad_days，見提醒），沒有能入庫的數據"
+
+
 def nothing_importable(preview: dict) -> str | None:
     """整個文件沒有任何能入庫的數據時，回傳原因（給人看）；有就回傳 None。
-    這種文件不能算「導入成功」：格式變了、每天都「成功」卻沒有數據，要很久才會被發現。"""
+    這種文件不能算「導入成功」：格式變了、每天都「成功」卻沒有數據，要很久才會被發現。
+    認出了數據點、但全部被篩掉的（例如全是 0）也一樣。"""
     usable = [c for sheet in preview["sheets"] for c in sheet["columns"] if c.get("series_code") and c.get("n_values")]
+    if usable and preview.get("importable", 1) == 0:
+        return ALL_SCREENED.format(n=sum(c["n_values"] for c in usable))
     if usable:
         return None
     reasons = [f"{sheet['name']}：{sheet['note'] or sheet['layout']}" for sheet in preview["sheets"]]
@@ -207,7 +212,7 @@ def preview_file(session: Session, settings: Settings, content: bytes, filename:
         if hit and not hit & vintaged:
             warnings.append(f"填了報告期 {vintage}，但這個文件裡認出的序列都不是按期保存的，報告期不會起作用")
     return {"batch_id": batch.id, "filename": filename, "source_code": source_code,
-            "vintage": vintage.isoformat() if vintage else None,
+            "vintage": vintage.isoformat() if vintage else None, "importable": len(observations),
             "sheets": [p.to_dict() for p in previews], "warnings": warnings}
 
 
@@ -227,6 +232,8 @@ def commit_batch(session: Session, batch_id: int, mapping: dict[str, str | None]
     previews, observations = parse_workbook(Path(batch.stored_path), make_resolver(session), mapping)
     parsed = len(observations)
     observations, _ = screen(session, observations)
+    if parsed and not observations:
+        raise ImportFlowError(ALL_SCREENED.format(n=parsed))
     if batch.vintage is not None:
         observations = [replace(o, vintage=batch.vintage) for o in observations]
     stats = write_observations(session, observations, batch.source_code, batch_id=batch.id, actor=actor)

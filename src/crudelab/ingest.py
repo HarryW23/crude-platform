@@ -240,6 +240,8 @@ def load_points(session: Session, codes: list[str], start: date | None = None, e
     if as_of is not None:
         stmt = stmt.where(Observation.created_at <= as_of)
     df = pd.DataFrame(session.execute(stmt).all(), columns=[*POINT_COLUMNS, "updated_at", "priority"])
+    if as_of is not None:
+        df = _with_removed_points(session, df, codes, start, end, as_of)
     if df.empty:
         return df[POINT_COLUMNS]
 
@@ -260,6 +262,35 @@ def load_points(session: Session, codes: list[str], start: date | None = None, e
         df = df[df["value"].notna()]      # 找不到當時的舊值（不應發生）：寧可缺，也不讓空值佔掉優先級
     df = df.sort_values(["series_code", "obs_date", "priority", "source_code"])
     return df.drop_duplicates(["series_code", "obs_date"], keep="first")[POINT_COLUMNS].reset_index(drop=True)
+
+
+def _with_removed_points(session: Session, df: pd.DataFrame, codes: list[str], start: date | None,
+                         end: date | None, as_of: datetime) -> pd.DataFrame:
+    """as_of 當時存在、之後被移除的數據點（例如按配置的 bad_days 清理掉的）：主表裡已經沒有了，只剩修訂記錄。
+    修訂記錄裡 as_of 之後第一次被取代的那一條，如果是 as_of 之前就記錄的，就是當時看得到的值。"""
+    stmt = (select(ObservationRevision.series_code, ObservationRevision.obs_date, ObservationRevision.source_code,
+                   ObservationRevision.value, ObservationRevision.batch_id, ObservationRevision.source_ref,
+                   ObservationRevision.recorded_at, ObservationRevision.replaced_at, DataSource.priority)
+            .join(DataSource, DataSource.code == ObservationRevision.source_code)
+            .where(ObservationRevision.series_code.in_(codes), ObservationRevision.replaced_at > as_of))
+    if start:
+        stmt = stmt.where(ObservationRevision.obs_date >= start)
+    if end:
+        stmt = stmt.where(ObservationRevision.obs_date <= end)
+    revisions = pd.DataFrame(session.execute(stmt).all(), columns=[
+        "series_code", "obs_date", "source_code", "value", "batch_id", "source_ref", "recorded_at", "replaced_at",
+        "priority"])
+    if revisions.empty:
+        return df
+    first = revisions.sort_values("replaced_at").drop_duplicates(["series_code", "obs_date", "source_code"])
+    present = set(zip(df["series_code"], df["obs_date"], df["source_code"], strict=True))
+    gone = pd.Series([k not in present for k in zip(first["series_code"], first["obs_date"], first["source_code"],
+                                                    strict=True)], index=first.index)
+    removed = first[gone & (first["recorded_at"] <= as_of)]
+    if removed.empty:
+        return df
+    removed = removed.assign(updated_at=removed["recorded_at"])[[*POINT_COLUMNS, "updated_at", "priority"]]
+    return removed if df.empty else pd.concat([df, removed], ignore_index=True)
 
 
 _cache_lock = threading.Lock()

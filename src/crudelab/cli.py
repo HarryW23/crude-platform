@@ -32,13 +32,39 @@ from .settings import get_settings
 
 
 def _init() -> dict:
+    """升級表結構、按配置同步。改了數據的（升級了表結構、按配置移除了數據點）都打印出來，不悄悄發生。"""
+    from sqlalchemy import create_engine
+
     from .config import load_config
     from .master import sync_to_db
     settings = get_settings()
+    settings.data_dir.mkdir(parents=True, exist_ok=True)
+    probe = create_engine(settings.database_url)
+    try:
+        before = db.schema_revision(probe)
+    finally:
+        probe.dispose()
     db.init_engine(settings)
+    after = db.head_revision()
+    if before and before != after:
+        print(f"表結構已從 {before} 升級到 {after}")
     cfg = load_config(settings.config_dir)
     with db.session_scope() as session:
-        return sync_to_db(session, cfg)
+        stats = sync_to_db(session, cfg)
+    if stats.get("removed_points"):
+        print(f"按配置（data_from、bad_days、價格為 0）移除了 {stats['removed_points']} 個已入庫的數據點，"
+              "舊值在修訂記錄裡，按時點查詢仍然看得到；明細在操作日誌（remove_points）")
+    return stats
+
+
+def _open_read_only(require_current: bool = True) -> bool:
+    """只讀的命令：不升級表結構、不同步配置。表結構不是最新時打印原因，回傳 False（require_current=False 時照樣打開）。"""
+    try:
+        db.init_engine(get_settings(), upgrade=False, require_current=require_current)
+    except db.SchemaOutdated as exc:
+        print(exc, file=sys.stderr)
+        return False
+    return True
 
 
 def cmd_init(_args) -> int:
@@ -215,7 +241,8 @@ def cmd_coverage(args) -> int:
 
     from .config import load_config
     from .models import Observation
-    _init()
+    if not _open_read_only():
+        return 1
     cfg = load_config(get_settings().config_dir)
     wanted = {"eia": lambda s: s.eia_id, "cftc": lambda s: s.cftc}.get(args.source, lambda s: None)
     with db.session_scope() as session:
@@ -644,7 +671,7 @@ def cmd_backup(args) -> int:
             removed = backup.prune(settings, cfg)
             print(f"清理了 {len(removed)} 份舊的定時備份" + "".join(f"\n  {n}" for n in removed))
             return 0
-        _init()
+        _open_read_only(require_current=False)   # 備份要原樣保存現在的庫：不能先升級、清理再備份
         made = backup.create(settings, cfg, "manual")
         print(f"已備份並校驗：{backup.directory(settings, cfg) / made['name']}（{made['size'] / 1e6:.1f} MB）")
         if backup.same_disk(settings, cfg):

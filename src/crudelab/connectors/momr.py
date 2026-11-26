@@ -112,6 +112,9 @@ def read_pages(pages: list[str]) -> dict[str, list[list]]:
             filled = [row for row in split if any(v is not None for v in row)]
             rows += [(where, row) for row in filled[1:]]           # 第一行是表頭
             out[f"第{p}頁" + (f"（{n}）" if len(tables) > 1 else "")] = split
+    if out and not any(str(row[0]).strip().lower().startswith("total") for _, row in rows):
+        raise MomrError(f"{rows[0][0] if rows else '這個 PDF'}：表裡沒有任何合計行（Total OPEC / Total DoC），"
+                        "國別數字無法用月報的合計核對，這個文件沒有導入。請確認是完整的月報 PDF")
     check_totals(rows)
     if not out and missed:
         raise MomrError(f"{missed[0]} 讀不出：找不到表頭寫著 Secondary sources 的表身。"
