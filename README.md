@@ -446,13 +446,16 @@ PDF 讀不出時（例如月報改了格式），在導入頁下載「導入模�
 
 ## Kpler（原油出口、進口、庫存）
 
+給操作人員的詳細步驟（每一步選什麼、下載後應該是什麼樣、常見錯誤）：`docs/kpler數據獲取流程.txt`。
+
 在 Kpler 網頁終端（terminal.kpler.com）把圖下載成 Excel，**原樣**上傳（文件名不要改，平台靠它認拆分方式），
-數據源選「Kpler（終端下載）」。三個下載：
+數據源選「Kpler（終端下載）」（或放進收件夾，按文件名自動認出）。四個下載：
 
 | 下載 | 怎麼選 | 對應的序列 |
 |---|---|---|
 | 出口 | Flows → 商品 Crude → Exports → Monthly → 單位 kbd → 按 Origin 的 Country 拆分 | 8 國原油出口（俄羅斯含哈薩克斯坦經 CPC 的量） |
-| 進口 | Flows → 商品 Crude → Imports → Monthly → 單位 kbd → 按 **Destination** 的 Country 拆分（歐洲用 Continent 再下一份） | 6 國 / 地區原油進口 |
+| 進口 | Flows → 商品 Crude → Imports → Monthly → 單位 kbd → 按 **Destination** 的 Country 拆分 | 5 國原油進口 |
+| 進口（大洲） | 同上，按 **Destination** 的 Continent 拆分 | 歐洲原油進口 |
 | 庫存 | Inventories → 商品 Crude → 勾選含海上（commodities on water）→ Weekly → 按 onshore/offshore status 拆分 | 全球庫存、陸上、在途、浮倉 |
 
 - 進口要按**卸貨國**（Destination）拆分；按來源國（Origin）拆分的進口表裡，「United States」那一列是從美國運出的量，

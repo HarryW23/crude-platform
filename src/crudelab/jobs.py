@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import shutil
 import time
 from datetime import datetime, timedelta
@@ -31,6 +32,17 @@ from .settings import Settings
 ACTOR = "scheduler"
 IMPORTABLE = (".xlsx", ".xlsm", ".xls", ".csv", ".pdf")
 PDF_SOURCE = "opec_momr"      # 收件夾裡的 PDF 只可能是 OPEC 月報（connectors/momr.py），按它的數據源記
+KPLER_SOURCE = "kpler_xls"    # Kpler 終端下載的文件（文件名 World_monthly_exports_…，見 connectors/kpler.py）
+KPLER_FILE = re.compile(r"^world_(monthly|weekly)_(exports|imports|inventories)_", re.I)
+
+
+def inbox_source(path: Path, default: str) -> str:
+    """收件夾裡的文件按什麼數據源記：OPEC 月報 PDF、Kpler 下載的表有自己的數據源，其他用任務設定的。"""
+    if path.suffix.lower() == ".pdf":
+        return PDF_SOURCE
+    if KPLER_FILE.match(path.name):
+        return KPLER_SOURCE
+    return default
 SETTLE_SECONDS = 30           # 文件最後一次修改後過這麼久才導入，避免讀到還沒複製完的文件
 log = logging.getLogger("crudelab.jobs")
 
@@ -89,7 +101,7 @@ def _import_folder(session: Session, cfg: Config, settings: Settings, job: JobDe
         entry: dict = {"file": path.name}
         try:
             with session.begin_nested():
-                source = PDF_SOURCE if path.suffix.lower() == ".pdf" else _source(job)
+                source = inbox_source(path, _source(job))
                 preview = preview_file(session, settings, path.read_bytes(), path.name, source, ACTOR)
                 if (reason := nothing_importable(preview)) is not None:
                     raise ImportFlowError(reason)

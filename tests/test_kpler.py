@@ -116,3 +116,22 @@ def test_long_history_is_not_mistaken_for_a_unit_change(session, settings):
     full = ["Date,TD3C_WS"] + [f"{d},{v}" for d, v in zip(days, vals, strict=True)]
     warnings = preview_file(session, settings, "\n".join(full).encode(), "r2.csv", "reuters_xls")["warnings"]
     assert not [w for w in warnings if "單位" in w]
+
+
+def test_kpler_download_dropped_into_inbox_is_recorded_as_kpler(session, settings, cfg):
+    import os
+    import time
+
+    from sqlalchemy import select
+
+    from crudelab import jobs
+    from crudelab.models import Observation
+    inbox = settings.data_dir / "inbox"
+    inbox.mkdir(parents=True)
+    path = inbox / EXPORTS_NAME
+    path.write_bytes(EXPORTS)
+    old = time.time() - 120
+    os.utime(path, (old, old))
+    assert jobs.run_now(cfg, settings, "IMPORT_INBOX")["status"] == "ok"
+    sources = set(session.scalars(select(Observation.source_code).where(Observation.series_code == "KPLER_EXP_SAUDI")))
+    assert sources == {"kpler_xls"}

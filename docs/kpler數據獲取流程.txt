@@ -1,0 +1,195 @@
+Kpler 數據獲取流程（原油出口、進口、庫存）
+=============================================
+
+適用：crudelab 研究平台的 Kpler 數據更新。照著做即可，不需要懂 Kpler 或編程。
+最後核對：2026-11-26（用當天從 Kpler 網頁終端下載的文件逐一核對過）。
+
+
+一、做什麼、多久做一次
+------------------------
+
+每次在 Kpler 網頁終端下載 4 個 Excel 文件，原樣上傳到平台。
+
+  文件 1  原油出口，按裝貨國拆分        （月度）
+  文件 2  原油進口，按卸貨國拆分        （月度）
+  文件 3  原油進口，按卸貨大洲拆分      （月度，只為了取「歐洲」）
+  文件 4  原油庫存，按陸上 / 海上拆分   （周度）
+
+頻率：最好每個工作日一次，至少每周一次。
+  原因：Kpler 會隨著貨物卸完不斷修訂前幾個月的數。平台每次導入都會單獨存一期，
+  導得越勤，以後回測越能還原「當時看到的數字」。漏幾天不會壞事，只是少存幾期。
+
+整個過程大約 10 分鐘。
+
+
+二、準備
+--------
+
+1. 用有 Kpler 帳號的電腦（目前是新加坡那台公用機）。
+2. 瀏覽器打開 https://terminal.kpler.com 並登錄。
+3. 確認右上角或左上角的平台（Platform）是 Liquids（液體），不是 LNG、LPG、Dry 等。
+4. 準備好能登錄平台後台的帳號（上傳用）。
+
+
+三、四個文件怎麼下載
+--------------------
+
+Kpler 的界面偶爾會調整，按鈕名字可能和下面略有不同。每一步最後都有「下載後應該是什麼樣」，
+對得上就是對的；對不上不要上傳，參考第六節。
+
+通用規則（四個文件都一樣）：
+  - 商品（Product）一律選 Crude/Co（原油和凝析油）。
+  - 日期（Dates / Period）盡量選最長，從 2016 年起或 All（全部）。
+  - 下載後文件名不要改。平台靠文件名判斷是哪種表、按什麼拆分。
+  - 不要在 Excel 裡打開後修改再存檔。如果打開看過，關閉時選「不保存」。
+
+
+----- 文件 1：原油出口，按裝貨國拆分 -----
+
+1. 左側菜單進入 Flows（流量）。
+2. 設置篩選條件：
+     Product（商品）        Crude/Co
+     Direction（方向）      Exports（出口）
+     From / Origin（起點）  World（全球），不要選具體國家
+     To / Destination（終點）World（全球），不要選具體國家
+     Granularity（粒度）    Monthly（月度）
+     Unit（單位）           kbd（千桶/日）
+     Split（拆分）          按 Origin（起點）→ Country（國家）
+     Dates（日期）          最長，2016 年起
+3. 點圖表右上角的下載圖標（向下的箭頭，或「⋯」菜單裡的 Export / Download），選 Excel（xlsx）。
+
+下載後應該是：
+  文件名：World_monthly_exports_Crude_Co_by_origin_country___日期_時間.xlsx
+  打開後：第一列是 date（2016-01、2016-02……），之後每一列是一個國家，
+          第一行有 Saudi Arabia、Russian Federation、Iraq、United Arab Emirates、United States……
+  數量級：沙特一般在 6,000–7,500（千桶/日）。
+
+
+----- 文件 2：原油進口，按卸貨國拆分 -----
+
+和文件 1 一樣進入 Flows，改兩個地方：
+     Direction（方向）      Imports（進口）
+     Split（拆分）          按 Destination（終點 / 卸貨方）→ Country（國家）
+     其他（Crude/Co、World、Monthly、kbd、日期）和文件 1 相同
+下載 Excel。
+
+下載後應該是：
+  文件名：World_monthly_imports_Crude_Co_by_destination_country___日期_時間.xlsx
+  打開後：第一行有 China、India、United States、South Korea、Japan、Italy……
+  數量級：中國一般在 9,000–11,500。
+
+★ 最容易錯的地方：拆分必須選 Destination（卸貨方），不能選 Origin（起點）。
+  選成 Origin 的話，文件名會是 …imports_Crude_Co_by_origin_country…，表裡「United States」
+  那一列是從美國運出的油，不是美國進口的油。平台會拒收這種文件，提示重新下載。
+
+
+----- 文件 3：原油進口，按卸貨大洲拆分 -----
+
+和文件 2 完全一樣，只改拆分：
+     Split（拆分）          按 Destination（終點 / 卸貨方）→ Continent（大洲）
+下載 Excel。
+
+下載後應該是：
+  文件名：World_monthly_imports_Crude_Co_by_destination_continent___日期_時間.xlsx
+  打開後：第一行有 Asia、Europe、Americas、Africa、Oceania……
+  數量級：Europe 一般在 9,000–11,000。
+  （平台只用其中的 Europe；按國家拆分的表裡沒有「歐洲合計」，所以要單獨下這一份。）
+
+同樣：必須是 Destination，不能是 Origin（文件名裡是 by_origin_continent 就錯了）。
+
+
+----- 文件 4：原油庫存，按陸上 / 海上拆分 -----
+
+1. 左側菜單進入 Inventories（庫存）。
+2. 設置篩選條件：
+     Product（商品）            Crude/Co
+     Zone（區域）               World（全球）
+     勾選 add Oil-On-Water / commodities on water（含海上：在途和浮倉）
+     Granularity（粒度）        Weekly（周度）
+     Split（拆分）              按 onshore/offshore status（陸上 / 海上）
+     Dates（日期）              最長，2016 年起
+     浮倉的天數門檻（Floating storage min / max days）：保持 Kpler 的預設值，不要改。
+       改了的話，浮倉的定義前後不一致，歷史數據就沒法比了。
+3. 下載 Excel。
+
+下載後應該是：
+  文件名：World_weekly_inventories_including_commodities-on-water_by_onshore_offshore_status.xlsx
+  （這個文件名裡沒有日期，正常）
+  打開後：第一列是 date（2016-W52、2017-W01……，是「年-W周」的寫法），之後幾列是
+          Level (Kb)、Onshore、Oil in Transit on Ships、Floating Storage、Capacity (Kb)、Revisit Rate
+  數量級：Level 約 45 億–48 億桶（表裡寫 4,500,000–4,800,000，單位千桶），
+          Floating Storage 約 6,000 萬–1.2 億桶（表裡寫 60,000–120,000）。
+  注意：這個文件名裡看不出商品。下載前一定確認 Product 選的是 Crude/Co，不是全部油品。
+
+
+四、上傳到平台
+--------------
+
+1. 登錄平台後台，進入「數據導入」頁。
+2. 選擇文件（一次一個），數據源選「Kpler（終端下載）」，「報告發佈日期」留空。
+3. 點「預覽」，看預覽結果（下一節教你怎麼看）。
+4. 預覽沒問題就點確認入庫。四個文件逐個做。
+
+也可以不打開後台：把四個文件（文件名不改）直接放進平台的收件夾 data/inbox/，十分鐘內自動導入，
+平台按文件名認出是 Kpler 的文件。導入成功的移到 data/inbox/done/，失敗的移到 data/inbox/failed/，
+失敗原因在後台「定時任務」頁的運行記錄裡。第一次做建議用後台上傳，能看到預覽。
+
+
+五、預覽時怎麼看對不對
+----------------------
+
+正常會看到：
+  - 每個文件認出的序列：
+      文件 1：沙特、俄羅斯、伊拉克、阿聯酋、美國、科威特、巴西、伊朗，共 8 條出口
+      文件 2：中國、印度、美國、韓國、日本，共 5 條進口
+      文件 3：歐洲，1 條進口
+      文件 4：全球庫存合計、陸上、在途、浮倉，共 4 條
+  - 「另有 N 列……平台裡沒有對應的序列，跳過」：正常，表裡其他一百多個國家平台不用。
+  - 「2026-11 是這個月，還沒結束……沒有讀入」（或「這一周」）：正常，當期的數字還不完整，下一期再導。
+
+不正常、需要停下來的：
+  - 「拆分方式不對」：見第六節第 1 條。
+  - 「文件名裡看不出是原油」或「看不出拆分方式」：文件名被改過，或商品沒選 Crude/Co，重新下載。
+  - 「單位多半不對」：單位不是 kbd（流量）或千桶（庫存），重新下載時檢查 Unit。
+  - 「可能有錯價」：一般不用處理，截圖發給負責平台的人。
+  - 認出的序列數比上面少很多：Kpler 可能改了國家名，截圖發給負責平台的人。
+
+
+六、常見問題
+------------
+
+1. 提示「拆分方式不對」
+   進口的拆分選成了 Origin（起點）。回到 Flows，Split 改成 Destination（終點 / 卸貨方），
+   重新下載。出口反過來：出口必須是 Origin。
+
+2. 找不到下載按鈕
+   在圖表右上角找向下的箭頭，或三個點「⋯」的菜單，裡面的 Export / Download。
+   還是找不到，截圖發給負責平台的人。
+
+3. 下載的是 CSV 不是 Excel
+   重新選 Excel / XLSX 格式下載。
+
+4. 文件名後面多了 (1)、(2)
+   同一個文件下載了兩次，瀏覽器自動加的。上傳最新那個即可，(1) 不影響識別。
+
+5. 數字看起來比平時小很多（例如某國這個月突然少了一大半）
+   如果是當月，正常：Kpler 還沒跟蹤完，平台本來就不讀當月。
+   如果是以前的月份，可能是真實事件（例如 2026 年的航運中斷），或 Kpler 歸類改了，截圖告訴負責平台的人。
+
+6. Kpler 裡哈薩克斯坦的出口很少
+   正常。哈薩克斯坦的原油大多經 CPC 管道從俄羅斯港口裝船，Kpler 把它算在俄羅斯名下，
+   所以平台不單獨取哈薩克斯坦的出口。
+
+7. 想加一個國家
+   告訴負責平台的人要哪個國家、是出口還是進口。對方在配置裡加一條（config/master/series/kpler.yaml），
+   之後同樣的四個文件就會多認出這一列，下載方式不變。
+
+
+七、給負責平台的人
+------------------
+
+- 讀表的代碼：src/crudelab/connectors/kpler.py。認法是「工作表名 World monthly/weekly exports/imports/inventories」
+  加上「文件名裡的 by_…」拆分方式。
+- 序列和 Kpler 表頭的對應：config/master/series/kpler.yaml，別名寫法是 kpler:種類:Kpler 表頭原名。
+- 導入結果核對：crudelab coverage kpler_xls（每條序列的點數、起止日期、最新值）。
+- 以後開通 Kpler API，可以改成自動取數，序列代碼不變，已經導入的歷史都保留。
