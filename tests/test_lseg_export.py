@@ -300,3 +300,17 @@ def test_find_candidates_can_name_the_field(fake_lseg, tmp_path):
     assert rows[0][6] == f"近 {script.FIND_DAYS} 天點數"
     assert rows[1][1:4] == ["LCOc1", "ok", "TRDPRC_1"] and rows[1][5] == "89"      # 不是預設的 SETTLE
     assert rows[2][2] == "none" and rows[2][8].startswith("沒有字段 MID_YLD_1（有：TRDPRC_1、SETTLE")
+
+
+def test_search_lists_rics_and_titles_without_fetching(fake_lseg, tmp_path, capsys):
+    """search 只列出搜索結果，不取數；結果文件只有搜索詞、RIC、標題。"""
+    script = load_script()
+    out = tmp_path / "search.txt"
+    assert script.main(["search", "Oman crude oil futures", "--out", str(out)]) == 0
+    printed = capsys.readouterr().out
+    assert "OQDc1" in printed and "DME Oman Crude Oil Futures" in printed
+    assert not [c for c in fake_lseg if c[0] == "history"]                         # 沒有取數
+    rows = [line.split("\t") for line in out.read_text(encoding="utf-8").splitlines()]
+    assert rows[0] == ["搜索詞", "RIC", "標題"]
+    assert rows[1] == ["Oman crude oil futures", "OQDc1", "DME Oman Crude Oil Futures"]
+    assert script.main(["search", "nothing", "--out", str(out)]) == 1               # 沒有結果：退出碼 1

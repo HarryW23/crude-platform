@@ -14,6 +14,8 @@
     python lseg_export.py export --days 10      只導最近 10 天（每天更新用）
     python lseg_export.py find                  給還不知道 RIC 的序列找 RIC：按 lseg_candidates.txt 搜索並試取，
                                                 結果寫進 lseg_find_日期.txt，發給負責平台的人寫進配置
+    python lseg_export.py search "搜索詞"       只列出搜索到的 RIC 和標題（不取數），寫進 lseg_search_日期.txt；
+                                                find 找不到時用它看路透上這一類到底有哪些
 
 App Key 的給法（不要寫進任何文件）：運行時會提示輸入（不顯示）；要定時運行時，設環境變量 LSEG_APP_KEY。
 腳本不會打印、不會保存 App Key；錯誤訊息裡如果出現了它，會被換成 ***。
@@ -435,6 +437,33 @@ def read_candidates(path: Path, only: set[str] | None) -> list[tuple[str, str, l
     return out
 
 
+SEARCH_TOP = 100
+
+
+def search(queries: list[str], out: Path, top: int = SEARCH_TOP) -> int:
+    """只列出搜索結果（RIC 和標題），不取數。找不到 RIC 時用來看路透上這一類到底有哪些，
+    例如「ICE Europe Crude Oil Brent Futures Commitments of Traders」能列出 ICE 持倉報告的所有分類。"""
+    require_proxy()
+    client = Client(app_key())
+    rows: list[list[str]] = []
+    try:
+        for q in queries:
+            hits = client.search(q, top)
+            print(f"\n「{q}」：{len(hits)} 個結果")
+            for ric, title in hits:
+                print(f"  {ric:<20} {title}")
+                rows.append([q, ric, title])
+            time.sleep(PAUSE_SECONDS)
+    finally:
+        client.close()
+    with out.open("w", encoding="utf-8", newline="") as f:
+        writer = csv.writer(f, delimiter="\t")
+        writer.writerow(["搜索詞", "RIC", "標題"])
+        writer.writerows(rows)
+    print(f"\n結果已寫進 {out.name}（只有 RIC 和標題）：把這個文件發給負責平台的人")
+    return 0 if rows else 1
+
+
 def find(cands_path: Path, out: Path, only: set[str] | None, tries_per_series: int = FIND_TRIES) -> int:
     """給還不知道 RIC 的序列找 RIC：先試候選，再試搜索到的前幾個，每個取最近一個月看有沒有數、量級對不對。
     結果只含 RIC、標題、最後一天的值，不含歷史數據。"""
@@ -535,10 +564,16 @@ def main(argv: list[str] | None = None) -> int:
     f.add_argument("--out", default=f"lseg_find_{date.today():%Y%m%d}.txt", help="結果文件名")
     f.add_argument("--candidates", default=str(HERE / "lseg_candidates.txt"), help="候選清單文件")
     f.add_argument("--tries", type=int, default=FIND_TRIES, help=f"每條序列最多試幾個 RIC（預設 {FIND_TRIES}）")
+    s = sub.add_parser("search", help="只列出搜索結果（RIC 和標題），不取數")
+    s.add_argument("query", nargs="+", help="搜索詞，可以給幾個（有空格的用引號括起來）")
+    s.add_argument("--top", type=int, default=SEARCH_TOP, help=f"每個搜索詞最多列多少個（預設 {SEARCH_TOP}）")
+    s.add_argument("--out", default=f"lseg_search_{date.today():%Y%m%d}.txt", help="結果文件名")
     args = parser.parse_args(argv)
     try:
         if args.command == "probe":
             return probe()
+        if args.command == "search":
+            return search(args.query, Path(args.out), max(1, args.top))
         if args.command == "find":
             only = {c.strip() for c in args.only.split(",") if c.strip()} if args.only else None
             return find(Path(args.candidates), Path(args.out), only, max(1, args.tries))
