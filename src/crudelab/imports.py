@@ -7,7 +7,7 @@ from dataclasses import replace
 from datetime import date, datetime
 from pathlib import Path
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, insert, select
 from sqlalchemy.orm import Session
 
 from .config import normalize_alias
@@ -388,16 +388,18 @@ def revert_batch(session: Session, batch_id: int, actor: str = "local", dry_run:
     added_ids = undo.get("vintage_added", [])
     modified = undo.get("vintage_modified", [])
     counts = {"restored": 0, "removed": 0, "vintage_removed": 0, "vintage_restored": len(modified)}
-    previous: dict[int, ObservationRevision | None] = {}
+    # 這一批寫入時覆蓋掉的舊值：修訂記錄裡在這一批寫入的那一刻被取代的那條（不是撤銷時記的）。
+    # 寫入時刻用批次記下的；之前的版本沒記，用各點的更新時間（沒被撤銷恢復過時就是寫入時刻）。一次查完
     written = datetime.fromisoformat(undo["written_at"]) if undo.get("written_at") else None
+    moments = {written} if written else {o.updated_at for o in current}
+    overwritten: dict[tuple, ObservationRevision] = {}
+    for rev in session.scalars(select(ObservationRevision).where(
+            ObservationRevision.replaced_at.in_(moments), ObservationRevision.replaced_by.not_like("revert:%"),
+            ObservationRevision.series_code.in_({o.series_code for o in current}))) if current else []:
+        overwritten.setdefault((rev.series_code, rev.obs_date, rev.source_code, rev.replaced_at), rev)
+    previous: dict[int, ObservationRevision | None] = {}
     for obs in current:
-        # 這一批寫入時覆蓋掉的舊值：修訂記錄裡在這一批寫入的那一刻被取代的那條（不是撤銷時記的）。
-        # 寫入時刻用批次記下的；之前的版本沒記，用這個點的更新時間（沒被撤銷恢復過時就是寫入時刻）
-        previous[obs.id] = session.scalars(select(ObservationRevision).where(
-            ObservationRevision.series_code == obs.series_code, ObservationRevision.obs_date == obs.obs_date,
-            ObservationRevision.source_code == obs.source_code,
-            ObservationRevision.replaced_at == (written or obs.updated_at),
-            ObservationRevision.replaced_by.not_like("revert:%"))).first()
+        previous[obs.id] = overwritten.get((obs.series_code, obs.obs_date, obs.source_code, written or obs.updated_at))
         counts["restored" if previous[obs.id] is not None else "removed"] += 1
     rows = list(session.scalars(select(ObservationVintage).where(ObservationVintage.id.in_(added_ids)))) \
         if added_ids else []
@@ -408,18 +410,25 @@ def revert_batch(session: Session, batch_id: int, actor: str = "local", dry_run:
 
     now = utcnow()
     who = REVERT_ACTOR.format(id=batch_id)
+    if current:             # 被撤銷的值記進修訂記錄（批量寫：一批可能有二十多萬個點）
+        session.execute(insert(ObservationRevision), [
+            {"series_code": o.series_code, "obs_date": o.obs_date, "source_code": o.source_code, "value": o.value,
+             "batch_id": o.batch_id, "source_ref": o.source_ref, "recorded_at": o.updated_at, "replaced_at": now,
+             "replaced_by": who} for o in current])
+    gone = [obs.id for obs in current if previous[obs.id] is None]           # 這一批新加的點
     for obs in current:
-        session.add(ObservationRevision(
-            series_code=obs.series_code, obs_date=obs.obs_date, source_code=obs.source_code, value=obs.value,
-            batch_id=obs.batch_id, source_ref=obs.source_ref, recorded_at=obs.updated_at,
-            replaced_at=now, replaced_by=who))
         old = previous[obs.id]
-        if old is None:                                      # 這一批新加的點
-            session.delete(obs)
-        else:                                                # 這一批覆蓋掉的舊值
+        if old is not None:                                  # 這一批覆蓋掉的舊值
             obs.value, obs.batch_id, obs.source_ref, obs.updated_at = old.value, old.batch_id, old.source_ref, now
-    for row in rows:
-        session.delete(row)
+    session.flush()
+    for i in range(0, len(gone), 5000):
+        session.execute(delete(Observation).where(Observation.id.in_(gone[i:i + 5000])),
+                        execution_options={"synchronize_session": False})
+    vintage_gone = [r.id for r in rows]
+    for i in range(0, len(vintage_gone), 5000):
+        session.execute(delete(ObservationVintage).where(ObservationVintage.id.in_(vintage_gone[i:i + 5000])),
+                        execution_options={"synchronize_session": False})
+    session.expire_all()
     for m in modified:
         kept = session.get(ObservationVintage, m["id"])
         if kept is not None:

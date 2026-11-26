@@ -20,6 +20,7 @@ import zipfile
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime
+from functools import lru_cache
 from pathlib import Path
 from struct import error as struct_error
 
@@ -77,7 +78,19 @@ def parse_date(value) -> date | None:
         value = str(value)
     if not isinstance(value, str):
         return None
-    text = _TIME_TAIL.sub("", value.strip())
+    return _parse_date_text(value.strip())
+
+
+_PLAIN_NUMBER = re.compile(r"^[-+]?(\d+\.\d*|\.\d+|\d{1,7})$")       # 53.05、-0.5、1100：不是日期（8 位數另說）
+
+
+@lru_cache(maxsize=65536)
+def _parse_date_text(raw: str) -> date | None:
+    """文字 → 日期。認版式時每一格都要試一次（十年的寬表有五十萬格），所以：明顯是數字的直接跳過，
+    不去一個個試日期格式（試一次失敗要拋一次異常，很慢）；同樣的文字只解析一次。"""
+    if _PLAIN_NUMBER.match(raw):
+        return None
+    text = _TIME_TAIL.sub("", raw)
     if not 4 <= len(text) <= 14:
         return None
     if (period := parse_period(text)) is not None:      # 2026-09、Sep-26、2026Q3 → 期間第一天

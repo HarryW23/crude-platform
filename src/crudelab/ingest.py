@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
 import pandas as pd
-from sqlalchemy import func, select
+from sqlalchemy import func, insert, select
 from sqlalchemy.orm import Session
 
 from .models import DataSource, Observation, ObservationRevision, ObservationVintage, Series, utcnow
@@ -91,12 +91,13 @@ def write_observations(session: Session, observations: list[Obs], source_code: s
     existing = {(obs.series_code, obs.obs_date): obs for obs in session.scalars(
         select(Observation).where(Observation.source_code == source_code, Observation.series_code.in_(codes)))}
 
+    new_rows: list[dict] = []
     for key, o in latest.items():
         current = existing.get(key)
         if current is None:
-            session.add(Observation(series_code=o.series_code, obs_date=o.obs_date, value=float(o.value),
-                                    source_code=source_code, batch_id=batch_id, source_ref=o.source_ref,
-                                    created_at=now, updated_at=now))
+            new_rows.append({"series_code": o.series_code, "obs_date": o.obs_date, "value": float(o.value),
+                             "source_code": source_code, "batch_id": batch_id, "source_ref": o.source_ref,
+                             "created_at": now, "updated_at": now})
             stats["inserted"] += 1
         elif math.isclose(current.value, o.value, rel_tol=1e-12, abs_tol=1e-12):
             stats["unchanged"] += 1
@@ -109,6 +110,8 @@ def write_observations(session: Session, observations: list[Obs], source_code: s
             current.value, current.batch_id = float(o.value), batch_id
             current.source_ref, current.updated_at = o.source_ref, now
             stats["updated"] += 1
+    if new_rows:            # 新點批量插入：十年的寬表有二十多萬個點，一個個建 ORM 對象要十幾秒
+        session.execute(insert(Observation), new_rows)
     return stats
 
 
