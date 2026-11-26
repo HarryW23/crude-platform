@@ -225,7 +225,8 @@ def cmd_import(args) -> int:
 
 def cmd_revert_import(args) -> int:
     """撤銷一次導入。不給批次號：列出最近的導入。先列出會改動什麼，確認後才撤銷（--yes 跳過確認）。"""
-    from .imports import ImportFlowError, revert_batch
+    from .import_revert import revert_batch
+    from .imports import ImportFlowError
     from .models import ImportBatch
     _init()
     with db.session_scope() as session:

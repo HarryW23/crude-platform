@@ -4,7 +4,8 @@ from datetime import date, datetime
 import pytest
 from sqlalchemy import func, select
 
-from crudelab.imports import ImportFlowError, commit_batch, preview_file, revert_batch
+from crudelab.import_revert import revert_batch
+from crudelab.imports import ImportFlowError, commit_batch, preview_file
 from crudelab.ingest import load_points, to_series
 from crudelab.models import AuditLog, ImportBatch, Observation, ObservationVintage, utcnow
 

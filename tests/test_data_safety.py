@@ -100,3 +100,15 @@ def test_read_only_commands_do_not_upgrade_or_clean_and_init_says_what_it_did(ca
     assert f"表結構已從 0023 升級到 {db.head_revision()}" in capsys.readouterr().out
     assert main(["coverage", "eia"]) == 0
     engine.dispose()
+
+
+def test_vintaged_series_cannot_use_config_cleanup():
+    """清理只動主表，按期保存的每一期還在：按報告期回測會把清理掉的點找回來，所以不允許這樣配。"""
+    from pydantic import ValidationError
+
+    from crudelab.schema import SeriesDef
+    base = dict(code="X_PROD", name_zh="x", commodity="CRUDE_SUPPLY", location="SAUDI", kind="flow", unit="kb/d",
+                frequency="monthly", vintaged=True)
+    for extra in ({"data_from": date(2020, 1, 1)}, {"bad_days": [date(2026, 1, 1)]}):
+        with pytest.raises(ValidationError, match="按報告期保存的序列不用 bad_days / data_from"):
+            SeriesDef(**base, **extra)

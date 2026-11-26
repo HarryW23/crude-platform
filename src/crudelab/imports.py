@@ -4,17 +4,17 @@ from __future__ import annotations
 import hashlib
 import re
 from dataclasses import replace
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
 
-from sqlalchemy import delete, func, insert, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .config import normalize_alias
 from .connectors.excel import SheetPreview, parse_workbook
-from .ingest import Obs, write_observations
+from .import_checks import consistency_warnings, quality_warnings, scale_warnings, screen
+from .ingest import write_observations
 from .models import AuditLog, DataSource, ImportBatch, Series, SeriesAlias
-from .schema import PRICE_KINDS
 from .settings import Settings
 
 
@@ -41,143 +41,6 @@ def _duplicates(previews: list[SheetPreview], mapping: dict[str, str | None] | N
                 seen.setdefault(code, []).append(f"{sheet.name} {col.ref}")
     return [f"{code} 被多處對應：{'；'.join(refs)}（日期重疊時以後面的為準）"
             for code, refs in seen.items() if len(refs) > 1]
-
-
-def screen(session: Session, observations: list[Obs]) -> tuple[list[Obs], list[str]]:
-    """去掉文件裡明顯不能用的數據點，回傳（留下的，說明）。預覽和入庫用同一個規則，預覽裡會寫明去掉了什麼：
-    - 序列的 data_from 之前的（合約改過規格，見 SeriesDef.data_from）
-    - 序列的 bad_days 裡的：核對過是錯的日子
-    - 絕對價格正好是 0 的：路透在沒有報價的日子會填 0（例如阿曼期貨 2022 年 6 月連續十幾天是 0）。
-      升貼水、官價、比率是 0 是正常的，不去掉；WTI 2020-04-20 的負價也不受影響"""
-    codes = {o.series_code for o in observations}
-    rows = {r.code: r for r in session.scalars(select(Series).where(Series.code.in_(codes)))} if codes else {}
-    early: dict[str, int] = {}
-    zero: dict[str, list[date]] = {}
-    bad: dict[str, list[date]] = {}
-    kept = []
-    for o in observations:
-        row = rows.get(o.series_code)
-        if row is not None and row.data_from is not None and o.obs_date < row.data_from:
-            early[o.series_code] = early.get(o.series_code, 0) + 1
-        elif row is not None and row.bad_days and o.obs_date.isoformat() in row.bad_days:
-            bad.setdefault(o.series_code, []).append(o.obs_date)
-        elif row is not None and row.kind in PRICE_KINDS and o.value == 0:
-            zero.setdefault(o.series_code, []).append(o.obs_date)
-        else:
-            kept.append(o)
-    notes = [f"{code}：{rows[code].data_from} 之前的 {n} 個數據點不導入"
-             "（這條序列只用這天之後的數據，見配置裡的 data_from）" for code, n in sorted(early.items())]
-    notes += [f"{code}：{'、'.join(str(d) for d in sorted(days))} 核對過是錯價，不導入（見配置裡的 bad_days）"
-              for code, days in sorted(bad.items())]
-    for code, days in sorted(zero.items()):
-        shown = "、".join(str(d) for d in sorted(days)[:5]) + (f" 等 {len(days)} 天" if len(days) > 5 else "")
-        notes.append(f"{code}（{rows[code].name_zh}）有 {len(days)} 個值正好是 0，不導入：{shown}。"
-                     "價格不會是 0，這是數據商沒有報價的日子；那幾天當作沒有數據")
-    return kept, notes
-
-
-LEVEL_KINDS = ("futures", "swap", "spot", "freight", "fx", "stock", "flow", "position")   # 數值本身是量級的類型
-SCALE_FACTOR = 20             # 新數據的中位數和庫裡已有數據差這麼多倍以上，多半是單位錯了
-
-
-CONSISTENCY_LIMIT = 0.10      # 和庫裡同一批日子的數普遍相差超過 10%：多半是篩選條件不一樣，不是修訂
-RECENT_PERIODS = 6            # 最近幾期本來就會修訂（Kpler 流量、EIA、月報），不算進一致性核對
-
-
-def consistency_warnings(session: Session, observations: list[Obs]) -> list[str]:
-    """重新導入同一段歷史時，舊的日子應該和庫裡一樣（修訂只動最近幾期）。普遍差了 10% 以上，
-    多半是下載時篩選條件不一樣：商品選了全部油品而不是原油、區域不對、單位是千噸不是千桶、浮倉天數門檻改了……
-    這種錯單位核對（差 20 倍才提醒）攔不住。比的是平台實際採用的值，最近 RECENT_PERIODS 期不比。"""
-    from collections import defaultdict
-    from statistics import median
-
-    from .ingest import load_points
-    new: dict[str, dict] = defaultdict(dict)
-    for o in observations:
-        new[o.series_code][o.obs_date] = o.value
-    rows = {r.code: r for r in session.scalars(select(Series).where(Series.code.in_(list(new))))} if new else {}
-    out = []
-    for code, points in sorted(new.items()):
-        row = rows.get(code)
-        if row is None or row.kind not in LEVEL_KINDS:
-            continue
-        effective = load_points(session, [code])
-        old = dict(zip(effective["obs_date"], effective["value"], strict=True))
-        common = sorted(d for d in points if d in old and old[d] != 0)[:-RECENT_PERIODS]
-        if len(common) < 6:
-            continue
-        gap = median(abs(points[d] / old[d] - 1) for d in common)
-        if gap > CONSISTENCY_LIMIT:
-            out.append(f"{code}（{row.name_zh}）：和庫裡已有的 {len(common)} 個相同日子比，數字普遍相差 {gap:.0%}"
-                       f"（{common[0]} 到 {common[-1]}；最近 {RECENT_PERIODS} 期本來會修訂，沒算）。"
-                       "舊的日子不該變這麼多，多半是下載時的篩選條件和上次不一樣（商品、區域、單位、拆分方式）。"
-                       "確認之前不要導入")
-    return out
-
-
-def _amount(x: float) -> str:
-    return f"{x:,.0f}" if x >= 100 else f"{x:.4g}"
-
-
-def scale_warnings(session: Session, observations: list[Obs]) -> list[str]:
-    """單位核對：新數據和庫裡這條序列已有的數據（其他來源的也算）差了幾十倍以上時提醒。
-    典型是單位錯了：Kpler 插件給的是桶而不是千桶、噸而不是千噸，差 1000 倍；美分和美元差 100 倍。
-    比的是平台實際採用的值（同一天有幾個來源時取優先級最高的，和查價一致）：低優先級的演示數據等不能當比較基準。
-    比的是同一批日子：兩邊都有的日期上逐日相比取中位數；沒有重疊（例如只導新的一段）時，
-    比兩邊各自最近 60 個點。不能拿一大段歷史去比最近的水平：運費這種一年裡能漲十幾倍的，會誤報。
-    升貼水、官價、比率會在 0 附近正負來回，不查。"""
-    from collections import defaultdict
-    from statistics import median
-
-    from .ingest import load_points
-    new: dict[str, dict] = defaultdict(dict)
-    for o in observations:
-        new[o.series_code][o.obs_date] = abs(o.value)
-    rows = {r.code: r for r in session.scalars(select(Series).where(Series.code.in_(list(new))))} if new else {}
-    out = []
-    for code, points in sorted(new.items()):
-        row = rows.get(code)
-        if row is None or row.kind not in LEVEL_KINDS or len(points) < 3:
-            continue
-        effective = load_points(session, [code])               # 每天一個值：優先級最高的來源
-        old = {d: abs(v) for d, v in zip(effective["obs_date"], effective["value"], strict=True)}
-        common = [d for d in points if d in old and old[d] > 0 and points[d] > 0]
-        if len(common) >= 3:
-            ratio = median(points[d] / old[d] for d in common)
-            a, b = median(points[d] for d in common), median(old[d] for d in common)
-        else:
-            recent = [old[d] for d in sorted(old)[-60:]]
-            if len(recent) < 3:
-                continue
-            a, b = median(points[d] for d in sorted(points)[-60:]), median(recent)
-            if a <= 0 or b <= 0:
-                continue
-            ratio = a / b
-        if ratio >= SCALE_FACTOR or ratio <= 1 / SCALE_FACTOR:
-            times = f"{ratio:,.0f} 倍" if ratio >= 1 else f"1/{1 / ratio:,.0f}"
-            out.append(f"{code}（{row.name_zh}）這批數據的中位數是 {_amount(a)}，庫裡已有的是 {_amount(b)}，"
-                       f"差了約 {times}：單位多半不對（這條序列的單位是 {row.unit_code}）。確認之前不要導入")
-    return out
-
-
-def _quality_warnings(settings: Settings, observations: list[Obs]) -> list[str]:
-    """文件裡的數據質量提醒（不擋導入）：
-    - 很長一段相同的值：數據商在沿用舊值（repeats.py，規則見 config/freshness.yaml 的 repeats）
-    - 單日錯價：跳上去又回來、同一天其他序列沒一起跳（spikes.py）"""
-    if not observations:
-        return []
-    from . import repeats, spikes
-    from .config import load_config
-    cfg = load_config(settings.config_dir)
-    by_series: dict[str, list[tuple[date, float]]] = {}
-    for o in observations:
-        by_series.setdefault(o.series_code, []).append((o.obs_date, o.value))
-    daily = {c: p for c, p in by_series.items() if c in cfg.series and cfg.series[c].frequency == "daily"}
-    kinds = {c: cfg.series[c].kind for c in daily}
-    names = {c: cfg.series[c].name_zh for c in daily}
-    commodity = {c: cfg.series[c].commodity for c in daily}
-    return repeats.import_warnings(cfg, by_series) + spikes.import_warnings(
-        kinds, names, daily, commodity, cfg.freshness.spikes.confirmed)
 
 
 ALL_SCREENED = "文件裡認出的 {n} 個數據點全部被排除（價格為 0、data_from 之前或 bad_days，見提醒），沒有能入庫的數據"
@@ -243,7 +106,7 @@ def preview_file(session: Session, settings: Settings, content: bytes, filename:
                               "World monthly exports (Crude-Co…，文件名不要改）")
     observations, screened = screen(session, observations)
     hold = scale_warnings(session, observations) + consistency_warnings(session, observations)
-    warnings += screened + hold + _quality_warnings(settings, observations)
+    warnings += screened + hold + quality_warnings(settings, observations)
     if cover_note:
         warnings.append(cover_note)
     if earlier:
@@ -319,124 +182,3 @@ def commit_batch(session: Session, batch_id: int, mapping: dict[str, str | None]
     return {"batch_id": batch.id, **batch.stats, "unmapped": unmapped,
             "warnings": _duplicates(previews, mapping)}
 
-
-# ------------------------------ 撤銷導入 ------------------------------
-
-REVERT_ACTOR = "revert:{id}"
-
-
-def _later_changes(session: Session, batch: ImportBatch) -> list[str]:
-    """之後有沒有別的批次（或定時取數）改過這一批寫的數據點。有的話不能直接撤銷：
-    要先撤銷之後的那一批（後進先出），否則不知道該恢復成哪個數。"""
-    from .models import Observation, ObservationRevision
-    replaced = session.execute(select(ObservationRevision.series_code, ObservationRevision.obs_date,
-                                      ObservationRevision.source_code, ObservationRevision.replaced_by).where(
-        ObservationRevision.batch_id == batch.id)).all()
-    blockers: dict[str, str] = {}
-    for code, day, source, by in replaced:
-        if by == "config" or by.startswith("revert:"):         # 按配置清理掉的、之前撤銷時記的：不算之後的改動
-            continue
-        row = session.scalars(select(Observation).where(
-            Observation.series_code == code, Observation.obs_date == day, Observation.source_code == source)).first()
-        if row is not None and row.batch_id == batch.id:        # 改過、但那一批已經撤銷，又回到這一批的數
-            continue
-        if row is None or row.batch_id is None:
-            label = "定時取數，或之後被刪除"
-        else:
-            later = session.get(ImportBatch, row.batch_id)
-            label = f"#{row.batch_id}（{later.filename}）" if later else f"#{row.batch_id}"
-        blockers.setdefault(label, f"{code} {day}")
-    mine = set((batch.undo or {}).get("vintage_added", [])) | {m["id"] for m in (batch.undo or {}).get(
-        "vintage_modified", [])}
-    if mine:
-        for later in session.scalars(select(ImportBatch).where(ImportBatch.id > batch.id,
-                                                               ImportBatch.status == "committed")):
-            touched = {m["id"] for m in (later.undo or {}).get("vintage_modified", [])}
-            if touched & mine:
-                blockers.setdefault(f"#{later.id}（{later.filename}）", "按期保存的數據")
-    return [f"{who}（例如 {what}）" for who, what in blockers.items()]
-
-
-def revert_batch(session: Session, batch_id: int, actor: str = "local", dry_run: bool = False) -> dict:
-    """撤銷一次導入：這一批新加的數據點刪掉，它覆蓋掉的舊值恢復回來，按期保存的記錄也還原。
-
-    全程留記錄、可以追溯：被撤銷的值記進修訂記錄（replaced_by = revert:批次號），按時點（as_of）查詢
-    撤銷之前的那段時間，仍然看得到當時用的數；操作日誌記一條 revert_import；批次標成 reverted，原文件保留。
-    之後有別的批次改過同樣的數據點時拒絕（要先撤銷之後的那一批），不猜該恢復成哪個數。
-    dry_run：只回傳會改動多少，不改。"""
-    from .ingest import utcnow
-    from .models import Observation, ObservationRevision, ObservationVintage
-    batch = session.get(ImportBatch, batch_id)
-    if batch is None:
-        raise ImportFlowError(f"找不到導入批次 {batch_id}")
-    if batch.status == "reverted":
-        raise ImportFlowError(f"批次 {batch_id} 已經在 {batch.reverted_at:%Y-%m-%d %H:%M} 撤銷過")
-    if batch.status != "committed":
-        raise ImportFlowError(f"批次 {batch_id} 還沒有入庫（只預覽過），不用撤銷")
-    vintage_rows = session.scalar(select(func.count()).select_from(ObservationVintage).where(
-        ObservationVintage.batch_id == batch_id))
-    if batch.undo is None and vintage_rows:
-        raise ImportFlowError(f"批次 {batch_id} 是在有撤銷功能之前導入的，按期保存的數據（{vintage_rows} 行）"
-                              "沒有撤銷記錄，沒辦法準確還原；請用正確的文件重新導入來改正")
-    blockers = _later_changes(session, batch)
-    if blockers:
-        raise ImportFlowError(f"批次 {batch_id} 寫的數據之後又被改過：{'；'.join(blockers[:3])}"
-                              f"{' 等' if len(blockers) > 3 else ''}。要先撤銷之後的那一批（後進先出），"
-                              "否則不知道該恢復成哪個數")
-    current = list(session.scalars(select(Observation).where(Observation.batch_id == batch_id)))
-    undo = batch.undo or {}
-    added_ids = undo.get("vintage_added", [])
-    modified = undo.get("vintage_modified", [])
-    counts = {"restored": 0, "removed": 0, "vintage_removed": 0, "vintage_restored": len(modified)}
-    # 這一批寫入時覆蓋掉的舊值：修訂記錄裡在這一批寫入的那一刻被取代的那條（不是撤銷時記的）。
-    # 寫入時刻用批次記下的；之前的版本沒記，用各點的更新時間（沒被撤銷恢復過時就是寫入時刻）。一次查完
-    written = datetime.fromisoformat(undo["written_at"]) if undo.get("written_at") else None
-    moments = {written} if written else {o.updated_at for o in current}
-    overwritten: dict[tuple, ObservationRevision] = {}
-    for rev in session.scalars(select(ObservationRevision).where(
-            ObservationRevision.replaced_at.in_(moments), ObservationRevision.replaced_by.not_like("revert:%"),
-            ObservationRevision.series_code.in_({o.series_code for o in current}))) if current else []:
-        overwritten.setdefault((rev.series_code, rev.obs_date, rev.source_code, rev.replaced_at), rev)
-    previous: dict[int, ObservationRevision | None] = {}
-    for obs in current:
-        previous[obs.id] = overwritten.get((obs.series_code, obs.obs_date, obs.source_code, written or obs.updated_at))
-        counts["restored" if previous[obs.id] is not None else "removed"] += 1
-    rows = list(session.scalars(select(ObservationVintage).where(ObservationVintage.id.in_(added_ids)))) \
-        if added_ids else []
-    counts["vintage_removed"] = len(rows)
-    plan: dict = {**counts, "series": sorted({o.series_code for o in current})}
-    if dry_run:
-        return {"batch_id": batch_id, "filename": batch.filename, "dry_run": True, **plan}
-
-    now = utcnow()
-    who = REVERT_ACTOR.format(id=batch_id)
-    if current:             # 被撤銷的值記進修訂記錄（批量寫：一批可能有二十多萬個點）
-        session.execute(insert(ObservationRevision), [
-            {"series_code": o.series_code, "obs_date": o.obs_date, "source_code": o.source_code, "value": o.value,
-             "batch_id": o.batch_id, "source_ref": o.source_ref, "recorded_at": o.updated_at, "replaced_at": now,
-             "replaced_by": who} for o in current])
-    gone = [obs.id for obs in current if previous[obs.id] is None]           # 這一批新加的點
-    for obs in current:
-        old = previous[obs.id]
-        if old is not None:                                  # 這一批覆蓋掉的舊值
-            obs.value, obs.batch_id, obs.source_ref, obs.updated_at = old.value, old.batch_id, old.source_ref, now
-    session.flush()
-    for i in range(0, len(gone), 5000):
-        session.execute(delete(Observation).where(Observation.id.in_(gone[i:i + 5000])),
-                        execution_options={"synchronize_session": False})
-    vintage_gone = [r.id for r in rows]
-    for i in range(0, len(vintage_gone), 5000):
-        session.execute(delete(ObservationVintage).where(ObservationVintage.id.in_(vintage_gone[i:i + 5000])),
-                        execution_options={"synchronize_session": False})
-    session.expire_all()
-    for m in modified:
-        kept = session.get(ObservationVintage, m["id"])
-        if kept is not None:
-            kept.value, kept.batch_id, kept.source_ref = m["value"], m["batch_id"], m["source_ref"]
-            kept.confirmed_at = date.fromisoformat(m["confirmed_at"]) if m["confirmed_at"] else None
-    batch.status, batch.reverted_at, batch.reverted_by = "reverted", now, actor
-    batch.stats = {**(batch.stats or {}), "reverted": counts}
-    session.add(AuditLog(actor=actor, action="revert_import", entity="import_batch", entity_id=str(batch_id),
-                         detail={"filename": batch.filename, **plan}))
-    session.flush()
-    return {"batch_id": batch_id, "filename": batch.filename, "dry_run": False, **plan}

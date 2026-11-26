@@ -50,7 +50,7 @@ def write_observations(session: Session, observations: list[Obs], source_code: s
                        batch_id: int | None = None, actor: str = "local",
                        now: datetime | None = None, undo: dict | None = None) -> dict[str, int]:
     """寫入一批數據點，回傳 {inserted, updated, unchanged}。now 只在測試時傳入。
-    undo：給了就記下這批對按期保存表（observation_vintage）的改動，撤銷導入時用（見 imports.revert_batch）；
+    undo：給了就記下這批對按期保存表（observation_vintage）的改動，撤銷導入時用（見 import_revert.revert_batch）；
     主表的改動不用另記，被覆蓋的舊值都在 observation_revision 裡。"""
     now = now or utcnow()
     if session.get(DataSource, source_code) is None:

@@ -118,7 +118,7 @@ def sync_to_db(session: Session, cfg: Config) -> dict[str, int]:
 
 
 def _drop_unusable(session: Session, cfg: Config) -> int:
-    """導入時會跳過的數據點（data_from 之前、bad_days、絕對價格正好是 0，見 imports.screen），
+    """導入時會跳過的數據點（data_from 之前、bad_days、絕對價格正好是 0，見 import_checks.screen），
     在規則加上之前已經入庫的，這裡移除：舊值記進修訂記錄，可以追溯。
     後台手動錄入的（數據源類型 manual）是人工確認過的，不動。"""
     manual = set(session.scalars(select(DataSource.code).where(DataSource.kind == "manual")))

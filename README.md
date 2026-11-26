@@ -662,7 +662,7 @@ src/crudelab/
   jin10.py              金十數據：額度、財經日曆（connectors/mcp.py 是通用的 MCP 客戶端）
   backtest.py           回測
   backup.py             備份與恢復
-  connectors/ imports.py 數據接入
+  connectors/ imports.py 數據接入（import_checks.py 導入前檢查，import_revert.py 撤銷導入）
   api/                  接口：app.py 定義前台和後台兩個應用各包含哪些路由
   web/                  頁面：index.html 前台、admin.html 後台；js/views/front、js/views/admin
   llm/                  大模型接口：供應商接入、抽取與撰寫任務、數字核對

@@ -179,7 +179,7 @@ class ImportBatch(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     created_by: Mapped[str] = mapped_column(String(64))
     vintage: Mapped[date | None] = mapped_column(Date)               # 機構報告的發佈日期（補錄歷史報告時填）
-    undo: Mapped[dict | None] = mapped_column(JSON)    # 撤銷用：這批對按期保存表的改動（見 imports.revert_batch）
+    undo: Mapped[dict | None] = mapped_column(JSON)    # 撤銷用：這批對按期保存表的改動（見 import_revert.revert_batch）
     reverted_at: Mapped[datetime | None] = mapped_column(DateTime)   # 撤銷時間（UTC；空 = 沒撤銷）
     reverted_by: Mapped[str | None] = mapped_column(String(64))      # 誰撤銷的
 

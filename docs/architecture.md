@@ -19,7 +19,7 @@ config/*.yaml ──校驗──▶ Config ──同步──▶ 數據庫主數
 | 層 | 代碼 | 職責 | 不做什麼 |
 |---|---|---|---|
 | 配置 | `schema.py` `config.py` `units.py` `formula.py` `refinery.py` `balance.py` | 定義「有什麼」：序列、參數、指標公式、煉廠模型、平衡表、關係模型；一次校驗完 | 不碰數據庫 |
-| 接入 | `connectors/` `imports.py` | 把外部數據變成 `Obs` 數據點 | 不做計算，不直接寫庫 |
+| 接入 | `connectors/` `imports.py` `import_checks.py` `import_revert.py` | 把外部數據變成 `Obs` 數據點；導入前的檢查；撤銷導入 | 不做計算，不直接寫庫 |
 | 存儲 | `models.py` `migrations/` `ingest.py` `parameters.py` `scenarios.py` `events.py` `master.py` | 數據點、參數、情境調整的寫入、讀取、歷史 | 不懂業務含義 |
 | 計算 | `indicators.py` `analytics.py` `signals.py` `projection.py` | 按公式算指標、追溯、套用情境；季節性和擬合；方向信號；價格推演 | 不寫庫（推演的設定由同文件裡的增刪函數寫） |
 | 產出 | `reports.py` `llm/` | 把某一刻的狀態收成快照並排版；大模型抽取事件、寫解讀 | 不自己算數 |

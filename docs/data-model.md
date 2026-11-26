@@ -196,7 +196,7 @@
 | `created_at` | DATETIME | 否 |  | 記錄建立時間（UTC） |
 | `created_by` | VARCHAR(64) | 否 |  | 建立者（登錄用戶名；未開登錄時為 local） |
 | `vintage` | DATE | 是 |  | 機構報告的發佈日期（補錄歷史報告時填） |
-| `undo` | JSON | 是 |  | 撤銷用：這批對按期保存表的改動（見 imports.revert_batch） |
+| `undo` | JSON | 是 |  | 撤銷用：這批對按期保存表的改動（見 import_revert.revert_batch） |
 | `reverted_at` | DATETIME | 是 |  | 撤銷時間（UTC；空 = 沒撤銷） |
 | `reverted_by` | VARCHAR(64) | 是 |  | 誰撤銷的 |
 

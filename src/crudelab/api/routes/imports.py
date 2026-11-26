@@ -8,7 +8,8 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ...imports import ImportFlowError, commit_batch, preview_file, revert_batch
+from ...import_revert import revert_batch
+from ...imports import ImportFlowError, commit_batch, preview_file
 from ...ingest import IngestError
 from ...models import ImportBatch
 from ..deps import DB, AppState, get_actor, get_state
