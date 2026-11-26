@@ -72,6 +72,7 @@ TD15_WS                  .BAWC            TRDPRC_1
 TD20_WS                  .BAWU            TRDPRC_1
 TD25_WS                  .BAUM            TRDPRC_1
 USDCNY                   CNY=
+ICE_BRENT_OI             1ICELCOOI        TRDPRC_1
 GASOIL_ICE_M1            LGOc1
 GASOIL_ICE_M2            LGOc2
 GASOIL_ICE_M3            LGOc3
@@ -98,7 +99,7 @@ LLDPE_CN                 DLLoi1           SETTLE
 PTA_CN                   CTAoi1           SETTLE
 MEG_CN                   DEGoi1           SETTLE
 
-# 下面 13 條可能在路透上，但還不知道 RIC（現貨評估價通常要另外訂閱 Platts / Argus）：
+# 下面 12 條可能在路透上，但還不知道 RIC（現貨評估價通常要另外訂閱 Platts / Argus）：
 # UPPER_ZAKUM_DIFF       ?    上扎庫姆升貼水
 # EKOFISK_DIFF           ?    埃科菲斯克升貼水
 # JOHAN_SVERDRUP_DIFF    ?    約翰斯維德魯普升貼水
@@ -106,7 +107,6 @@ MEG_CN                   DEGoi1           SETTLE
 # TUPI_CHINA_DIFF        ?    Tupi 到中國升貼水（到岸）
 # ICE_BRENT_MM_LONG      ?    Brent 管理基金多頭
 # ICE_BRENT_MM_SHORT     ?    Brent 管理基金空頭
-# ICE_BRENT_OI           ?    Brent 總持倉量
 # SG_VLSFO               ?    新加坡 0.5% 低硫燃料油
 # NWE_DIESEL_10PPM       ?    西北歐 10ppm 柴油
 # NWE_JET                ?    西北歐航煤

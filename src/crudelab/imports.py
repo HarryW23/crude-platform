@@ -87,28 +87,38 @@ def _amount(x: float) -> str:
 def scale_warnings(session: Session, observations: list[Obs]) -> list[str]:
     """單位核對：新數據和庫裡這條序列已有的數據（其他來源的也算）差了幾十倍以上時提醒。
     典型是單位錯了：Kpler 插件給的是桶而不是千桶、噸而不是千噸，差 1000 倍；美分和美元差 100 倍。
+    比的是同一批日子：兩邊都有的日期上逐日相比取中位數；沒有重疊（例如只導新的一段）時，
+    比兩邊各自最近 60 個點。不能拿一大段歷史去比最近的水平：運費這種一年裡能漲十幾倍的，會誤報。
     升貼水、官價、比率會在 0 附近正負來回，不查。"""
     from collections import defaultdict
     from statistics import median
 
     from .models import Observation
-    new: dict[str, list[float]] = defaultdict(list)
+    new: dict[str, dict] = defaultdict(dict)
     for o in observations:
-        new[o.series_code].append(abs(o.value))
+        new[o.series_code][o.obs_date] = abs(o.value)
     rows = {r.code: r for r in session.scalars(select(Series).where(Series.code.in_(list(new))))} if new else {}
     out = []
-    for code, values in sorted(new.items()):
+    for code, points in sorted(new.items()):
         row = rows.get(code)
-        if row is None or row.kind not in LEVEL_KINDS or len(values) < 3:
+        if row is None or row.kind not in LEVEL_KINDS or len(points) < 3:
             continue
-        old = [abs(v) for v in session.scalars(select(Observation.value).where(Observation.series_code == code)
-                                               .order_by(Observation.obs_date.desc()).limit(60))]
-        if len(old) < 3:
-            continue
-        a, b = median(values), median(old)
-        if a <= 0 or b <= 0:
-            continue
-        ratio = a / b
+        old = {d: abs(v) for d, v in session.execute(
+            select(Observation.obs_date, Observation.value).where(
+                Observation.series_code == code, Observation.obs_date.between(min(points), max(points))))}
+        common = [d for d in points if d in old and old[d] > 0 and points[d] > 0]
+        if len(common) >= 3:
+            ratio = median(points[d] / old[d] for d in common)
+            a, b = median(points[d] for d in common), median(old[d] for d in common)
+        else:
+            recent = [abs(v) for v in session.scalars(select(Observation.value).where(
+                Observation.series_code == code).order_by(Observation.obs_date.desc()).limit(60))]
+            if len(recent) < 3:
+                continue
+            a, b = median(points[d] for d in sorted(points)[-60:]), median(recent)
+            if a <= 0 or b <= 0:
+                continue
+            ratio = a / b
         if ratio >= SCALE_FACTOR or ratio <= 1 / SCALE_FACTOR:
             times = f"{ratio:,.0f} 倍" if ratio >= 1 else f"1/{1 / ratio:,.0f}"
             out.append(f"{code}（{row.name_zh}）這批數據的中位數是 {_amount(a)}，庫裡已有的是 {_amount(b)}，"

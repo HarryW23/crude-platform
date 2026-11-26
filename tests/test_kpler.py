@@ -69,3 +69,16 @@ def test_wrong_units_are_flagged_against_existing_data(session, settings, cfg):
                and "單位是 kb/d" in w for w in warnings)
     right = filled(cfg, {"Kpler Saudi Arabia crude exports": [6810, 6905, 7120]}, {})
     assert not [w for w in preview_file(session, settings, right, "k3.xlsx", "kpler_xls")["warnings"] if "單位" in w]
+
+
+def test_long_history_is_not_mistaken_for_a_unit_change(session, settings):
+    """運費一年裡漲十幾倍：十年歷史（中位數 55）和最近的水平（1000 上下）差很多，不是單位問題，不提醒。"""
+    from datetime import timedelta
+    days = [date(2016, 1, 4) + timedelta(days=7 * i) for i in range(560)]
+    values = [55.0] * 530 + [1000.0] * 30
+    lines = ["Date,TD3C_WS"] + [f"{d},{v}" for d, v in zip(days[-40:], values[-40:], strict=True)]
+    first = preview_file(session, settings, "\n".join(lines).encode(), "r1.csv", "reuters_xls")
+    commit_batch(session, first["batch_id"])
+    full = ["Date,TD3C_WS"] + [f"{d},{v}" for d, v in zip(days, values, strict=True)]
+    warnings = preview_file(session, settings, "\n".join(full).encode(), "r2.csv", "reuters_xls")["warnings"]
+    assert not [w for w in warnings if "單位" in w]

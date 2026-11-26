@@ -26,4 +26,5 @@ series:
   - {code: ICE_BRENT_MM_SHORT, name_zh: Brent 管理基金空頭, commodity: BRENT, location: NWE, kind: position, unit: lots,
      frequency: weekly, module: positioning, provider: exchange_intl, aliases: ["Brent Managed Money Short", "ICE Brent Managed Money Short", "Brent 管理基金空頭"]}
   - {code: ICE_BRENT_OI, name_zh: Brent 總持倉量, commodity: BRENT, location: NWE, kind: position, unit: lots,
-     frequency: weekly, module: positioning, provider: exchange_intl, aliases: ["Brent Open Interest", "ICE Brent Open Interest", "Brent 總持倉量"]}
+     frequency: weekly, module: positioning, provider: exchange_intl, lseg: {ric: "1ICELCOOI", field: TRDPRC_1},
+     aliases: ["Brent Open Interest", "ICE Brent Open Interest", "Brent 總持倉量"]}
