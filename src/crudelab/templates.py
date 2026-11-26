@@ -1,12 +1,12 @@
 """導入模板：後台導入頁可以下載。模板從配置生成，序列改了模板跟著變，不會和配置對不上。
 
-OPEC 月報的產量表（#14，PDF 讀不出時的後備）和 Kpler 取數表（#25）。
-路透能導出的數據不需要模板（lseg_export.py 直接寫出能導入的文件）。
+OPEC 月報的產量表（#14，PDF 讀不出時的後備）。路透（lseg_export.py）和 Kpler（終端下載的表，見 connectors/kpler.py）
+的文件都能直接導入，不需要模板。
 """
 from __future__ import annotations
 
 import io
-from datetime import date, datetime
+from datetime import datetime
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
@@ -85,63 +85,6 @@ def opec_production(cfg: Config) -> bytes:
     fill.column_dimensions["F"].width = 30
     fill.freeze_panes = "B2"
 
-    wb.properties.creator = "crudelab"
-    wb.properties.created = wb.properties.modified = datetime(2026, 1, 1)
-    out = io.BytesIO()
-    wb.save(out)
-    return out.getvalue()
-
-
-KPLER_GUIDE = (
-    "Kpler 取數模板（原油出口、進口、浮倉）",
-    "",
-    "在裝了 Kpler Excel 插件（V2）的電腦上做。每頁第一行是表頭，不要改；第一列是日期。",
-    "",
-    "「月度流量」頁：每一列是一個國家的原油出口或進口。",
-    "  在 Kpler 插件裡選 Flows → 商品 Crude → 方向 Export（或 Import）→ 國家 → 粒度 Monthly → 單位 kbd（千桶/日），",
-    "  把得到的月份和數字放到對應的列下面（月份放第一列，一個月一行）。",
-    "  當月的數會隨貨物卸完不斷修訂：每次導入都會記一期，所以盡量每天（至少每周）導入一次，連同最近幾個月一起更新。",
-    "",
-    "「周度浮倉」頁：全球原油浮倉、在途（oil on water），單位千桶。",
-    "  Inventories → 商品 Crude → 勾選 add Oil-On-Water，按 onshore/offshore 拆分 → 粒度 Weekly；",
-    "  浮倉的天數門檻用 Kpler 預設（停留 7 天以上），以後不要改，否則前後不可比。",
-    "",
-    "存檔前一定要：全選 → 複製 → 選擇性貼上「值」。還帶著 Kpler 公式的文件導入時會被拒收",
-    "（公式離開裝了插件的電腦就算不出來，只會悄悄少一部分數據）。",
-    "",
-    "然後在後台「數據導入」頁上傳，數據源選「Kpler（Excel 插件）」，預覽沒問題就確認。",
-    "  - 表頭用模板裡的名字，不要換成 Kpler 原表的國家名：「Saudi Arabia」已經是 OPEC 月報產量的名字，會對錯序列。",
-    "  - 單位不對（例如插件給的是桶而不是千桶）時，第一次導入後我會在數量級上發現；先照模板的單位取。",
-    "  - 要加國家或者其他數據，告訴我，我先在配置裡加序列，模板會自動多出一列。",
-)
-
-
-def kpler(cfg: Config) -> bytes:
-    """Kpler 取數模板（.xlsx）：說明、月度流量、周度浮倉。列從配置裡 provider 為 kpler 的序列生成。"""
-    series = [s for s in cfg.series.values() if s.provider == "kpler"]
-    if not series:
-        raise ValueError("配置裡沒有 Kpler 的序列")
-    wb = Workbook()
-    guide = wb.active
-    guide.title = "說明"
-    for i, line in enumerate(KPLER_GUIDE, 1):
-        guide.cell(i, 1, line or None)
-    guide["A1"].font = Font(bold=True, size=13)
-    guide.column_dimensions["A"].width = 110
-    for title, frequency, first in (("月度流量", "monthly", "月份"), ("周度浮倉", "weekly", "日期")):
-        sheet = wb.create_sheet(title)
-        columns = [s for s in series if s.frequency == frequency]
-        for j, text in enumerate([first, *[s.aliases[0] for s in columns]], 1):
-            cell = sheet.cell(1, j, text)
-            cell.font = Font(bold=True)
-            cell.fill = PatternFill("solid", fgColor="EEF2F6")
-            sheet.column_dimensions[cell.column_letter].width = 14 if j == 1 else 24
-        for j, s in enumerate(columns, 2):                      # 第二行：中文名和單位（也是序列的名字，認得出）
-            sheet.cell(2, j, s.name_zh).font = Font(color="888888")
-        sheet.cell(2, 1, "（中文名）").font = Font(color="888888")
-        sheet.cell(3, 1, date(2026, 10, 1) if frequency == "monthly" else date(2026, 11, 20)).number_format = \
-            "yyyy-mm" if frequency == "monthly" else "yyyy-mm-dd"
-        sheet.freeze_panes = "B3"
     wb.properties.creator = "crudelab"
     wb.properties.created = wb.properties.modified = datetime(2026, 1, 1)
     out = io.BytesIO()

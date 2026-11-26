@@ -174,6 +174,9 @@ def read_grids(path: Path) -> tuple[dict[str, list[list]], dict[str, str]]:
                 if (ws.max_row or len(rows)) > MAX_ROWS or width > MAX_COLS:
                     truncated[ws.title] = (f"這張表有 {ws.max_row or len(rows)} 行 × {width} 列，超過讀取上限"
                                            f"（{MAX_ROWS} 行 × {MAX_COLS} 列），超出的部分沒有讀入")
+            from .kpler import adapt  # Kpler 終端下載的表（connectors/kpler.py）
+            for title, note in adapt(path, grids).items():
+                truncated[title] = "；".join(filter(None, [truncated.get(title), note]))
             return grids, truncated
         finally:
             wb.close()
@@ -438,12 +441,16 @@ def _parse_sheet(name: str, grid: list[list], resolver: Resolver,
                    points)
         return preview, observations
 
+    unlisted = 0
     for j in others:
         if stats[j][0] == 0:
             continue
         candidates = [t for t in (_header_text(grid[i][j]) for i in header_rows) if t]
         label = " | ".join(candidates) if candidates else f"（無表頭）{line_ref(j)}"
         code, note = _match(candidates, label, resolver)
+        if code is None and label.startswith("kpler:"):         # Kpler 表裡平台沒有對應序列的國家：不一一列出
+            unlisted += 1
+            continue
         points, skipped_n = [], 0
         for i in data_rows:
             raw = grid[i][j]
@@ -454,6 +461,10 @@ def _parse_sheet(name: str, grid: list[list], resolver: Resolver,
             points.append((dates[i], value, cell_ref(i, j)))
         finish(ColumnPreview(key=f"{name}|{j}", ref=line_ref(j), label=label, candidates=candidates,
                              series_code=code, n_skipped=skipped_n, note=note), points)
+    if unlisted:
+        extra = (f"另有 {unlisted} 列（國家 / 分類）平台裡沒有對應的序列，跳過；"
+                 "要的話在 config/master/series/kpler.yaml 加")
+        preview.note = "；".join(filter(None, [preview.note, extra]))
     return preview, observations
 
 

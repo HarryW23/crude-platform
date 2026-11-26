@@ -59,14 +59,6 @@ def opec_template(state: AppState = Depends(get_state)):
                     headers={"Content-Disposition": 'attachment; filename="opec_production.xlsx"'})
 
 
-@admin_router.get("/imports/templates/kpler.xlsx")
-def kpler_template(state: AppState = Depends(get_state)):
-    """Kpler 取數模板（從配置生成）。"""
-    from ...templates import kpler
-    return Response(kpler(state.cfg), media_type=XLSX,
-                    headers={"Content-Disposition": 'attachment; filename="kpler.xlsx"'})
-
-
 @admin_router.get("/imports")
 def list_imports(session: Session = DB):
     rows = session.scalars(select(ImportBatch).where(ImportBatch.status == "committed")

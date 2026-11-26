@@ -15,6 +15,7 @@ _MONTHS = {m: i for i, m in enumerate(
 _YEAR_MONTH = re.compile(r"^(\d{4})\s*[-/年]\s*(\d{1,2})\s*月?$")            # 2026-09  2026/9  2026年9月
 _MON_YEAR = re.compile(r"^([A-Za-z]{3})[a-z]*[-\s']?(\d{4}|\d{2})$")           # Sep-26  Sep 2026
 _YEAR_Q = re.compile(r"^(\d{4})\s*-?\s*Q([1-4])$", re.I)                       # 2026Q3  2026-Q3
+_ISO_WEEK = re.compile(r"^(\d{4})-?W(\d{1,2})$", re.I)                         # 2026-W48（ISO 周，Kpler 的周度數據）
 _Q_YEAR = re.compile(r"^([1-4])Q\s*'?(\d{4}|\d{2})$|^Q([1-4])\s*'?(\d{4}|\d{2})$", re.I)   # 3Q26  Q3 2026
 
 
@@ -30,8 +31,13 @@ def _year(text: str) -> int:
 
 
 def parse_period(text: str) -> date | None:
-    """把「2026-09」「Sep-26」「2026Q3」「3Q26」這類期間寫法轉成期間第一天。認不出回 None。"""
+    """把「2026-09」「Sep-26」「2026Q3」「3Q26」「2026-W48」這類期間寫法轉成期間第一天。認不出回 None。"""
     text = text.strip()
+    if m := _ISO_WEEK.match(text):                     # ISO 周 → 那一周的周一（期間第一天）
+        try:
+            return date.fromisocalendar(int(m.group(1)), int(m.group(2)), 1)
+        except ValueError:
+            return None
     if m := _YEAR_MONTH.match(text):
         year, month = int(m.group(1)), int(m.group(2))
     elif (m := _MON_YEAR.match(text)) and m.group(1).lower() in _MONTHS:

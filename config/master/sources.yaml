@@ -4,8 +4,8 @@
 - {code: reuters_xls,  name: 路透（Excel 整理）, kind: excel,  status: active,   priority: 20}
 - {code: opec_momr,    name: OPEC 月報（二手來源）, kind: excel, status: active,   priority: 30,
    notes: OPEC+ 分國原油產量，用後台導入頁的模板每月導入一次}
-- {code: kpler_xls,    name: Kpler（Excel 插件）, kind: excel, status: active,   priority: 26,
-   notes: 原油海運流量和浮倉；用後台導入頁的 Kpler 取數模板}
+- {code: kpler_xls,    name: Kpler（終端下載）, kind: excel, status: active,   priority: 26,
+   notes: 原油海運流量和庫存；Kpler 網頁終端下載的 Excel 原樣導入}
 - {code: excel_other,  name: 其他 Excel 導入,    kind: excel,  status: active,   priority: 50}
 - {code: eia,          name: EIA 公開數據,       kind: api,    status: active,   priority: 30,
    notes: 需要免費的 EIA_API_KEY 環境變量}

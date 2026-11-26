@@ -185,12 +185,17 @@ def cmd_serve(args) -> int:
 def cmd_import(args) -> int:
     from datetime import date
 
-    from .imports import commit_batch, nothing_importable, preview_file
+    from .imports import ImportFlowError, commit_batch, nothing_importable, preview_file
     _init()
     path = Path(args.file)
     with db.session_scope() as session:
         vintage = date.fromisoformat(args.vintage) if args.vintage else None
-        preview = preview_file(session, get_settings(), path.read_bytes(), path.name, args.source, vintage=vintage)
+        try:
+            preview = preview_file(session, get_settings(), path.read_bytes(), path.name, args.source, vintage=vintage)
+        except ImportFlowError as exc:
+            print(f"沒有入庫：{exc}", file=sys.stderr)
+            session.rollback()
+            return 1
         for sheet in preview["sheets"]:
             print(f"[{sheet['name']}] 版式：{sheet['layout']}" + (f"（{sheet['note']}）" if sheet["note"] else ""))
             for col in sheet["columns"]:
@@ -206,7 +211,12 @@ def cmd_import(args) -> int:
             print(f"沒有入庫：{reason}", file=sys.stderr)
             session.rollback()
             return 1
-        result = commit_batch(session, preview["batch_id"])
+        try:
+            result = commit_batch(session, preview["batch_id"])
+        except ImportFlowError as exc:
+            print(f"沒有入庫：{exc}", file=sys.stderr)
+            session.rollback()
+            return 1
     print(f"入庫完成：新增 {result['inserted']}，更新 {result['updated']}，未變 {result['unchanged']}，"
           f"未識別的列 {result['unmapped_columns']} 個（可在後台手動指定）")
     return 0
