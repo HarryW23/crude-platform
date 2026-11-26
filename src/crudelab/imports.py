@@ -80,6 +80,41 @@ LEVEL_KINDS = ("futures", "swap", "spot", "freight", "fx", "stock", "flow", "pos
 SCALE_FACTOR = 20             # 新數據的中位數和庫裡已有數據差這麼多倍以上，多半是單位錯了
 
 
+CONSISTENCY_LIMIT = 0.10      # 和庫裡同一批日子的數普遍相差超過 10%：多半是篩選條件不一樣，不是修訂
+RECENT_PERIODS = 6            # 最近幾期本來就會修訂（Kpler 流量、EIA、月報），不算進一致性核對
+
+
+def consistency_warnings(session: Session, observations: list[Obs]) -> list[str]:
+    """重新導入同一段歷史時，舊的日子應該和庫裡一樣（修訂只動最近幾期）。普遍差了 10% 以上，
+    多半是下載時篩選條件不一樣：商品選了全部油品而不是原油、區域不對、單位是千噸不是千桶、浮倉天數門檻改了……
+    這種錯單位核對（差 20 倍才提醒）攔不住。比的是平台實際採用的值，最近 RECENT_PERIODS 期不比。"""
+    from collections import defaultdict
+    from statistics import median
+
+    from .ingest import load_points
+    new: dict[str, dict] = defaultdict(dict)
+    for o in observations:
+        new[o.series_code][o.obs_date] = o.value
+    rows = {r.code: r for r in session.scalars(select(Series).where(Series.code.in_(list(new))))} if new else {}
+    out = []
+    for code, points in sorted(new.items()):
+        row = rows.get(code)
+        if row is None or row.kind not in LEVEL_KINDS:
+            continue
+        effective = load_points(session, [code])
+        old = dict(zip(effective["obs_date"], effective["value"], strict=True))
+        common = sorted(d for d in points if d in old and old[d] != 0)[:-RECENT_PERIODS]
+        if len(common) < 6:
+            continue
+        gap = median(abs(points[d] / old[d] - 1) for d in common)
+        if gap > CONSISTENCY_LIMIT:
+            out.append(f"{code}（{row.name_zh}）：和庫裡已有的 {len(common)} 個相同日子比，數字普遍相差 {gap:.0%}"
+                       f"（{common[0]} 到 {common[-1]}；最近 {RECENT_PERIODS} 期本來會修訂，沒算）。"
+                       "舊的日子不該變這麼多，多半是下載時的篩選條件和上次不一樣（商品、區域、單位、拆分方式）。"
+                       "確認之前不要導入")
+    return out
+
+
 def _amount(x: float) -> str:
     return f"{x:,.0f}" if x >= 100 else f"{x:.4g}"
 
@@ -200,8 +235,15 @@ def preview_file(session: Session, settings: Settings, content: bytes, filename:
     pdf = stored.suffix.lower() == ".pdf"
     warnings += [f"{p.name}：{p.note}" for p in previews
                  if p.note and "沒有讀入" in p.note and not (pdf and "季度匯總" in p.note)]
+    from .connectors.kpler import SHEET as KPLER_SHEET
+    kpler_file = any(KPLER_SHEET.match(p.name.strip()) for p in previews)
+    if kpler_file != (source_code == "kpler_xls"):
+        raise ImportFlowError("這是 Kpler 終端下載的表，數據源要選「Kpler（終端下載）」" if kpler_file else
+                              "數據源選了「Kpler（終端下載）」，但這個文件不是 Kpler 終端下載的表（工作表名應該像 "
+                              "World monthly exports (Crude-Co…，文件名不要改）")
     observations, screened = screen(session, observations)
-    warnings += screened + scale_warnings(session, observations) + _quality_warnings(settings, observations)
+    hold = scale_warnings(session, observations) + consistency_warnings(session, observations)
+    warnings += screened + hold + _quality_warnings(settings, observations)
     if cover_note:
         warnings.append(cover_note)
     if earlier:
@@ -213,6 +255,7 @@ def preview_file(session: Session, settings: Settings, content: bytes, filename:
             warnings.append(f"填了報告期 {vintage}，但這個文件裡認出的序列都不是按期保存的，報告期不會起作用")
     return {"batch_id": batch.id, "filename": filename, "source_code": source_code,
             "vintage": vintage.isoformat() if vintage else None, "importable": len(observations),
+            "hold": hold,           # 疑似條件或單位錯了：收件夾自動導入時不收，人看過預覽才能確認
             "sheets": [p.to_dict() for p in previews], "warnings": warnings}
 
 

@@ -105,6 +105,9 @@ def _import_folder(session: Session, cfg: Config, settings: Settings, job: JobDe
                 preview = preview_file(session, settings, path.read_bytes(), path.name, source, ACTOR)
                 if (reason := nothing_importable(preview)) is not None:
                     raise ImportFlowError(reason)
+                if preview.get("hold"):                 # 沒人看預覽：疑似單位或篩選條件錯了的不自動收
+                    raise ImportFlowError("沒有自動導入，請到後台導入頁上傳、看過預覽再決定："
+                                          + "；".join(preview["hold"]))
                 result = commit_batch(session, preview["batch_id"], actor=ACTOR)
             entry.update(inserted=result["inserted"], updated=result["updated"],
                          unmapped=result["unmapped_columns"], warnings=preview["warnings"])

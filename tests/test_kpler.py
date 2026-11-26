@@ -135,3 +135,46 @@ def test_kpler_download_dropped_into_inbox_is_recorded_as_kpler(session, setting
     assert jobs.run_now(cfg, settings, "IMPORT_INBOX")["status"] == "ok"
     sources = set(session.scalars(select(Observation.source_code).where(Observation.series_code == "KPLER_EXP_SAUDI")))
     assert sources == {"kpler_xls"}
+
+
+def test_downloads_with_the_wrong_filters_are_refused(session, settings):
+    """區域不是 World（否則「Saudi Arabia」會被當成 OPEC 月報的沙特產量）、粒度不對、數據源選錯：整個拒收。"""
+    china = kpler_file("China monthly imports (Crude-Co by origin country)", ["Saudi Arabia", "Russian Federation"],
+                       [["2026-08", 1600.0, 2100.0], ["2026-09", 1650.0, 2200.0]])
+    with pytest.raises(ImportFlowError, match="區域是 China：平台只收全球（World）"):
+        preview_file(session, settings, china, "China_monthly_imports_Crude_Co_by_origin_country.xlsx", "kpler_xls")
+    with pytest.raises(ImportFlowError, match="區域是 China"):            # 數據源選錯了也一樣攔下
+        preview_file(session, settings, china, "China_monthly_imports_Crude_Co_by_origin_country.xlsx", "reuters_xls")
+    weekly = kpler_file("World weekly exports (Crude-Co by origin country)", ["Saudi Arabia"],
+                        [["2026-W40", 6700.0], ["2026-W41", 6800.0]])
+    with pytest.raises(ImportFlowError, match="是 weekly：exports 要選 Monthly"):
+        preview_file(session, settings, weekly, "World_weekly_exports_Crude_Co_by_origin_country.xlsx", "kpler_xls")
+    with pytest.raises(ImportFlowError, match="數據源要選「Kpler（終端下載）」"):
+        preview_file(session, settings, EXPORTS, EXPORTS_NAME, "reuters_xls")
+    with pytest.raises(ImportFlowError, match="不是 Kpler 終端下載的表"):
+        preview_file(session, settings, b"Date,BRENT_M1\n2026-09-01,70\n2026-09-02,71\n", "r.csv", "kpler_xls")
+
+
+def test_history_that_no_longer_matches_is_held_back(session, settings, cfg):
+    """重新下載的十年歷史，舊的日子普遍差了 10% 以上（例如商品選成了全部油品）：預覽提醒，收件夾不自動收。"""
+    import os
+    import time
+
+    from crudelab import jobs
+    months = [f"{y}-{m:02d}" for y in (2024, 2025) for m in range(1, 13)]
+    def download(scale):
+        return kpler_file("World monthly exports (Crude-Co by origin country)", ["Saudi Arabia"],
+                          [[mo, 6500.0 * scale + i] for i, mo in enumerate(months)])
+    commit_batch(session, preview_file(session, settings, download(1.0), EXPORTS_NAME, "kpler_xls")["batch_id"])
+    assert not preview_file(session, settings, download(1.03), EXPORTS_NAME, "kpler_xls")["hold"]   # 小修訂：不算
+    held = preview_file(session, settings, download(1.4), EXPORTS_NAME, "kpler_xls")
+    assert held["hold"] and "數字普遍相差 40%" in held["hold"][0] and "篩選條件" in held["hold"][0]
+    session.commit()
+    inbox = settings.data_dir / "inbox"
+    inbox.mkdir(parents=True)
+    path = inbox / EXPORTS_NAME
+    path.write_bytes(download(1.4))
+    old = time.time() - 120
+    os.utime(path, (old, old))
+    result = jobs.run_now(cfg, settings, "IMPORT_INBOX")
+    assert result["status"] == "failed" and list((inbox / "failed").iterdir())

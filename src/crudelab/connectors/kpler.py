@@ -21,7 +21,10 @@ from pathlib import Path
 from ..periods import parse_period
 
 PREFIX = "kpler:"
-SHEET = re.compile(r"^world\s+(monthly|weekly)\s+(exports|imports|inventories)\b", re.I)
+# Kpler 下載的工作表名：「區域 粒度 種類 (商品…」，例如 World monthly exports (Crude-Co…
+SHEET = re.compile(r"^(?P<zone>.+?)\s+(?P<granularity>daily|weekly|monthly|quarterly|yearly)\s+"
+                   r"(?P<kind>exports|imports|inventories|flows)\b", re.I)
+GRANULARITY = {"exports": "monthly", "imports": "monthly", "inventories": "weekly"}    # 序列是什麼頻率
 SPLITS = {                    # 表的種類 → 文件名裡允許的拆分方式
     "exports": ("by_origin_country",),
     "imports": ("by_destination_country", "by_destination_continent"),
@@ -53,7 +56,16 @@ def adapt(path: Path, grids: dict[str, list[list]], today: date | None = None) -
         m = SHEET.match(title.strip())
         if not m or not grid or not grid[0] or str(grid[0][0] or "").strip().lower() != "date":
             continue
-        granularity, kind = m.group(1).lower(), m.group(2).lower()
+        zone, granularity, kind = m.group("zone").strip(), m.group("granularity").lower(), m.group("kind").lower()
+        # 區域不是 World 的表一定要攔下：不攔的話它不按 Kpler 的表處理，「Saudi Arabia」那一列會被當成別的序列
+        if zone.lower() != "world":
+            raise KplerFileError(f"Kpler 的表「{title}」的區域是 {zone}：平台只收全球（World）的表，"
+                                 "下載時起點、終點（或庫存的區域）都選 World。這個文件沒有導入")
+        if kind not in GRANULARITY:
+            raise KplerFileError(f"Kpler 的表「{title}」不是平台要的出口、進口或庫存表。這個文件沒有導入")
+        if granularity != GRANULARITY[kind]:
+            want = "Monthly（月度）" if GRANULARITY[kind] == "monthly" else "Weekly（周度）"
+            raise KplerFileError(f"Kpler 的表「{title}」是 {granularity}：{kind} 要選 {want} 下載。這個文件沒有導入")
         if kind in ("exports", "imports") and "crude" not in name:
             raise KplerFileError(f"Kpler 的表「{title}」：文件名裡看不出是原油（Crude）。平台目前只收原油的流量，"
                                  f"下載時商品選 Crude；文件名不要改")
