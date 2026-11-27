@@ -47,7 +47,9 @@ PROVIDERS: dict[str, Provider] = {p.code: p for p in (
              "即期布倫特、迪拜現貨與掉期、各油種現貨升貼水、新加坡和西北歐成品油、化工品外盤價，多數是報價機構的評估價。"
              "它們在路透終端裡通常需要另外訂閱才看得到，**請確認你們的訂閱範圍**，以及授權是否允許把數據存進自建系統。"),
     Provider("osp", "產油國官方售價（沙特、伊拉克等）",
-             "每月公佈一次，手動錄入或隨 Excel 導入", "公開信息，路透有轉載", "手動 / Excel"),
+             "絕對價（*_OSP_ASIA_PRICE）從路透導出；升貼水每月公佈一次，手動錄入或隨 Excel 導入",
+             "公開信息；絕對價在路透（貢獻者的「當月」RIC）", "絕對價導出腳本可用；升貼水手動 / Excel",
+             "升貼水（相對阿曼 / 迪拜均價）是產油國的定價決定，路透上沒有，每月阿美、SOMO 公布後錄入 5 個數。"),
     Provider("freight", "油輪運價（波羅的海交易所 TD 航線）",
              "路透終端導出 Excel 後導入", "路透訂閱（含波羅的海交易所數據）", "Excel 導入可用",
              "WS 點折成 美元/桶 還需要 Worldscale 每年的基準費率，見下面「需要外部數據的參數」。"),
@@ -224,6 +226,7 @@ def render(cfg: Config) -> str:
 # ------------------------------ 給 LSEG 導出腳本的 RIC 清單 ------------------------------
 
 LSEG_PROVIDERS = ("exchange_intl", "exchange_cn", "pra", "freight", "fx", "lseg_macro", "osp", "cn_vendor")      # 路透終端上可能取得到的
+LSEG_KNOWN_ONLY = ("osp",)    # 只導出有 RIC 的（官價的升貼水路透上沒有，每月手動錄入，不列進「還不知道 RIC」）
 _RIC = re.compile(r"^[0-9A-Z]{1,8}c\d{1,2}$|^[0-9A-Za-z.]+=[A-Z]*$|^[A-Z0-9]+-$")
 
 
@@ -245,6 +248,8 @@ def lseg_rics_text(cfg: Config) -> str:
         if provider_of(s) not in LSEG_PROVIDERS:
             continue
         ric = ric_of(s)
+        if ric is None and provider_of(s) in LSEG_KNOWN_ONLY:
+            continue
         (known if ric else unknown).append((s, ric))
     for s, ric in known:
         field = s.lseg.field if s.lseg and s.lseg.field else ""

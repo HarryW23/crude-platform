@@ -23,7 +23,7 @@ defaults:
 watch: has_data
 required: []
 ignore: []
-repeats: {max_run: 5, kinds: [spot, diff], series: [], ignore: []}
+repeats: {max_run: 5, kinds: [spot, diff], series: [], ignore: [CN_JET_EXWORKS]}   # 航煤出廠價每月調一次
 # spikes     單日錯價提醒（導入預覽）。confirmed：核對過、確實是行情的日子，不再提醒
 spikes:
   # 錯的那些不寫在這裡，寫在序列配置的 bad_days（導入時跳過、已入庫的移除）

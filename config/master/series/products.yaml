@@ -55,13 +55,16 @@ series:
   - {code: SD_LPG, calendar: CN, name_zh: 山東民用液化氣, commodity: LPG, location: SHANDONG, kind: spot, unit: CNY/t, module: refinery,
      aliases: ["山東液化氣", "山東民用氣", "山東LPG"]}
   - {code: SD_PETCOKE, calendar: CN, name_zh: 山東地煉石油焦, commodity: PETCOKE, location: SHANDONG, kind: spot, unit: CNY/t, module: refinery,
-     aliases: ["山東石油焦", "山東地煉石油焦"]}
+     aliases: ["山東石油焦", "山東地煉石油焦"], lseg: {ric: "LNZD-PETC3B-SDP", field: TRDPRC_1},
+     notes: 隆眾山東省 3B 石油焦市場價（地煉常見的中高硫焦）}
   - {code: EC_GASOLINE_92, calendar: CN, name_zh: 華東 92# 汽油, commodity: GASOLINE, location: EAST_CHINA, kind: spot, unit: CNY/t, module: refinery,
-     aliases: ["華東汽油92", "華東92#"]}
+     aliases: ["華東汽油92", "華東92#"], lseg: {ric: "LNZD-GSL-ECN", field: TRDPRC_1}, notes: 隆眾華東 92# 汽油市場價}
   - {code: EC_DIESEL_0, calendar: CN, name_zh: 華東 0# 柴油, commodity: GASOIL, location: EAST_CHINA, kind: spot, unit: CNY/t, module: refinery,
-     aliases: ["華東柴油0", "華東0#"]}
+     aliases: ["華東柴油0", "華東0#"], lseg: {ric: "LNZD-DSL-ECN", field: TRDPRC_1}, notes: 隆眾華東 0# 柴油市場價}
   - {code: CN_JET_EXWORKS, name_zh: 中國航煤出廠價, commodity: JET, location: CHINA, kind: spot, unit: CNY/t, module: refinery,
-     frequency: monthly, aliases: ["航煤出廠價", "中國航煤出廠價"]}
+     aliases: ["航煤出廠價", "中國航煤出廠價"],
+     lseg: {ric: "LNZC-KER-SPC", field: TRDPRC_1, proxy: "隆眾的中石化航煤出廠價（中石油的是 LNZC-KER-PCC，一般差幾十元）"},
+     notes: 出廠價每月調一次，路透每天給一個數，月內不變是正常的（不算沿用舊值）}
   - {code: FU_M1, name_zh: 上期所燃料油主力, commodity: HSFO, location: CHINA, kind: futures, unit: CNY/t, module: refinery,
      aliases: ["FU主力", "SHFE FU"], lseg: {ric: "SFUoi1", field: SETTLE}, data_from: 2018-07-16,
      notes: "上期所燃料油 2018-07-16 按新規格（高硫 380）重新上市；之前的老合約幾乎沒有成交，報價九成以上的日子不動，不用"}
@@ -76,7 +79,7 @@ series:
   - {code: BENZENE_FOB_KOREA, name_zh: 純苯 FOB 韓國, commodity: BENZENE, location: KOREA, kind: spot, unit: USD/t, module: refinery,
      aliases: ["Benzene FOB Korea", "純苯FOB韓國"], lseg: {ric: "BZFOBKRSPOT", field: TRDPRC_1}}
   - {code: BENZENE_EC, name_zh: 華東純苯, commodity: BENZENE, location: EAST_CHINA, kind: spot, unit: CNY/t, module: refinery,
-     aliases: ["華東純苯", "純苯華東"]}
+     aliases: ["華東純苯", "純苯華東"], lseg: {ric: "LNZD-BEN-EST", field: TRDPRC_1}, notes: 隆眾華東純苯市場價}
   - {code: ETHYLENE_CFR_NEA, name_zh: 乙烯 CFR 東北亞, commodity: ETHYLENE, location: NEA, kind: spot, unit: USD/t, module: refinery,
      aliases: ["Ethylene CFR NE Asia", "乙烯CFR東北亞"], lseg: {ric: "ETHYCFRNEASPOT", field: TRDPRC_1}}
   - {code: PROPYLENE_CFR_CHINA, name_zh: 丙烯 CFR 中國, commodity: PROPYLENE, location: CHINA, kind: spot, unit: USD/t, module: refinery,

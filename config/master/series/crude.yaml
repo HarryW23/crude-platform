@@ -97,6 +97,23 @@ series:
   - {code: BASRAH_HEAVY_OSP_ASIA, name_zh: 巴士拉重質官價（亞洲）, commodity: BASRAH_HEAVY, location: MEG, kind: osp, unit: USD/bbl,
      frequency: monthly, within_period: true, module: spread, benchmark: "OMAN/DUBAI 均價", aliases: ["Basrah Heavy OSP Asia"]}
 
+  # ---------- 官價的絕對價（路透貢獻者，「當月」RIC，每天給一個數） ----------
+  # 上面的升貼水是產油國公布的政策信號（相對阿曼 / 迪拜均價），路透上沒有，每月手動錄入。
+  # 這裡是路透貢獻者算好的當月絕對價（美元/桶，2026-11 在 81–84）：每天的數歸到當月 1 日（lseg.period = current），
+  # 月底那天的就是整個月的。巴士拉重質只找到次月的（BASH-OSP1-A），當月的還沒確認
+  - {code: ARAB_LIGHT_OSP_ASIA_PRICE, name_zh: 沙特輕質官價（亞洲，絕對價）, commodity: ARAB_LIGHT, location: MEG, kind: spot,
+     unit: USD/bbl, frequency: monthly, within_period: true, module: spread, provider: osp,
+     lseg: {ric: "ARL-OSP-A", field: TRDPRC_1, period: current}}
+  - {code: ARAB_MEDIUM_OSP_ASIA_PRICE, name_zh: 沙特中質官價（亞洲，絕對價）, commodity: ARAB_MEDIUM, location: MEG, kind: spot,
+     unit: USD/bbl, frequency: monthly, within_period: true, module: spread, provider: osp,
+     lseg: {ric: "ARM-OSP-A", field: TRDPRC_1, period: current}}
+  - {code: ARAB_HEAVY_OSP_ASIA_PRICE, name_zh: 沙特重質官價（亞洲，絕對價）, commodity: ARAB_HEAVY, location: MEG, kind: spot,
+     unit: USD/bbl, frequency: monthly, within_period: true, module: spread, provider: osp,
+     lseg: {ric: "ARH-OSP-A", field: TRDPRC_1, period: current}}
+  - {code: BASRAH_MEDIUM_OSP_ASIA_PRICE, name_zh: 巴士拉中質官價（亞洲，絕對價）, commodity: BASRAH_MEDIUM, location: MEG, kind: spot,
+     unit: USD/bbl, frequency: monthly, within_period: true, module: spread, provider: osp,
+     lseg: {ric: "BSM-OSP-A", field: TRDPRC_1, period: current}}
+
 # 計價視角：現貨升貼水對應的不是「當天的 M1」，而是計價月份那個合約（見 schema.PricingView）。
 # 在公式裡和序列一樣使用；每天用哪個合約、合約到期後用結算價，追溯時都看得到。
 views:

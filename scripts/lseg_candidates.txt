@@ -8,31 +8,19 @@
 # WTI MEH、CPC、新加坡 92 汽油 / 10ppm 柴油 / 航煤 / 石腦油 / 380、Eurobob、PX、純苯、乙烯、
 # 運費 TD3C / TD15 / TD20 / TD25（Baltic 指數 .BMEG / .BAWC / .BAWU / .BAUM）、
 # 國內期貨主力 FU（SFUoi1）、LU（ILUcv1）、BU（SBUoi1）、PP（DCCPv1）、PTA（CTAoi1）、LLDPE（DLLoi1）、MEG（DEGoi1）、迪拜現貨（DUB-1M）、
-# 日本石腦油（路透前半月評估 NAF-1H-TYO）、ICE Brent 持倉（1ICELCOMLNG / 1ICELCOMSHT / 1ICELCOOI）、美元指數（.DXY）、美債 2 年 / 10 年和 10 年 TIPS（收益率字段 MID_YLD_1）；
+# 日本石腦油（路透前半月評估 NAF-1H-TYO）、官價絕對價（ARL / ARM / ARH / BSM-OSP-A）、隆眾華東汽柴油 / 純苯 / 山東石油焦 / 航煤、ICE Brent 持倉（1ICELCOMLNG / 1ICELCOMSHT / 1ICELCOOI）、美元指數（.DXY）、美債 2 年 / 10 年和 10 年 TIPS（收益率字段 MID_YLD_1）；
 # 替代品（配置裡帶 proxy 說明，後台序列頁標「替代」）：阿曼、烏拉爾、WTI 米德蘭、Mars、鹿特丹 3.5% 燃料油。
 # 這台機器上鏈（0#…）一個都展不開，不影響：需要的合約都有連續合約 RIC 可以直接取。
 
-# ---- 中東官價（月度，相對阿曼 / 迪拜均價的升貼水，美元/桶；一般在 −5 到 +5）----
-# 2026-11-27 search：巴士拉有路透貢獻者的「當月」BSM-OSP-A、「次月」BSM-OSP1-A；沙特只有 Platts 的絕對價（AAIMU00，
-# 沒權限、而且不是升貼水）。看結果時注意量級：拿到 60–100 說明是絕對價，不是升貼水
-BASRAH_MEDIUM_OSP_ASIA | Basrah Medium official selling price Asia | BSM-OSP-A BSM-OSP1-A
-BASRAH_HEAVY_OSP_ASIA  | Basrah Heavy official selling price Asia | BSH-OSP-A BSH-OSP1-A
-ARAB_LIGHT_OSP_ASIA    | Arab Light OSP Asia differential Oman Dubai; Saudi Aramco Arab Light official selling price | ARL-OSP-A
-ARAB_MEDIUM_OSP_ASIA   | Arab Medium OSP Asia differential Oman Dubai; Saudi Aramco Arab Medium official selling price | ARM-OSP-A
-ARAB_HEAVY_OSP_ASIA    | Arab Heavy OSP Asia differential Oman Dubai; Saudi Aramco Arab Heavy official selling price | ARH-OSP-A
-
-# ---- 中國國內（隆眾、金聯創在路透上有一部分）----
-# 2026-11-27 search：主營煉廠開工率有隆眾周度 LNZOPRDNOPRW；山東地煉只搜到單個煉廠的，換隆眾的叫法再搜
-CN_MAJOR_REFINERY_UTIL | LongZhong China Main Refinery Crude Oil Weekly Capacity Utilization Rate | LNZOPRDNOPRW
-CN_SD_TEAPOT_UTIL      | LongZhong Shandong Independent Refinery Weekly Capacity Utilization Rate; LongZhong China Independent Refinery Weekly Capacity Utilization Rate |
-SD_GASOLINE_92         | LongZhong Shandong 92# Gasoline Price; Shandong independent refinery gasoline 92 price |
-SD_DIESEL_0            | LongZhong Shandong 0# Diesel Price; Shandong independent refinery diesel price |
-SD_LPG                 | LongZhong Shandong LPG Price; Shandong civil LPG price |
-SD_PETCOKE             | LongZhong Shandong Petroleum Coke Price; Shandong petcoke price |
-EC_GASOLINE_92         | LongZhong East China 92# Gasoline Price |
-EC_DIESEL_0            | LongZhong East China 0# Diesel Price |
-CN_JET_EXWORKS         | China jet fuel ex-refinery price; LongZhong China Jet Fuel Price |
-BENZENE_EC             | LongZhong East China Benzene Price; East China pure benzene price |
+# ---- 中國國內（隆眾在路透上有權限）----
+# 2026-11-27 find：華東汽柴油、山東石油焦、華東純苯、航煤出廠價已寫進配置。山東汽柴油、民用液化氣隆眾只有
+# 全國和各大區的，照山東石油焦 LNZD-PETC3B-SDP 的寫法猜山東省的；主營開工率 LNZOPRDNOPRW 報 70406（請求無效），
+# 可能是周度數據要按周取，再搜一次看有沒有日度的
+CN_MAJOR_REFINERY_UTIL | LongZhong China Main Refinery Capacity Utilization Rate; LongZhong Main Refinery Crude Run Rate | LNZOPRDNOPRW
+CN_SD_TEAPOT_UTIL      | LongZhong Shandong Independent Refinery Capacity Utilization; LongZhong Independent Refinery Crude Oil Weekly Capacity Utilization Rate |
+SD_GASOLINE_92         | Longzhong Gasoline Shandong Province 92# Domestic Market Price | LNZD-GSL-SDP LNZD-GSL-SD
+SD_DIESEL_0            | Longzhong Diesel Shandong Province 0# Domestic Market Price | LNZD-DSL-SDP LNZD-DSL-SD
+SD_LPG                 | Longzhong LPG Shandong Civil LPG Domestic Market Price | LNZD-LPGCVL-SD
 
 # ---- 量級可疑，先不用：在 Workspace 裡人工確認含義後再決定（升貼水一般在 ±3 美元，這條是 20 多）----
 EKOFISK_DIFF         | | BFO-EKO
