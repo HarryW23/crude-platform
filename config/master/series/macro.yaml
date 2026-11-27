@@ -30,5 +30,5 @@ series:
   - {code: MACRO_UST10Y, name_zh: 美國 10 年期國債收益率, commodity: RATES, location: US, kind: ratio, unit: pct,
      module: common, provider: lseg_macro, aliases: [UST 10Y, 美債10年], lseg: {ric: "US10YT=RR", field: MID_YLD_1}}
   - {code: MACRO_REAL10Y, name_zh: 美國 10 年期實際利率（TIPS）, commodity: RATES, location: US, kind: ratio, unit: pct,
-     module: common, provider: lseg_macro, aliases: [TIPS 10Y, 美國實際利率], lseg: {ric: "US10YTIP=RR", field: MID_YLD_1},
-     notes: "路透這個 RIC 跟的是當期的 10 年 TIPS，日度歷史只到 2026 年中（2026-11-26 導出十年只有 142 個點）；更長的歷史要另找來源（例如美聯儲 H.15 的 DFII10）"}
+     module: common, provider: lseg_macro, aliases: [TIPS 10Y, 美國實際利率, DFII10], lseg: {ric: "US10YTIP=RR", field: MID_YLD_1},
+     notes: "路透這個 RIC 跟的是當期的 10 年 TIPS，日度歷史只到 2026 年中。更早的歷史：FRED 的 DFII10（美聯儲 H.15，10 年期固定期限實際收益率）下載 CSV 導入（數據源選「其他 Excel 導入」），表頭 DFII10 自動認；路透的優先級高，重疊的日子用路透的"}
