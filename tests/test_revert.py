@@ -79,7 +79,7 @@ def test_extended_confirmations_are_undone_too(session, settings):
     session.commit()
     again = load(session, settings, ["Date,CRUDE_PROD_SAUDI", "2026-10-01,9980", "2026-09-01,9950"], "again.csv")
     row = session.scalars(select(ObservationVintage).where(ObservationVintage.obs_date == date(2026, 10, 1))).one()
-    assert row.confirmed_at == date.today()
+    assert row.confirmed_at == utcnow().date()                       # 平台按 UTC 記日期
     revert_batch(session, again)
     session.expire_all()
     row = session.scalars(select(ObservationVintage).where(ObservationVintage.obs_date == date(2026, 10, 1))).one()
