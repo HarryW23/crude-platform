@@ -16,8 +16,9 @@
 # 2026-11-27 兩輪 find：隆眾（有權限）只有全國和各大區的汽柴油，沒有山東省的（猜的 LNZD-GSL-SDP 等都不存在）。
 # 山東地煉的汽柴油出廠價在路透上是金聯創（JLC）的，按煉廠分，帳號沒有 JLC 權限（UserNotPermission）。
 # 要的話向 LSEG 申請開通 JLC，之後再跑 find（候選是 JLC 的海化 / 永鑫 92#）。
-# 主營開工率 LNZOPRDNOPRW 按日度取報 70406：腳本現在會改按周、按月再取，再試一次
-CN_MAJOR_REFINERY_UTIL | LongZhong China Main Refinery Capacity Utilization Rate | LNZOPRDNOPRW
+# 主營開工率 LNZOPRDNOPRW：按周能取到（2026-11-27 第四輪），但最後一個點是 2026-08-02（72.86），之後停更，
+# 不接。先搜有沒有接替它的 RIC；搜到之後把新的 RIC 加在這一行後面
+CN_MAJOR_REFINERY_UTIL | LongZhong China Main Refinery Capacity Utilization Rate; LongZhong China Refinery Operating Rate |
 CN_SD_TEAPOT_UTIL      | JLC Shandong Independent Refinery Operating Rate; LongZhong Shandong Independent Refinery Capacity Utilization |
 SD_GASOLINE_92         | JLC Shandong Independent Refinery Product Pricing 92 RON Gasoline | JLC-SHHU92G-H JLC-SHCY92NG-H
 SD_DIESEL_0            | JLC Shandong Independent Refinery Product Pricing 0# Diesel |
