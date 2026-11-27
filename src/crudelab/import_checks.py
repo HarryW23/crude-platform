@@ -22,6 +22,45 @@ LEVEL_KINDS = ("futures", "swap", "spot", "freight", "fx", "stock", "flow", "pos
 SCALE_FACTOR = 20             # 新數據的中位數和庫裡已有數據差這麼多倍以上，多半是單位錯了
 
 
+def _align_current_period(rows: dict, observations: list[Obs]) -> tuple[list[Obs], list[str]]:
+    """「當月」這類 RIC（lseg.period = current）每天給一個數：歸到所屬期間的第一天，一個期間留一個數
+    （取這個期間裡最後一天的；期間中途改過的，說明裡寫出來）。其他序列原樣返回。"""
+    from dataclasses import replace
+
+    def start(day: date, frequency: str) -> date:
+        month = day.month if frequency == "monthly" else 3 * ((day.month - 1) // 3) + 1
+        return date(day.year, month, 1)
+
+    current = {code for code, row in rows.items()
+               if row.within_period and (row.external_ids or {}).get("lseg_period") == "current"}
+    if not current:
+        return observations, []
+    out: list[Obs] = []
+    latest: dict[tuple[str, date], list[Obs]] = {}
+    for o in observations:
+        if o.series_code not in current:
+            out.append(o)
+            continue
+        key = (o.series_code, start(o.obs_date, rows[o.series_code].frequency))
+        latest.setdefault(key, []).append(o)
+    notes: list[str] = []
+    changed: dict[str, list[str]] = {}
+    for (code, period), points in sorted(latest.items()):
+        points.sort(key=lambda o: o.obs_date)
+        out.append(replace(points[-1], obs_date=period))
+        if len({p.value for p in points}) > 1:
+            changed.setdefault(code, []).append(f"{period:%Y-%m}")
+    periods: dict[str, int] = {}
+    for c, _ in latest:
+        periods[c] = periods.get(c, 0) + 1
+    for code, n in sorted(periods.items()):
+        note = f"{code}：每天的「當期」數歸到所屬期間的第一天，共 {n} 期"
+        if changed.get(code):
+            note += f"；{'、'.join(changed[code][:4])} 期間中途數字變過，取的是期間裡最後一天的"
+        notes.append(note)
+    return out, notes
+
+
 def screen(session: Session, observations: list[Obs]) -> tuple[list[Obs], list[str]]:
     """去掉文件裡明顯不能用的數據點，回傳（留下的，說明）。預覽和入庫用同一個規則，預覽裡會寫明去掉了什麼：
     - 序列的 data_from 之前的（合約改過規格，見 SeriesDef.data_from）
@@ -34,6 +73,7 @@ def screen(session: Session, observations: list[Obs]) -> tuple[list[Obs], list[s
     zero: dict[str, list[date]] = {}
     bad: dict[str, list[date]] = {}
     kept = []
+    observations, aligned = _align_current_period(rows, observations)
     for o in observations:
         row = rows.get(o.series_code)
         if row is not None and row.data_from is not None and o.obs_date < row.data_from:
@@ -44,8 +84,8 @@ def screen(session: Session, observations: list[Obs]) -> tuple[list[Obs], list[s
             zero.setdefault(o.series_code, []).append(o.obs_date)
         else:
             kept.append(o)
-    notes = [f"{code}：{rows[code].data_from} 之前的 {n} 個數據點不導入"
-             "（這條序列只用這天之後的數據，見配置裡的 data_from）" for code, n in sorted(early.items())]
+    notes = aligned + [f"{code}：{rows[code].data_from} 之前的 {n} 個數據點不導入"
+                       "（這條序列只用這天之後的數據，見配置裡的 data_from）" for code, n in sorted(early.items())]
     notes += [f"{code}：{'、'.join(str(d) for d in sorted(days))} 核對過是錯價，不導入（見配置裡的 bad_days）"
               for code, days in sorted(bad.items())]
     for code, days in sorted(zero.items()):

@@ -112,3 +112,23 @@ def test_vintaged_series_cannot_use_config_cleanup():
     for extra in ({"data_from": date(2020, 1, 1)}, {"bad_days": [date(2026, 1, 1)]}):
         with pytest.raises(ValidationError, match="按報告期保存的序列不用 bad_days / data_from"):
             SeriesDef(**base, **extra)
+
+
+def test_daily_current_month_quotes_are_filed_under_the_month(session, settings):
+    """「當月」官價這類 RIC 每天給一個數（lseg.period = current）：歸到當月 1 日，一個月一個數；
+    沒有這樣標的只在期間內有效的序列，日期不是期間第一天照樣拒收（防止把官價記成公布日）。"""
+    from crudelab.models import Series
+    session.get(Series, "BASRAH_MEDIUM_OSP_ASIA").external_ids = {"lseg_period": "current"}
+    session.flush()
+    lines = ["Date,BASRAH_MEDIUM_OSP_ASIA", "2026-10-30,1.10", "2026-10-31,1.10", "2026-11-02,1.35",
+             "2026-11-03,1.35", "2026-11-20,1.45"]
+    preview = preview_file(session, settings, "\n".join(lines).encode(), "r.csv", "reuters_xls")
+    assert any("歸到所屬期間的第一天，共 2 期；2026-11 期間中途數字變過" in w for w in preview["warnings"])
+    commit_batch(session, preview["batch_id"])
+    points = to_series(load_points(session, ["BASRAH_MEDIUM_OSP_ASIA"]), "BASRAH_MEDIUM_OSP_ASIA")
+    assert {str(d.date()): v for d, v in points.items()} == {"2026-10-01": 1.10, "2026-11-01": 1.45}
+
+    plain = ["Date,ARAB_LIGHT_OSP_ASIA", "2026-11-05,1.2", "2026-12-05,1.4"]
+    preview = preview_file(session, settings, "\n".join(plain).encode(), "r2.csv", "reuters_xls")
+    with pytest.raises(Exception, match="日期 2026-11-05 不對"):
+        commit_batch(session, preview["batch_id"])

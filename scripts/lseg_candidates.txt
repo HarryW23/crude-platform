@@ -12,6 +12,28 @@
 # 替代品（配置裡帶 proxy 說明，後台序列頁標「替代」）：阿曼、烏拉爾、WTI 米德蘭、Mars、鹿特丹 3.5% 燃料油。
 # 這台機器上鏈（0#…）一個都展不開，不影響：需要的合約都有連續合約 RIC 可以直接取。
 
+# ---- 中東官價（月度，相對阿曼 / 迪拜均價的升貼水，美元/桶；一般在 −5 到 +5）----
+# 2026-11-27 search：巴士拉有路透貢獻者的「當月」BSM-OSP-A、「次月」BSM-OSP1-A；沙特只有 Platts 的絕對價（AAIMU00，
+# 沒權限、而且不是升貼水）。看結果時注意量級：拿到 60–100 說明是絕對價，不是升貼水
+BASRAH_MEDIUM_OSP_ASIA | Basrah Medium official selling price Asia | BSM-OSP-A BSM-OSP1-A
+BASRAH_HEAVY_OSP_ASIA  | Basrah Heavy official selling price Asia | BSH-OSP-A BSH-OSP1-A
+ARAB_LIGHT_OSP_ASIA    | Arab Light OSP Asia differential Oman Dubai; Saudi Aramco Arab Light official selling price | ARL-OSP-A
+ARAB_MEDIUM_OSP_ASIA   | Arab Medium OSP Asia differential Oman Dubai; Saudi Aramco Arab Medium official selling price | ARM-OSP-A
+ARAB_HEAVY_OSP_ASIA    | Arab Heavy OSP Asia differential Oman Dubai; Saudi Aramco Arab Heavy official selling price | ARH-OSP-A
+
+# ---- 中國國內（隆眾、金聯創在路透上有一部分）----
+# 2026-11-27 search：主營煉廠開工率有隆眾周度 LNZOPRDNOPRW；山東地煉只搜到單個煉廠的，換隆眾的叫法再搜
+CN_MAJOR_REFINERY_UTIL | LongZhong China Main Refinery Crude Oil Weekly Capacity Utilization Rate | LNZOPRDNOPRW
+CN_SD_TEAPOT_UTIL      | LongZhong Shandong Independent Refinery Weekly Capacity Utilization Rate; LongZhong China Independent Refinery Weekly Capacity Utilization Rate |
+SD_GASOLINE_92         | LongZhong Shandong 92# Gasoline Price; Shandong independent refinery gasoline 92 price |
+SD_DIESEL_0            | LongZhong Shandong 0# Diesel Price; Shandong independent refinery diesel price |
+SD_LPG                 | LongZhong Shandong LPG Price; Shandong civil LPG price |
+SD_PETCOKE             | LongZhong Shandong Petroleum Coke Price; Shandong petcoke price |
+EC_GASOLINE_92         | LongZhong East China 92# Gasoline Price |
+EC_DIESEL_0            | LongZhong East China 0# Diesel Price |
+CN_JET_EXWORKS         | China jet fuel ex-refinery price; LongZhong China Jet Fuel Price |
+BENZENE_EC             | LongZhong East China Benzene Price; East China pure benzene price |
+
 # ---- 量級可疑，先不用：在 Workspace 裡人工確認含義後再決定（升貼水一般在 ±3 美元，這條是 20 多）----
 EKOFISK_DIFF         | | BFO-EKO
 

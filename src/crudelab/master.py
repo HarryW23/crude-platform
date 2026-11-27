@@ -62,7 +62,8 @@ def sync_to_db(session: Session, cfg: Config) -> dict[str, int]:
         unit_code=s.unit, frequency=s.frequency, valid_days=s.resolved_valid_days, contract=s.contract,
         benchmark=s.benchmark, module=s.module, external_ids={**({"eia": s.eia_id} if s.eia_id else {}),
                       **({"cftc": s.cftc.model_dump()} if s.cftc else {}),
-                      **({"jin10": s.jin10} if s.jin10 else {})},
+                      **({"jin10": s.jin10} if s.jin10 else {}),
+                      **({"lseg_period": s.lseg.period} if s.lseg and s.lseg.period else {})},
         notes=s.notes, active=True, within_period=s.within_period,
         vintaged=s.vintaged, data_from=s.data_from,
         bad_days=[d.isoformat() for d in sorted(s.bad_days)] or None) for s in cfg.series.values()])

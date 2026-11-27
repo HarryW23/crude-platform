@@ -223,7 +223,7 @@ def render(cfg: Config) -> str:
 
 # ------------------------------ 給 LSEG 導出腳本的 RIC 清單 ------------------------------
 
-LSEG_PROVIDERS = ("exchange_intl", "exchange_cn", "pra", "freight", "fx", "lseg_macro")      # 路透終端上可能取得到的
+LSEG_PROVIDERS = ("exchange_intl", "exchange_cn", "pra", "freight", "fx", "lseg_macro", "osp", "cn_vendor")      # 路透終端上可能取得到的
 _RIC = re.compile(r"^[0-9A-Z]{1,8}c\d{1,2}$|^[0-9A-Za-z.]+=[A-Z]*$|^[A-Z0-9]+-$")
 
 

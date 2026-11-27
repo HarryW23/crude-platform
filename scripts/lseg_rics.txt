@@ -101,14 +101,29 @@ LLDPE_CN                 DLLoi1           SETTLE
 PTA_CN                   CTAoi1           SETTLE
 MEG_CN                   DEGoi1           SETTLE
 
-# 下面 10 條可能在路透上，但還不知道 RIC（現貨評估價通常要另外訂閱 Platts / Argus）：
+# 下面 25 條可能在路透上，但還不知道 RIC（現貨評估價通常要另外訂閱 Platts / Argus）：
+# CN_SD_TEAPOT_UTIL      ?    山東地煉常減壓開工率
+# CN_MAJOR_REFINERY_UTIL ?    中國主營煉廠開工率
 # UPPER_ZAKUM_DIFF       ?    上扎庫姆升貼水
 # EKOFISK_DIFF           ?    埃科菲斯克升貼水
 # JOHAN_SVERDRUP_DIFF    ?    約翰斯維德魯普升貼水
 # WCS_HARDISTY_DIFF      ?    WCS（哈迪斯蒂）升貼水
 # TUPI_CHINA_DIFF        ?    Tupi 到中國升貼水（到岸）
+# ARAB_LIGHT_OSP_ASIA    ?    沙特輕質官價（亞洲）
+# ARAB_MEDIUM_OSP_ASIA   ?    沙特中質官價（亞洲）
+# ARAB_HEAVY_OSP_ASIA    ?    沙特重質官價（亞洲）
+# BASRAH_MEDIUM_OSP_ASIA ?    巴士拉中質官價（亞洲）
+# BASRAH_HEAVY_OSP_ASIA  ?    巴士拉重質官價（亞洲）
 # SG_VLSFO               ?    新加坡 0.5% 低硫燃料油
 # NWE_DIESEL_10PPM       ?    西北歐 10ppm 柴油
 # NWE_JET                ?    西北歐航煤
 # NWE_NAPHTHA            ?    西北歐石腦油
+# SD_GASOLINE_92         ?    山東地煉 92# 汽油
+# SD_DIESEL_0            ?    山東地煉 0# 柴油
+# SD_LPG                 ?    山東民用液化氣
+# SD_PETCOKE             ?    山東地煉石油焦
+# EC_GASOLINE_92         ?    華東 92# 汽油
+# EC_DIESEL_0            ?    華東 0# 柴油
+# CN_JET_EXWORKS         ?    中國航煤出廠價
+# BENZENE_EC             ?    華東純苯
 # PROPYLENE_CFR_CHINA    ?    丙烯 CFR 中國

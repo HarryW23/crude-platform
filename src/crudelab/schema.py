@@ -79,6 +79,9 @@ class LsegRef(Strict):
     field: str | None = Field(default=None, pattern=r"^[A-Z][A-Z0-9_]{1,24}$")   # 不寫時依次試 SETTLE、TRDPRC_1…
     # 不是這條序列本身、而是含義接近的替代（例如用掉期代替現貨、用期貨代替評估價）時寫明，數據頁會顯示
     proxy: str | None = None
+    # current：這個 RIC 每天給的是「當天所在期間」的數（例如巴士拉的「當月」官價 BSM-OSP-A），
+    # 用於只在期間內有效的月度序列：導入時把每天的值歸到所屬期間的第一天（見 import_checks.screen）
+    period: Literal["current"] | None = None
 
 
 class SeriesDef(Strict):
@@ -118,6 +121,8 @@ class SeriesDef(Strict):
     def _period(self) -> SeriesDef:
         if self.within_period and self.frequency not in ("monthly", "quarterly"):
             raise ValueError(f"序列 {self.code}：within_period 只用於月度或季度序列")
+        if self.lseg and self.lseg.period and not self.within_period:
+            raise ValueError(f"序列 {self.code}：lseg.period 只用於只在期間內有效（within_period）的序列")
         if (self.bad_days or self.data_from) and self.vintaged:
             # 清理只動主表；按期保存的每一期還留著，按報告期回測時會把清理掉的點又找回來
             raise ValueError(f"序列 {self.code}：按報告期保存的序列不用 bad_days / data_from，"
