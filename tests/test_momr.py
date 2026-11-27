@@ -137,3 +137,22 @@ def test_report_dropped_into_inbox_is_imported_as_opec_report(session, settings,
     sources = set(session.scalars(select(Observation.source_code).where(
         Observation.series_code == "CRUDE_PROD_SAUDI")))
     assert sources == {"opec_momr"}
+
+
+def test_real_balance_table_november_2026():
+    """附錄表 11-1（真實月報第 87 頁的文字）：全球需求、(b)、(a) − (b) 三行，年度和季度的表頭對齊；
+    「(b) Total Non-DoC liquids」斷成兩行、「(a) - (b)」裡的「-」都要接得上。"""
+    from pathlib import Path
+
+    from crudelab.connectors.momr import _balance
+    text = (Path(__file__).parent / "fixtures" / "momr_2026_11_p87.txt").read_text(encoding="utf-8")
+    grid = _balance(text, 87)
+    assert grid[0][1:4] == ["2023", "2024", "2025"] and grid[0][4] == "1Q26" and len(grid[0]) == 14
+    rows = {r[0].split(":", 2)[2]: r[1:] for r in grid[1:]}
+    assert rows["(a) Total world demand"][3:7] == ["106.3", "102.6", "106.0", "108.0"]
+    assert rows["(b) Total Non-DoC liquids production and DoC NGLs"][3] == "63.4"
+    assert rows["(a) - (b)"][-1] == "43.9"
+    assert _balance("Some other page\n1 2 3", 1) is None
+    broken = text.replace("(a) - (b) 42.2 42.4", "(a) - (b) 42.4")
+    with pytest.raises(MomrError, match="「\\(a\\)-\\(b\\)」有 12 個數，表頭有 13 列"):
+        _balance(broken, 87)

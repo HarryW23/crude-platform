@@ -162,6 +162,7 @@ def test_probe_command(session, cfg, monkeypatch, capsys):
                          "search_flash": lambda a: {"data": {"items": []}}})
     monkeypatch.setenv("JIN10_TOKEN", TOKEN)
     monkeypatch.setattr(jin10, "MCPClient", lambda *args, **kw: client_for(server))
+    monkeypatch.setitem(globals(), "HOLIDAY", date(2000, 1, 1))     # probe 取昨天的收盤：不能剛好是假的假期那天
     assert cli.main(["jin10", "probe"]) == 0
     out = capsys.readouterr().out
     assert "已連接" in out and "EIA原油库存" in out and "第一條的字段：['content', 'id']" in out

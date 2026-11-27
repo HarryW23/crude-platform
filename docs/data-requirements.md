@@ -2,7 +2,7 @@
 
 > 這份文檔由 `crudelab data-needs --output docs/data-requirements.md` 從 `config/` 生成。不要手改；改了配置後重新生成。
 
-系統目前定義了 **211 條序列**，供 161 個指標、5 個煉廠模型、2 張平衡表使用。下面按「從哪裡取得」分組。任何序列都可以用 Excel 導入或在後台手動錄入，接口只是省去人工。
+系統目前定義了 **212 條序列**，供 161 個指標、5 個煉廠模型、2 張平衡表使用。下面按「從哪裡取得」分組。任何序列都可以用 Excel 導入或在後台手動錄入，接口只是省去人工。
 
 ## 一覽
 
@@ -17,7 +17,7 @@
 | 匯率 | 1 | 路透導出 Excel 後導入 | 任一行情訂閱 | Excel 導入可用 |
 | 美元指數、美債收益率 | 4 | `scripts/lseg_export.py` 從路透導出後導入 | 路透 / LSEG 訂閱 | 導出腳本可用 |
 | 國內現貨價（隆眾、卓創、金聯創等） | 10 | 資訊商網站或終端導出 Excel 後導入 | 國內資訊商訂閱；之後可接其 API（`CN_VENDOR_API_KEY`） | Excel 導入可用；API 預留 |
-| 機構月報（IEA、OPEC） | 29 | 從月報的表格整理成 Excel 後導入 | IEA 月報需訂閱；OPEC 月報公開 | Excel 導入可用 |
+| 機構月報（IEA、OPEC） | 30 | 從月報的表格整理成 Excel 後導入 | IEA 月報需訂閱；OPEC 月報公開 | Excel 導入可用 |
 | 煉廠檢修（諮詢機構） | 1 | 從諮詢機構的報告整理成 Excel 後導入 | IIR、Platts、Energy Aspects 等任一家的訂閱 | Excel 導入可用 |
 | Kpler 船舶跟蹤（原油出口、進口、浮倉） | 18 | Kpler 網頁終端把流量、庫存圖下載成 Excel，原樣導入（數據源選「Kpler（終端下載）」） | Kpler 終端訂閱；開通 API 後改為接口自動取（`KPLER_API_TOKEN`，接口已預留） | Excel 導入可用 |
 | CFTC / ICE 持倉報告 | 3 | 定時任務自動取（CFTC 公開接口；ICE 由路透導出） | CFTC 不需要；ICE 見路透 | CFTC 接口已接通 |
@@ -241,7 +241,8 @@ IEA / OPEC 的供需只用於和 EIA 口徑對照，不影響平衡表本身。O
 | `IEA_WORLD_DEMAND` | 全球需求（IEA） | mb/d | 季（按報告期保存：補錄歷史報告時填發佈日期） | 供需 2 |
 | `IEA_WORLD_SUPPLY` | 全球供應（IEA） | mb/d | 季（按報告期保存：補錄歷史報告時填發佈日期） | 供需 1 |
 | `OPEC_WORLD_DEMAND` | 全球需求（OPEC） | mb/d | 季（按報告期保存：補錄歷史報告時填發佈日期） | 供需 1 |
-| `OPEC_CALL_ON_OPEC` | 對 OPEC 原油的需求（OPEC） | mb/d | 季（按報告期保存：補錄歷史報告時填發佈日期） | （目前沒有指標用到） |
+| `OPEC_NON_DOC_SUPPLY` | 非 DoC 液體供應 + DoC 天然氣液（OPEC） | mb/d | 季（按報告期保存：補錄歷史報告時填發佈日期） | （目前沒有指標用到） |
+| `OPEC_CALL_ON_DOC` | 對 OPEC+（DoC）原油的需求（OPEC） | mb/d | 季（按報告期保存：補錄歷史報告時填發佈日期） | （目前沒有指標用到） |
 | `CRUDE_PROD_SAUDI` | 沙特原油產量 | kb/d | 月（按報告期保存：補錄歷史報告時填發佈日期） | 供需 4 |
 | `CRUDE_PROD_IRAQ` | 伊拉克原油產量 | kb/d | 月（按報告期保存：補錄歷史報告時填發佈日期） | 供需 4 |
 | `CRUDE_PROD_UAE` | 阿聯酋原油產量 | kb/d | 月（按報告期保存：補錄歷史報告時填發佈日期） | 供需 4 |

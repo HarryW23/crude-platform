@@ -116,6 +116,11 @@ def read_pages(pages: list[str]) -> dict[str, list[list]]:
         raise MomrError(f"{rows[0][0] if rows else '這個 PDF'}：表裡沒有任何合計行（Total OPEC / Total DoC），"
                         "國別數字無法用月報的合計核對，這個文件沒有導入。請確認是完整的月報 PDF")
     check_totals(rows)
+    for p, text in enumerate(pages, 1):
+        balance = _balance(text, p)
+        if balance is not None:
+            out[f"第{p}頁 供需平衡"] = balance
+            break
     if not out and missed:
         raise MomrError(f"{missed[0]} 讀不出：找不到表頭寫著 Secondary sources 的表身。"
                         "這個文件沒有導入，請改用導入模板貼上")
@@ -123,6 +128,60 @@ def read_pages(pages: list[str]) -> dict[str, list[list]]:
         raise MomrError("這個 PDF 裡沒有找到 OPEC 月報的二手來源產量表"
                         "（標題含 crude oil production based on secondary sources）。目前 PDF 只支援 OPEC 月報")
     return out
+
+
+BALANCE_CAPTION = re.compile(r"world\s+oil\s+demand\s+and\s+production\s+balance,", re.I)   # 表 11-1，不是 11-2（變化）
+BALANCE_ROWS = (                        # 要的行：月報裡的寫法 → 別名（config/master/series/balance.yaml）
+    (re.compile(r"^\(a\)\s*total world demand$", re.I), "momr:balance:(a) Total world demand"),
+    (re.compile(r"^\(b\)\s*total non-doc liquids production and doc ngls$", re.I),
+     "momr:balance:(b) Total Non-DoC liquids production and DoC NGLs"),
+    (re.compile(r"^\(a\)-\(b\)$", re.I), "momr:balance:(a) - (b)"),
+)
+
+
+def _balance(text: str, page: int) -> list[list] | None:
+    """附錄表 11-1（World oil demand and production balance, mb/d）裡的全球需求、(b)、(a) − (b) 三行。
+    列是年度和季度（2025、1Q26 …）：季度記在季度第一天，年度列不讀（一般表格識別本來就不讀年度）。
+    表頭和這三行的數字個數必須一樣，對不齊就報錯，不猜。這頁不是表 11-1 時回 None。"""
+    # 「(a) - (b)」的「-」會被當成「沒有數」：先接成一個詞
+    lines = [re.sub(r"\(a\)\s*-\s*\(b\)", "(a)-(b)", line.strip()) for line in text.splitlines()]
+    if not any(BALANCE_CAPTION.search(line) for line in lines):
+        return None
+    where = f"第 {page} 頁的表「World oil demand and production balance」"
+    header = None
+    for line in lines:
+        toks = tokens(line)
+        periods = [t for t in toks if re.fullmatch(r"\d{4}|[1-4]Q\d{2}", t)]
+        if len(periods) >= 6 and toks[-len(periods):] == periods:
+            header = periods
+            break
+    if header is None:
+        raise MomrError(f"{where}：找不到年度 / 季度的表頭（2025、1Q26 …）。這個文件沒有導入，請截圖給負責平台的人")
+    grid: list[list] = [[None, *header]]
+    pending = ""                                     # 「(b) Total Non-DoC liquids」在 PDF 裡斷成兩行
+    for line in lines:
+        row = text_row(tokens(f"{pending} {line}".strip()))
+        label = row[0] if row else f"{pending} {line}".strip()
+        for pattern, alias in BALANCE_ROWS:
+            if pattern.match(label):
+                if row is None:
+                    pending = label
+                    break
+                if len(row[1]) != len(header):
+                    raise MomrError(f"{where}：「{label}」有 {len(row[1])} 個數，表頭有 {len(header)} 列，對不上。"
+                                    "這個文件沒有導入")
+                grid.append([alias, *row[1]])
+                pending = ""
+                break
+        else:
+            pending = ""
+            if row is None and re.match(r"^\(b\)", line):
+                pending = line
+    if len(grid) != len(BALANCE_ROWS) + 1:
+        found = {r[0] for r in grid[1:]}
+        lost = [a.split(":", 2)[2] for _, a in BALANCE_ROWS if a not in found]
+        raise MomrError(f"{where}：沒找到 {'、'.join(lost)} 這幾行。這個文件沒有導入，請截圖給負責平台的人")
+    return grid
 
 
 _MONTH_NAMES = ("january", "february", "march", "april", "may", "june", "july", "august", "september", "october",

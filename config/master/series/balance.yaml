@@ -72,10 +72,20 @@ series:
      frequency: quarterly, module: balance, aliases: ["IEA World Demand", "IEA全球需求"]}
   - {code: IEA_WORLD_SUPPLY, vintaged: true, name_zh: 全球供應（IEA）, commodity: GLOBAL_FUNDAMENTAL, location: GLOBAL, kind: flow, unit: mb/d,
      frequency: quarterly, module: balance, aliases: ["IEA World Supply", "IEA全球供應"]}
+  # OPEC 月報附錄表 11-1（World oil demand and production balance）：月報 PDF 導入時一起讀出（connectors/momr.py）。
+  # 季度，含預測；每期月報都會修訂，按報告期保存。月報現在發的是「對 DoC（OPEC+）原油的需求」= (a) − (b)，
+  # 不再單列「對 OPEC 原油的需求」。
   - {code: OPEC_WORLD_DEMAND, vintaged: true, name_zh: 全球需求（OPEC）, commodity: GLOBAL_FUNDAMENTAL, location: GLOBAL, kind: flow, unit: mb/d,
-     frequency: quarterly, module: balance, aliases: ["OPEC World Demand", "OPEC全球需求"]}
-  - {code: OPEC_CALL_ON_OPEC, vintaged: true, name_zh: 對 OPEC 原油的需求（OPEC）, commodity: GLOBAL_FUNDAMENTAL, location: OPEC, kind: flow, unit: mb/d,
-     frequency: quarterly, module: balance, aliases: ["Call on OPEC", "對OPEC原油需求"]}
+     frequency: quarterly, module: balance, provider: agency,
+     aliases: ["OPEC World Demand", "OPEC全球需求", "momr:balance:(a) Total world demand"]}
+  - {code: OPEC_NON_DOC_SUPPLY, vintaged: true, name_zh: 非 DoC 液體供應 + DoC 天然氣液（OPEC）, commodity: GLOBAL_FUNDAMENTAL, location: GLOBAL,
+     kind: flow, unit: mb/d, frequency: quarterly, module: balance, provider: agency,
+     aliases: ["momr:balance:(b) Total Non-DoC liquids production and DoC NGLs"],
+     notes: 月報裡的 (b)：OPEC+ 以外所有國家的液體產量，加上 OPEC+ 國家的天然氣液和非常規}
+  - {code: OPEC_CALL_ON_DOC, vintaged: true, name_zh: 對 OPEC+（DoC）原油的需求（OPEC）, commodity: GLOBAL_FUNDAMENTAL, location: OPEC_PLUS,
+     kind: flow, unit: mb/d, frequency: quarterly, module: balance, provider: agency,
+     aliases: ["Call on DoC", "Call on OPEC", "momr:balance:(a) - (b)"],
+     notes: 全球需求減 (b)：需要 OPEC+ 國家拿出多少原油，供需才平衡。和 OPEC+ 實際原油產量比，看是在累庫還是去庫}
 
   # ---------- OPEC+ 分國原油產量（OPEC 月報「二手來源」表，#14） ----------
   # 月度，記在當月第一天。路透上找不到產量調查的 RIC（2026-11-24 find：Platts 的 OPEC+ 調查沒權限，
