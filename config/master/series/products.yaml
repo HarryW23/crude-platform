@@ -53,7 +53,9 @@ series:
   - {code: SD_DIESEL_0, calendar: CN, name_zh: 山東地煉 0# 柴油, commodity: GASOIL, location: SHANDONG, kind: spot, unit: CNY/t, module: refinery,
      aliases: ["山東柴油0", "山東地煉柴油", "山東0#"]}
   - {code: SD_LPG, calendar: CN, name_zh: 山東民用液化氣, commodity: LPG, location: SHANDONG, kind: spot, unit: CNY/t, module: refinery,
-     aliases: ["山東液化氣", "山東民用氣", "山東LPG"]}
+     aliases: ["山東液化氣", "山東民用氣", "山東LPG"],
+     lseg: {ric: "LNZD-LPGCVL-ECN", field: TRDPRC_1,
+            proxy: "隆眾華東民用液化氣（山東屬華東）；山東省的 LNZD-LPGCVL-SDP 在路透上，但近 120 天沒有數據"}}
   - {code: SD_PETCOKE, calendar: CN, name_zh: 山東地煉石油焦, commodity: PETCOKE, location: SHANDONG, kind: spot, unit: CNY/t, module: refinery,
      aliases: ["山東石油焦", "山東地煉石油焦"], lseg: {ric: "LNZD-PETC3B-SDP", field: TRDPRC_1},
      notes: 隆眾山東省 3B 石油焦市場價（地煉常見的中高硫焦）}

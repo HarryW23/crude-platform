@@ -245,23 +245,35 @@ class Client:
         members = result.get("members", [])
         return [str(m) for m in members if m and not str(m).startswith("0#")]
 
-    def frame(self, ric: str, start: date, end: date):
-        """取一個 RIC 的日度歷史，回傳 pandas DataFrame（索引是日期，列是各字段）。"""
+    def frame(self, ric: str, start: date, end: date, interval: str = "daily"):
+        """取一個 RIC 的歷史（預設日度），回傳 pandas DataFrame（索引是日期，列是各字段）。"""
         try:
             if self.kind == "eikon":
                 return self.lib.get_timeseries(ric, start_date=start.isoformat(), end_date=end.isoformat(),
-                                               interval="daily")
-            return self.lib.get_history(universe=ric, interval="daily", start=start.isoformat(),
+                                               interval=interval)
+            return self.lib.get_history(universe=ric, interval=interval, start=start.isoformat(),
                                         end=end.isoformat())
         except Exception as exc:
             raise Fail(f"{ric}：{_redact(exc, self.key)}") from None
 
 
+WRONG_INTERVAL = "70406"       # 周度、月度的統計數據按日度取時，路透回這個錯誤代碼
+
+
 def fetch(client: Client, ric: str, start: date, end: date):
-    """取歷史數據；臨時錯誤重試一次。沒權限、RIC 不存在重試也沒用，直接報。"""
+    """取歷史數據；臨時錯誤重試一次。沒權限、RIC 不存在重試也沒用，直接報。
+    周度 / 月度的統計數據（例如隆眾的周度開工率）按日度取會報 70406：改按周、按月再取。"""
     try:
         return client.frame(ric, start, end)
     except Fail as exc:
+        if WRONG_INTERVAL in str(exc):
+            for interval in ("weekly", "monthly"):
+                try:
+                    return client.frame(ric, start, end, interval)
+                except Fail as again:
+                    if WRONG_INTERVAL not in str(again):
+                        raise
+            raise
         reason = explain_error(str(exc).split("：", 1)[-1])
         if reason.startswith(("沒權限", "RIC")) or "沒有數據" in reason:
             raise

@@ -35,6 +35,8 @@ def fake_lseg(monkeypatch):
 
     def get_history(universe, interval, start, end):
         calls.append(("history", universe))
+        if universe == "WEEKLYSTAT" and interval == "daily":          # 周度統計按日度取：路透報 70406
+            raise RuntimeError("Error code -1 | (TS.Interday.UserRequestError.70406, invalid request)")
         if universe == "BADc1":
             raise RuntimeError(f"no permission for key {KEY}")
         if universe == "PLATTS00":                  # 路透真實的錯誤格式：原因代碼在括號裡，在很長的訊息後面
@@ -314,3 +316,11 @@ def test_search_lists_rics_and_titles_without_fetching(fake_lseg, tmp_path, caps
     assert rows[0] == ["搜索詞", "RIC", "標題"]
     assert rows[1] == ["Oman crude oil futures", "OQDc1", "DME Oman Crude Oil Futures"]
     assert script.main(["search", "nothing", "--out", str(out)]) == 1               # 沒有結果：退出碼 1
+
+
+def test_weekly_statistics_are_fetched_weekly_after_70406(fake_lseg):
+    """周度統計（隆眾開工率）按日度取報 70406：改按周取到就回傳；其他錯誤照常報。"""
+    script = load_script()
+    client = script.Client("k" * 40)
+    frame = script.fetch(client, "WEEKLYSTAT", date(2026, 9, 1), date(2026, 11, 20))
+    assert len(frame) == 5 and fake_lseg.count(("history", "WEEKLYSTAT")) == 2

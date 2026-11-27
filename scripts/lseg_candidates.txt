@@ -12,15 +12,15 @@
 # 替代品（配置裡帶 proxy 說明，後台序列頁標「替代」）：阿曼、烏拉爾、WTI 米德蘭、Mars、鹿特丹 3.5% 燃料油。
 # 這台機器上鏈（0#…）一個都展不開，不影響：需要的合約都有連續合約 RIC 可以直接取。
 
-# ---- 中國國內（隆眾在路透上有權限）----
-# 2026-11-27 find：華東汽柴油、山東石油焦、華東純苯、航煤出廠價已寫進配置。山東汽柴油、民用液化氣隆眾只有
-# 全國和各大區的，照山東石油焦 LNZD-PETC3B-SDP 的寫法猜山東省的；主營開工率 LNZOPRDNOPRW 報 70406（請求無效），
-# 可能是周度數據要按周取，再搜一次看有沒有日度的
-CN_MAJOR_REFINERY_UTIL | LongZhong China Main Refinery Capacity Utilization Rate; LongZhong Main Refinery Crude Run Rate | LNZOPRDNOPRW
-CN_SD_TEAPOT_UTIL      | LongZhong Shandong Independent Refinery Capacity Utilization; LongZhong Independent Refinery Crude Oil Weekly Capacity Utilization Rate |
-SD_GASOLINE_92         | Longzhong Gasoline Shandong Province 92# Domestic Market Price | LNZD-GSL-SDP LNZD-GSL-SD
-SD_DIESEL_0            | Longzhong Diesel Shandong Province 0# Domestic Market Price | LNZD-DSL-SDP LNZD-DSL-SD
-SD_LPG                 | Longzhong LPG Shandong Civil LPG Domestic Market Price | LNZD-LPGCVL-SD
+# ---- 中國國內 ----
+# 2026-11-27 兩輪 find：隆眾（有權限）只有全國和各大區的汽柴油，沒有山東省的（猜的 LNZD-GSL-SDP 等都不存在）。
+# 山東地煉的汽柴油出廠價在路透上是金聯創（JLC）的，按煉廠分，帳號沒有 JLC 權限（UserNotPermission）。
+# 要的話向 LSEG 申請開通 JLC，之後再跑 find（候選是 JLC 的海化 / 永鑫 92#）。
+# 主營開工率 LNZOPRDNOPRW 按日度取報 70406：腳本現在會改按周、按月再取，再試一次
+CN_MAJOR_REFINERY_UTIL | LongZhong China Main Refinery Capacity Utilization Rate | LNZOPRDNOPRW
+CN_SD_TEAPOT_UTIL      | JLC Shandong Independent Refinery Operating Rate; LongZhong Shandong Independent Refinery Capacity Utilization |
+SD_GASOLINE_92         | JLC Shandong Independent Refinery Product Pricing 92 RON Gasoline | JLC-SHHU92G-H JLC-SHCY92NG-H
+SD_DIESEL_0            | JLC Shandong Independent Refinery Product Pricing 0# Diesel |
 
 # ---- 量級可疑，先不用：在 Workspace 裡人工確認含義後再決定（升貼水一般在 ±3 美元，這條是 20 多）----
 EKOFISK_DIFF         | | BFO-EKO

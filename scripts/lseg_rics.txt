@@ -94,6 +94,7 @@ SG_HSFO_380              FO380-SIN        SETTLE
 JAPAN_NAPHTHA            NAF-1H-TYO       SETTLE
 NWE_EUROBOB              EUROBOB-ARA      TRDPRC_1
 RDAM_HSFO_35             UXc1             SETTLE   # 替代：NYMEX 歐洲 3.5% 燃料油駁船（Platts）期貨 M1，不是現貨評估價
+SD_LPG                   LNZD-LPGCVL-ECN  TRDPRC_1   # 替代：隆眾華東民用液化氣（山東屬華東）；山東省的 LNZD-LPGCVL-SDP 在路透上，但近 120 天沒有數據
 SD_PETCOKE               LNZD-PETC3B-SDP  TRDPRC_1
 EC_GASOLINE_92           LNZD-GSL-ECN     TRDPRC_1
 EC_DIESEL_0              LNZD-DSL-ECN     TRDPRC_1
@@ -110,7 +111,7 @@ LLDPE_CN                 DLLoi1           SETTLE
 PTA_CN                   CTAoi1           SETTLE
 MEG_CN                   DEGoi1           SETTLE
 
-# 下面 15 條可能在路透上，但還不知道 RIC（現貨評估價通常要另外訂閱 Platts / Argus）：
+# 下面 14 條可能在路透上，但還不知道 RIC（現貨評估價通常要另外訂閱 Platts / Argus）：
 # CN_SD_TEAPOT_UTIL      ?    山東地煉常減壓開工率
 # CN_MAJOR_REFINERY_UTIL ?    中國主營煉廠開工率
 # UPPER_ZAKUM_DIFF       ?    上扎庫姆升貼水
@@ -124,5 +125,4 @@ MEG_CN                   DEGoi1           SETTLE
 # NWE_NAPHTHA            ?    西北歐石腦油
 # SD_GASOLINE_92         ?    山東地煉 92# 汽油
 # SD_DIESEL_0            ?    山東地煉 0# 柴油
-# SD_LPG                 ?    山東民用液化氣
 # PROPYLENE_CFR_CHINA    ?    丙烯 CFR 中國
